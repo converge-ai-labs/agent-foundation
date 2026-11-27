@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra import cursors
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import now, short_session, transaction
@@ -35,37 +36,53 @@ def audit(session: AsyncSession, actor: Principal, row: BrowserRow, verb: str) -
     )
 
 
+async def insert_managed(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: BrowserCreate,
+    *,
+    provenance: AppProvenance | None = None,
+) -> BrowserRow:
+    """Reserve a managed Browser within the caller's authorized transaction."""
+    account = await resolve_provider(session, actor, BrowserProviderRow, scope, body.provider_id)
+    definition = runtime.registry.get("browser", account.type)
+    try:
+        recipe = definition.recipe_model.model_validate(body.recipe).model_dump(mode="json")
+    except ValidationError:
+        raise invalid("recipe", "Recipe does not match the Browser provider schema") from None
+    legacy = "idle_seconds" in body.model_fields_set
+    policies = body.model_fields_set & {"stop_after_seconds", "delete_after_seconds"}
+    if legacy and policies:
+        raise invalid("idle_seconds", "Use legacy idle_seconds or independent stop/delete policies, not both")
+    if not definition.supports_stop and "stop_after_seconds" in policies and body.stop_after_seconds is not None:
+        raise invalid("stop_after_seconds", "This provider does not retain stopped Browser profiles")
+    row = BrowserRow(
+        id=new_object_id("browser"),
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        provider_id=account.id,
+        name=body.name,
+        recipe=recipe,
+        provider_identity=lifecycle.identity(runtime, account),
+        idle_seconds=body.idle_seconds if legacy else (None if definition.supports_stop or policies else 1800),
+        stop_after_seconds=body.stop_after_seconds if definition.supports_stop and not legacy else None,
+        delete_after_seconds=body.delete_after_seconds if not legacy else None,
+        created_by_id=actor.id,
+        app_id=provenance.app_id if provenance else None,
+        app_context=provenance.app_context if provenance else None,
+    )
+    session.add(row)
+    await session.flush()
+    audit(session, actor, row, "create")
+    return row
+
+
 async def create(runtime: Runtime, actor: Principal, workspace_id: str, body: BrowserCreate) -> Browser:
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
-        account = await resolve_provider(session, actor, BrowserProviderRow, scope, body.provider_id)
-        definition = runtime.registry.get("browser", account.type)
-        try:
-            recipe = definition.recipe_model.model_validate(body.recipe).model_dump(mode="json")
-        except ValidationError:
-            raise invalid("recipe", "Recipe does not match the Browser provider schema") from None
-        legacy = "idle_seconds" in body.model_fields_set
-        policies = body.model_fields_set & {"stop_after_seconds", "delete_after_seconds"}
-        if legacy and policies:
-            raise invalid("idle_seconds", "Use legacy idle_seconds or independent stop/delete policies, not both")
-        if not definition.supports_stop and "stop_after_seconds" in policies and body.stop_after_seconds is not None:
-            raise invalid("stop_after_seconds", "This provider does not retain stopped Browser profiles")
-        row = BrowserRow(
-            id=new_object_id("browser"),
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            provider_id=account.id,
-            name=body.name,
-            recipe=recipe,
-            provider_identity=lifecycle.identity(runtime, account),
-            idle_seconds=body.idle_seconds if legacy else (None if definition.supports_stop or policies else 1800),
-            stop_after_seconds=body.stop_after_seconds if definition.supports_stop and not legacy else None,
-            delete_after_seconds=body.delete_after_seconds if not legacy else None,
-            created_by_id=actor.id,
-        )
-        session.add(row)
-        await session.flush()
-        audit(session, actor, row, "create")
+        row = await insert_managed(session, runtime, actor, scope, body)
         browser_id = row.id
     if body.prepare:
         await lifecycle.prepare(runtime, workspace_id, browser_id)
@@ -113,16 +130,19 @@ async def get(runtime: Runtime, actor: Principal, workspace_id: str, browser_id:
 
 
 async def list_browsers(
-    runtime: Runtime, actor: Principal, workspace_id: str, *, limit: int, cursor: str | None
+    runtime: Runtime, actor: Principal, workspace_id: str, *, limit: int, cursor: str | None, app_id: str | None = None
 ) -> BrowserPage:
     async with short_session(runtime.storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
+        query = select(BrowserRow).where(BrowserRow.workspace_id == workspace_id, BrowserRow.status != "deleted")
+        if app_id is not None:
+            query = query.where(BrowserRow.app_id == app_id)
         rows, next_cursor = await cursors.id_page(
             session,
-            select(BrowserRow).where(BrowserRow.workspace_id == workspace_id, BrowserRow.status != "deleted"),
+            query,
             BrowserRow.id,
             kind="browsers",
-            owner=workspace_id,
+            owner=workspace_id if app_id is None else cursors.query_owner(workspace_id, app_id),
             limit=limit,
             cursor=cursor,
         )

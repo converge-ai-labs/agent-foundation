@@ -91,6 +91,31 @@ calculator = HarnessBuilder().build(
 
 Inside `run_code`, the Model can fan out with `await asyncio.gather(double(value=10), double(value=20))`, execute workspace `.codeact.py` scripts via `run_program`, and persist JSON values across turns in `HarnessState` using `await store(key, value)`, `await load(key)`, and `await forget(key)`.
 
+### Submit structured output directly
+
+Set `CodeActConfig(allow_final_output=True)` to let CodeAct submit a structured result in the same model round-trip. For example, configure the Agent with a Pydantic output model:
+
+```python
+import os
+
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import CodeActCapability, CodeActConfig
+from pydantic import BaseModel
+
+
+class Answer(BaseModel):
+    total: int
+
+
+calculator = HarnessBuilder().build(
+    AgentSpec(model=os.environ["HARNESS_MODEL"]),
+    output_type=Answer,
+    capabilities=(CodeActCapability(CodeActConfig(allow_final_output=True)),),
+)
+```
+
+On non-realtime Runs with structured output, the CodeAct catalog lists the Run's output functions for both `run_code` and `run_program`. For this Agent, the Model can end a snippet with `final_result(total=6 * 7)`. The call stops the snippet at that point and submits the arguments for validation. If schema validation or an output validator rejects the result, Pydantic AI sends the feedback to the Model through its native output retry mechanism. Plain `output_type=str` and realtime Runs keep their existing behavior.
+
 ## Asynchronous children
 
 For child runs that outlive the parent turn, supply a host `SubagentOperator`:

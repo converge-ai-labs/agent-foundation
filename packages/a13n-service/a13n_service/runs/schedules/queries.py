@@ -216,6 +216,8 @@ async def list_schedules(storage: Storage, actor: Principal, workspace_id: str, 
         query = query.where(
             ScheduleRow.state == filters.state if filters.state is not None else ScheduleRow.state != "archived"
         )
+        if filters.app_id is not None:
+            query = query.where(ScheduleRow.app_id == filters.app_id)
         if filters.agent_id:
             query = query.where(ScheduleRow.invocation["agent_id"].astext == filters.agent_id)
         if filters.principal_id:
@@ -227,12 +229,15 @@ async def list_schedules(storage: Storage, actor: Principal, workspace_id: str, 
                     ScheduleRow.description.icontains(filters.q, autoescape=True),
                 )
             )
+        fingerprint = filters.model_dump(mode="json", exclude={"limit", "cursor"})
+        if filters.app_id is None:
+            del fingerprint["app_id"]
         rows, cursor = await cursors.keyset_page(
             session,
             query,
             (ScheduleRow.created_at, ScheduleRow.id),
             kind="schedules",
-            owner=cursors.query_owner(scope.workspace_id, filters.model_dump(mode="json", exclude={"limit", "cursor"})),
+            owner=cursors.query_owner(scope.workspace_id, fingerprint),
             cursor=filters.cursor,
             limit=filters.limit,
             newest_first=True,

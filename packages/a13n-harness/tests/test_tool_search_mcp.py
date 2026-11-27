@@ -18,13 +18,20 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
-from a13n_harness.mcp import ContextualMCP
+from a13n_harness.mcp import ContextualMCP, MCPServer
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from fastmcp import Context, FastMCP
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import Middleware
-from pydantic_ai.capabilities import WrapperCapability
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.capabilities import MCP, WrapperCapability
+from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    TextContent,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 pytestmark = pytest.mark.anyio
@@ -206,6 +213,67 @@ async def test_contextual_mcp_native_path_is_rejected_by_proxy() -> None:
     )
     with pytest.raises(ValueError, match="provider-native"):
         await _run((ToolSearchCapability(groups={"native": ToolSearchGroup(contextual, "Native MCP")}),), [])
+
+
+@pytest.mark.parametrize("kind", ["contextual", "prepared", "projected"])
+@pytest.mark.parametrize("authority", ["operator", "user", "none"])
+async def test_mcp_server_instruction_authority(kind, authority):
+    instructions = "MCP fixture instructions."
+    server = FastMCP("instruction-fixture", instructions=instructions)
+
+    async def model(messages, info):
+        in_prefix = any(instructions in part.content for part in info.model_request_parameters.instruction_parts or ())
+        parts = [part for message in messages if isinstance(message, ModelRequest) for part in message.parts]
+        framed = [
+            [item.content for item in part.content if isinstance(item, TextContent)]
+            for part in parts
+            if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+        ]
+        assert in_prefix == (authority == "operator")
+        if authority == "operator":
+            assert all(instructions not in frame for frame in framed)
+        else:
+            assert ["<capability_instructions>", instructions, "</capability_instructions>"] in framed
+            attribution = "on the user's behalf" if authority == "user" else "it has no authority"
+            assert any(
+                isinstance(part, UserPromptPart) and isinstance(part.content, str) and attribution in part.content
+                for part in parts
+            )
+        yield "done"
+
+    async with _http_mcp(server) as url:
+
+        async def prepare(_ctx):
+            async def create():
+                return MCPToolset(url, id="instructions", include_instructions=True)
+
+            return create
+
+        def project(toolset):
+            return MCP(id="instructions", local=toolset)
+
+        class InspectStartup(WrapperCapability):
+            async def for_run(self, ctx):
+                # Verify the actual replacement before Pydantic AI can reapply a ceiling.
+                replacement = await self.wrapped.for_run(ctx)
+                assert replacement._effective_authority == authority
+                return replacement
+
+        capability = (
+            ContextualMCP(url, id="instructions", headers_factory=lambda _: {})
+            if kind == "contextual"
+            else MCPServer(id="instructions", prepare=prepare, project=project if kind == "projected" else None)
+        )
+        if authority != "operator":
+            capability = capability.with_authority(authority)
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(InspectStartup(capability),),
+        )
+        result = await executable.run("Continue", bindings=RunBindings.embedded())
+        assert result.output_or_raise() == "done"
 
 
 async def test_contextual_mcp_reports_progress_over_http_with_run_headers() -> None:

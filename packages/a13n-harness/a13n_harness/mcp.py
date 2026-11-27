@@ -295,6 +295,7 @@ class ContextualMCP(NativeMCP[AgentContext]):
             description=self._recipe.description,
             defer_loading=self._recipe.defer_loading,
         )
+        replacement = replacement.with_authority(self._effective_authority)
         ctx.deps._record_run_capability(cache_id, replacement)
         return replacement
 
@@ -630,11 +631,17 @@ class MCPServer(NativeMCP[AgentContext]):
         on_error: StartupErrorPolicy = "raise",
         tools: tuple[str, ...] | None = None,
         project: ProjectToolset | None = None,
+        defer_loading: bool = False,
     ) -> None:
         if not id or on_error not in {"skip", "raise"}:
             raise DefinitionError("Invalid MCP startup policy.", code="mcp_definition_invalid")
         # Pydantic AI accepts AbstractToolset at runtime; its MCP annotation omits it.
-        super().__init__(id=id, native=False, local=FunctionToolset(id=id))  # pyright: ignore[reportArgumentType]
+        super().__init__(
+            id=id,
+            native=False,
+            local=FunctionToolset(id=id),  # pyright: ignore[reportArgumentType]
+            defer_loading=defer_loading,
+        )
         self._prepare = prepare
         self._on_error = on_error
         self._selected_tools = tools
@@ -669,7 +676,8 @@ class MCPServer(NativeMCP[AgentContext]):
                 "MCP server skipped for this Run after connection entry failure",
                 extra={"server_id": self.id, "error_type": type(exc).__name__},
             )
-            return _StartedMCPServer(_UnavailableMCP(server_id, self._selected_tools))
+            unavailable = _UnavailableMCP(server_id, self._selected_tools).with_authority(self._effective_authority)
+            return _StartedMCPServer(unavailable)
         else:
             # Register cleanup before projecting, so a projection error cannot
             # leak an otherwise successfully entered Toolset.
@@ -685,13 +693,17 @@ class MCPServer(NativeMCP[AgentContext]):
                     native=False,
                     local=_ProgressToolset(toolset),  # pyright: ignore[reportArgumentType]
                     allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
+                    defer_loading=self.defer_loading,
                 )
             )
             # Inspect the entered transport without unwrapping the tool projection.
             source: AbstractToolset[AgentContext] = toolset
             while isinstance(source, WrapperToolset):
                 source = source.wrapped
-            return _StartedMCPServer(replacement, source.client if isinstance(source, MCPToolset) else None)
+            return _StartedMCPServer(
+                replacement.with_authority(self._effective_authority),
+                source.client if isinstance(source, MCPToolset) else None,
+            )
 
 
 __all__ = [

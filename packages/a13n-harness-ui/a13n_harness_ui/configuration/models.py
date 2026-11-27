@@ -33,6 +33,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_ai.messages import Authority
 
 from a13n_harness_ui.content_plugins import InstalledContentPlugin
 from a13n_harness_ui.environment_bindings import (
@@ -114,6 +115,7 @@ class ProcessConfiguration(ConfigurationModel):
     object_store: ObjectStoreSettings = Field(default_factory=ObjectStoreSettings)
     max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES
     pricing_auto_update: bool = True
+    update_check: bool = True
     terminal_update_check: bool = True
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: Literal["pretty", "json"] = "pretty"
@@ -926,6 +928,7 @@ class McpServerResource(ConfigurationModel):
         "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
     )
     on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
+    authority: Authority = Field(default="operator", exclude_if=lambda value: value == "operator")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
@@ -1087,6 +1090,30 @@ class AcpAgentResource(ConfigurationModel):
     def argv(self) -> tuple[str, ...]:
         command, args = ACP_AGENT_PRESETS.get(self.preset, ("", ()))
         return (self.command or command, *(args if self.args is None else self.args))
+
+
+class AcpAgentCandidate(StrictModel):
+    preset: AcpAgentPreset
+    command: str | None = Field(default=None, min_length=1, max_length=4096)
+    args: tuple[str, ...] | None = Field(default=None, max_length=128)
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def _validate_command(self) -> Self:
+        self.resource("acp-setup-preview", "ACP Agent")
+        return self
+
+    def resource(self, id: str, default_name: str, *, instructions: str = "") -> AcpAgentResource:
+        return AcpAgentResource(
+            schema_version="1",
+            kind="acp_agent",
+            id=id,
+            name=self.name or default_name,
+            preset=self.preset,
+            command=self.command,
+            args=self.args,
+            instructions=instructions,
+        )
 
 
 class AgentResource(ConfigurationModel):

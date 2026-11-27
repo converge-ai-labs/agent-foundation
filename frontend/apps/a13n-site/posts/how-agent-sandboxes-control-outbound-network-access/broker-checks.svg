@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 488" role="img" aria-label="The broker compares the hostname from the original TCP destination with the HTTP Host header.">
+  <text x="26" y="42" class="pt ink" style="font-size: 25px">Checking the upload destination</text>
+  <rect x="28" y="76" width="405" height="206" rx="3" class="pl"/>
+  <rect x="487" y="76" width="405" height="206" rx="3" class="pl"/>
+  <text x="48" y="112" class="pt ink" style="font-size: 21px">TCP connection</text>
+  <text x="507" y="112" class="pt ink" style="font-size: 21px">HTTP request</text>
+  <path d="M28 129 L433 129" class="pf"/>
+  <path d="M487 129 L892 129" class="pf"/>
+  <text x="48" y="157" class="pt" style="font-size: 16px">SO_ORIGINAL_DST</text>
+  <text x="48" y="186" class="pt ink" style="font-size: 22px">127.64.0.1:443</text>
+  <text x="48" y="217" class="pt" style="font-size: 16px">Look up name and check allowlist</text>
+  <text x="507" y="157" class="pt" style="font-size: 16px">Read headers after TLS handshake</text>
+  <text x="507" y="187" class="pt ink" style="font-size: 18px">POST /upload HTTP/1.1</text>
+  <text x="507" y="217" class="pt" style="font-size: 16px">Host header</text>
+  <rect x="46" y="230" width="368" height="38" rx="3" class="band"/>
+  <text x="58" y="255" class="pt acc" style="font-size: 20px">reports.example.com</text>
+  <rect x="505" y="230" width="368" height="38" rx="3" class="band"/>
+  <text x="517" y="255" class="pt acc" style="font-size: 20px">reports.example.com</text>
+  <rect x="321" y="346" width="278" height="49" rx="2" class="pl"/>
+  <text x="460" y="378" text-anchor="middle" class="pt ink" style="font-size: 20px">Same hostname?</text>
+  <text x="173" y="455" text-anchor="middle" class="pt" style="font-size: 18px">Mismatch: reject request</text>
+  <text x="701" y="455" text-anchor="middle" class="pt acc" style="font-size: 18px">Match: validate address and certificate</text>
+  <path class="pa thin" style="stroke-width: 1.25" d="M230 282v39h460v-39 M460 321v24m-5-8 5 8 5-8"/>
+  <path class="pf" style="stroke-width: 1.25" d="M321 370H173v55m-5-8 5 8 5-8"/>
+  <path class="pa thin" style="stroke-width: 1.25" d="M599 370h102v55m-5-8 5 8 5-8"/>
+</svg>

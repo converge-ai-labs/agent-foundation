@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import shutil
 import sys
@@ -32,15 +33,22 @@ OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=65536, 
 async def _processes(
     root: Path,
     *,
-    powershell: bool = False,
+    powershell: bool | str = False,
     max_wall_time_seconds: float = 10,
+    powershell_executable: str | None = None,
     inherit_environment: bool = False,
     allowed_environment_keys: tuple[str, ...] | None = ("SYSTEMROOT", "PATH"),
 ) -> AsyncGenerator[LocalProcessManager]:
     provider = DIRECT_LOCAL
     profiles = []
-    if powershell:
-        executable = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell or powershell_executable:
+        executable = powershell_executable
+        if executable is None:
+            executable = (
+                shutil.which(powershell)
+                if isinstance(powershell, str)
+                else shutil.which("pwsh") or shutil.which("powershell")
+            )
         if executable is None:
             pytest.skip("PowerShell is unavailable")
         profiles = [
@@ -232,10 +240,11 @@ async def test_native_execution_deadline_reports_timeout_and_cleanup(tmp_path: P
         assert result.output.stdout.producer_complete and result.output.stderr.producer_complete
 
 
-async def test_native_powershell_unicode_and_quoting(tmp_path: Path) -> None:
+@pytest.mark.parametrize("shell", ["pwsh", "powershell"])
+async def test_native_powershell_unicode_and_quoting(tmp_path: Path, shell: str) -> None:
     # This checks encoding and quoting, not shell startup latency on a shared CI
     # runner. The deadline test independently checks timeout policy and cleanup.
-    async with _processes(tmp_path, powershell=True, max_wall_time_seconds=60) as processes:
+    async with _processes(tmp_path, powershell=shell, max_wall_time_seconds=60) as processes:
         result = await processes.exec(
             CommandRequest(
                 command=ShellCommand(
@@ -349,3 +358,69 @@ async def test_native_windows_environment_overrides_and_unsets_ignore_case(tmp_p
             base.model_copy(update={"environment": CommandEnvironment(unset=("a13n_test_mixed",))})
         )
         assert removed.output.stdout.inline.strip() == b"absent"
+
+
+async def test_powershell_argv_preserves_script_boundaries(tmp_path: Path) -> None:
+    async with _processes(tmp_path, powershell_executable=sys.executable) as processes:
+        script = "param(); Write-Output '中文 \"quoted\"'`"
+        argv = processes._argv(
+            CommandRequest(command=ShellCommand(profile_id="powershell", script=script), output_policy=OUTPUT)
+        )
+    assert argv[-4:-1] == ("-OutputFormat", "Text", "-Command")
+    loader = argv[-1]
+    assert loader.isascii() and '"' not in loader
+    assert loader.index("try { [Console]::InputEncoding = [Console]::OutputEncoding") < loader.index(
+        "} catch {}; $OutputEncoding = [System.Text.UTF8Encoding]::new($false);"
+    )
+    encoded = loader.split("FromBase64String('", 1)[1].split("')", 1)[0]
+    assert base64.b64decode(encoded).decode() == script
+    assert ". ([scriptblock]::Create([scriptblock]::Create(" in loader
+    assert ".ToString() + [char]10 + [char]10 + 'if (-not $?) { exit 1 }'" in loader
+
+
+@pytest.mark.parametrize("shell", ["pwsh", "powershell"])
+@pytest.mark.parametrize(
+    "script, code, stdout, stderr",
+    [
+        ("Write-Error 'failed'", 1, "", "failed"),
+        ("Write-Error 'failed'`", 1, "", "failed"),
+        ("param([string]$Text = 'done'); Write-Output $Text", 0, "done", ""),
+        ("Write-Error 'failed'; Write-Output 'done'", 0, "done", "failed"),
+        (" ", 0, "", ""),
+        ("# comment", 0, "", ""),
+    ],
+)
+async def test_native_powershell_exit_status_and_text(tmp_path, shell, script, code, stdout, stderr):
+    async with _processes(tmp_path, powershell=shell, max_wall_time_seconds=60) as processes:
+        result = await processes.exec(
+            CommandRequest(
+                command=ShellCommand(profile_id="powershell", script=script),
+                environment=CommandEnvironment(
+                    set={key: os.environ[key] for key in ("SYSTEMROOT", "PATH") if key in os.environ}
+                ),
+                output_policy=OUTPUT,
+            )
+        )
+    assert result.status.exit_code == code
+    actual_stdout = (result.output.stdout.inline or b"").decode().strip()
+    actual_stderr = (result.output.stderr.inline or b"").decode()
+    assert actual_stdout == stdout
+    assert stderr in actual_stderr if stderr else not actual_stderr
+    assert "CLIXML" not in actual_stderr
+
+
+@pytest.mark.parametrize("shell", ["pwsh", "powershell"])
+async def test_native_powershell_keeps_raw_stdin_available(tmp_path, shell):
+    async with _processes(tmp_path, powershell=shell, max_wall_time_seconds=60) as processes:
+        result = await processes.exec(
+            CommandRequest(
+                command=ShellCommand(profile_id="powershell", script="[Console]::In.ReadToEnd()"),
+                environment=CommandEnvironment(
+                    set={key: os.environ[key] for key in ("SYSTEMROOT", "PATH") if key in os.environ}
+                ),
+                initial_stdin=b"raw stdin\n",
+                output_policy=OUTPUT,
+            )
+        )
+    assert result.status.exit_code == 0
+    assert (result.output.stdout.inline or b"").decode().strip() == "raw stdin"

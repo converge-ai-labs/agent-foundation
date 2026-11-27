@@ -50,6 +50,7 @@ from ._mount_path import (
     normalize_operation_path,
     parse_mount_path,
     provider_path_from_suffix,
+    provider_path_suffix,
 )
 from .bootstrap import BootstrapContext, Observation, ObservationReader
 from .changes import EnvironmentChangeJournal
@@ -257,11 +258,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if not actions <= entered.public.permission_ceiling.operations:
             raise EnvironmentInvocationError("File observation is not permitted.", code="environment_permission_denied")
         root = entered.public.provider_root
-        suffix = parse_mount_path(route.provider_path).suffix_below(parse_mount_path(root))
-        if suffix is None:
+        try:
+            suffix = provider_path_suffix(route.provider_path, root)
+        except ValueError as exc:
             raise EnvironmentInvocationError(
                 "File observation is outside the mount root.", code="environment_selection_invalid"
-            )
+            ) from exc
 
         def observe(key: tuple[str, ...], read: ObservationReader) -> None:
             async def capture(execution: EnvironmentExecution) -> Observation | None:

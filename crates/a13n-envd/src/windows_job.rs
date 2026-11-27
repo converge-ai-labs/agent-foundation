@@ -60,8 +60,15 @@ impl WindowsJob {
     }
 
     pub(crate) async fn spawn(command: &mut Command) -> io::Result<(Child, Self)> {
+        Self::spawn_with_flags(command, 0).await
+    }
+
+    pub(crate) async fn spawn_with_flags(
+        command: &mut Command,
+        flags: u32,
+    ) -> io::Result<(Child, Self)> {
         let job = Self::create()?;
-        command.creation_flags(CREATE_SUSPENDED);
+        command.creation_flags(CREATE_SUSPENDED | flags);
         let mut child = command.spawn()?;
         let result = (|| {
             let process = child

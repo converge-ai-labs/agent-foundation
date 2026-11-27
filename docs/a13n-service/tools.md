@@ -59,6 +59,7 @@ Register shared remote Streamable HTTP MCP servers or SaaS connectors under **Co
 ```
 
 - **Auth modes:** `none`, `bearer`, `headers`, or `oauth` (`authorization_code` browser flow or `client_credentials` M2M, with automatic token refresh). Test health via `POST /api/v1/connections/{id}/test` and inspect schemas via `GET /api/v1/connections/{id}/tools`.
+- **Server instructions:** Set `config.authority` in the API or choose **Server instructions** in Console under **New connection** or **Details**. `operator` (System, the default) applies system instructions for direct connections; `user` passes user-level context, and `none` passes reference data with no instruction authority. Deferred Tool Search groups receive `operator` text in their discovery results. Changing the setting preserves credentials and tool permissions.
 - **Bind to an agent:** Add entries to `connection_tools` with default `permission` (`"ask"`, `"allow"`, `"deny"`) and per-tool `permissions` overrides. Pass non-secret per-session headers via `mcp_headers`. Disabling a connection immediately blocks subsequent calls.
 - **Tool discovery for large catalogs:** Configure `tool_search` on the agent (`{"mode": "native", "sources": {}}` or domain `groups` mapping `connections` and `capabilities`) so tool schemas load on demand. See [Embed MCP Apps](mcp-apps.md) for interactive tool UIs.
 

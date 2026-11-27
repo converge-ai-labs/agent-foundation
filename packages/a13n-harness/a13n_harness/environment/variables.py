@@ -34,6 +34,13 @@ type EnvironmentVariables = Annotated[
 
 
 def with_defaults(request: CommandRequest, defaults: Mapping[str, str], *, windows: bool = False) -> CommandRequest:
+    if windows:
+        names = (*request.environment.set, *request.environment.unset)
+        if len({name.upper() for name in names}) != len(names):
+            raise EnvironmentError(
+                "Command environment names must be unique across set and unset on Windows.",
+                code="environment_request_invalid",
+            )
     if not defaults:
         return request
 

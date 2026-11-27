@@ -16,6 +16,11 @@ import { InputContent, inputCopyText, type InputPart } from "./input-content";
 import { previewInput } from "./local-input";
 import { ConversationTranscript, LiveOutput } from "./transcript";
 import type { Schema } from "../transport/client";
+import { MemoryRouter } from "react-router";
+import {
+  GuestAccessContext,
+  GuestThreadIdsContext,
+} from "../transport/context";
 import { i18n } from "../i18n";
 
 beforeEach(() => {
@@ -330,7 +335,9 @@ it("offers copy, branch and the stop time once after a tool interrupts the last 
   render(
     <MessageBranches
       value={{
-        busy: false,
+        active: false,
+        blocked: false,
+        edit: vi.fn(),
         pending: false,
         create,
         points: { turn: { edit: true, branch: true } },
@@ -368,4 +375,42 @@ it("offers copy, branch and the stop time once after a tool interrupts the last 
     within(footer).getByRole("button", { name: "Branch in new chat" }),
   );
   expect(create).toHaveBeenCalledWith("turn");
+});
+
+it("preserves guest message attribution and only links a known source chat", () => {
+  const part = (id: string, title: string): InputPart => ({
+    kind: "user",
+    text: "Sent message",
+    metadata: {
+      harness_ui: {
+        thread_message: { source_thread_id: id, source_thread_title: title },
+      },
+    },
+  });
+  const access = {
+    grant: { scope: "thread", target_id: "thread-coordinator" },
+  } as Schema<"ShareAccess">;
+  render(
+    <MemoryRouter basename="/share/test" initialEntries={["/share/test/"]}>
+      <GuestAccessContext value={access}>
+        <GuestThreadIdsContext value={new Set(["thread-coordinator"])}>
+          <InputContent
+            parts={[part("thread-coordinator", "Coordinator home")]}
+            renderText={(text) => text}
+          />
+          <InputContent
+            parts={[part("thread-other", "External chat")]}
+            renderText={(text) => text}
+          />
+        </GuestThreadIdsContext>
+      </GuestAccessContext>
+    </MemoryRouter>,
+  );
+  expect(
+    screen
+      .getByRole("link", { name: "From thread Coordinator home" })
+      .getAttribute("href"),
+  ).toBe("/share/test/threads/thread-coordinator");
+  expect(screen.getByText("From thread - External chat")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /External chat/ })).toBeNull();
 });

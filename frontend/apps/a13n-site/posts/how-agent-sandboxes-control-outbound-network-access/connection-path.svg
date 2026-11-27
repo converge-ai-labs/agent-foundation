@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 375" role="img" aria-label="Python, nftables and the envd broker run on the sandbox host. The report service is external.">
+  <rect class="pl dash" x="12" y="50" width="716" height="280" rx="4"/>
+  <text x="26" y="42" class="pt ink" style="font-size: 25px">The path of an HTTPS upload</text>
+  <rect x="28" y="85" width="435" height="225" rx="3" class="pf"/>
+  <text x="47" y="116" class="pt ink" style="font-size: 20px">Linux network namespace</text>
+  <rect x="49" y="148" width="159" height="111" rx="3" class="pl"/>
+  <path d="M49 176 L208 176" class="pf"/>
+  <circle cx="62" cy="162" r="2.1" class="fi"/>
+  <circle cx="71" cy="162" r="2.1" class="ff"/>
+  <circle cx="80" cy="162" r="2.1" class="ff"/>
+  <text x="65" y="205" class="pt acc" style="font-size: 19px">&gt;_ Python</text>
+  <text x="65" y="234" class="pt" style="font-size: 17px">Upload chart</text>
+  <path d="M208 207 L270 207" class="pa"/>
+  <path d="M260.0 202.0 L270 207 L260.0 212.0" class="pa"/>
+  <rect x="270" y="172" width="171" height="69" rx="3" class="pl"/>
+  <text x="355" y="201" text-anchor="middle" class="pt ink" style="font-size: 20px">nftables</text>
+  <text x="355" y="225" text-anchor="middle" class="pt" style="font-size: 15px">Redirect TCP</text>
+  <path d="M441 207 L533 207" class="pa"/>
+  <path d="M523.0 202.0 L533 207 L523.0 212.0" class="pa"/>
+  <rect x="533" y="142" width="168" height="127" rx="3" class="pl"/>
+  <path d="M533 170 L701 170" class="pf"/>
+  <circle cx="546" cy="156" r="2.1" class="fi"/>
+  <circle cx="555" cy="156" r="2.1" class="ff"/>
+  <circle cx="564" cy="156" r="2.1" class="ff"/>
+  <text x="690" y="162" text-anchor="end" class="pt" style="font-size: 13px">envd</text>
+  <text x="617" y="206" text-anchor="middle" class="pt ink" style="font-size: 22px">Rust broker</text>
+  <text x="617" y="239" text-anchor="middle" class="pt acc" style="font-size: 16px">Check target</text>
+  <path d="M701 207 L763 207" class="pa"/>
+  <path d="M753.0 202.0 L763 207 L753.0 212.0" class="pa"/>
+  <rect x="763" y="156" width="127" height="100" rx="3" class="pl"/>
+  <path d="M763 184 L890 184" class="pf"/>
+  <circle cx="776" cy="170" r="2.1" class="fi"/>
+  <circle cx="785" cy="170" r="2.1" class="ff"/>
+  <circle cx="794" cy="170" r="2.1" class="ff"/>
+  <text x="827" y="224" text-anchor="middle" class="pt ink" style="font-size: 18px">Reports API</text>
+  <text x="49" y="365" class="pt" style="font-size: 17px">The script and its child processes share these rules.</text>
+  <text class="pt ink" x="28" y="74" style="font-size: 17px">Sandbox host</text>
+</svg>

@@ -57,6 +57,7 @@ class CodeActConfig:
     inline: bool = True
     programs: bool = True
     catalog_argument_schemas: bool = False
+    allow_final_output: bool = False
     max_source_bytes: int = 256 * 1024
     max_output_bytes: int = 10 * 1024 * 1024
     max_state_bytes: int = 10 * 1024 * 1024
@@ -68,7 +69,7 @@ class CodeActConfig:
     max_recursion_depth: int = 1000
 ```
 
-Runner switches and `catalog_argument_schemas` require strict booleans. At least one runner must be enabled. `catalog_argument_schemas` adds exact argument JSON Schemas to the catalog; its default is `False`. Integer limits and the finite deadline are positive. A configured limit must be enforced at its documented boundary; unsupported limits fail construction or execution rather than being ignored. A Host may lower these limits but cannot widen Monty, provider, Harness, or deployment ceilings.
+Runner switches, `catalog_argument_schemas`, and `allow_final_output` require strict booleans. At least one runner must be enabled. `catalog_argument_schemas` adds exact argument JSON Schemas to the catalog; its default is `False`. Integer limits and the finite deadline are positive. A configured limit must be enforced at its documented boundary; unsupported limits fail construction or execution rather than being ignored. A Host may lower these limits but cannot widen Monty, provider, Harness, or deployment ceilings.
 
 Monty is a normal Harness dependency so installation shape does not change with runtime configuration. Importing the package still starts no sandbox process; the run-local runtime is initialized lazily on first execution and closed with the logical Harness run.
 
@@ -103,7 +104,7 @@ The effective execution catalog is the intersection of:
 
 Deferred-loading function tools retain their typed CodeAct eligibility. Both the execution catalog and the model-facing directory include them only when the current Pydantic `RunContext.is_tool_available()` reports them available: after tool discovery or loading their deferred Capability. The authored `defer_loading` flag remains set. Loss of discovery or loading evidence removes them from subsequent catalogs; CodeAct never fabricates that evidence or bypasses the original manager's availability check. Preparation checks sandbox-name collisions across all eligible tools, including those not yet available.
 
-The two runner tools, output tools, external client tools, provider-native tools, deferred-loading controls, delegation, handoff/compaction, structured user interaction, and any tool requiring unresolved cross-turn continuation are never eligible. Other control tools remain denied unless their semantic owner deliberately publishes a typed true policy and the CodeAct Toolset's fixed exclusion rules allow the category.
+The two runner tools, output tools (which have a separate [submission path](#final-output-submission)), external client tools, provider-native tools, deferred-loading controls, delegation, handoff/compaction, structured user interaction, and any tool requiring unresolved cross-turn continuation are never eligible. Other control tools remain denied unless their semantic owner deliberately publishes a typed true policy and the CodeAct Toolset's fixed exclusion rules allow the category.
 
 Canonical names that are Python identifiers remain unchanged. Other valid final names are deterministically converted to sandbox identifiers. Canonical or sanitized collisions, reserved runner names, and an existing top-level `run_code` or `run_program` collision fail before runner exposure; no last-wins behavior is accepted. Calls are keyword-only. A valid object-schema tool with non-identifier property names remains callable through dictionary expansion such as `await tool(**mapping)`; Pydantic's prepared validator remains authoritative.
 
@@ -113,11 +114,11 @@ For each execution, CodeAct derives one immutable name, schema, sequential-polic
 
 Each runner description contains its own invocation section. The first enabled runner (`run_code` when inline execution is enabled, otherwise `run_program`) also carries the shared orchestration rules and operational guidance, with a file reference in reference delivery and full details in inline delivery. The other runner points to the first runner for shared rules. The description carrying shared rules retains the `codeact` Toolset identification. Runner descriptions remain stable as the callable set changes.
 
-One shared model-facing catalog lists callable sandbox names and canonical-name mappings. Each listed tool also has a native function tool definition in the same model request, including deferred tools after discovery. The exact schema appears once, in the native tool definition; the catalog adds compact, sorted-key argument JSON Schemas only when `catalog_argument_schemas` is enabled. The catalog carries no descriptions, Python declarations, or return schemas. Presentation never removes an otherwise eligible tool.
+One shared model-facing catalog lists callable sandbox names and canonical-name mappings. Each listed ordinary tool also has a native function tool definition in the same model request, including deferred tools after discovery. The exact schema appears once, in the native tool definition; the catalog adds compact, sorted-key argument JSON Schemas only when `catalog_argument_schemas` is enabled. The catalog carries no descriptions, Python declarations, or return schemas. Presentation never removes an otherwise eligible tool.
 
 Ordinary model requests carry the catalog as a named dynamic instruction with native append-on-change behavior. Pydantic AI owns its initial baseline, canonical instruction deltas, and re-anchoring after history replacement. Unchanged catalogs add no delta; discovery and tool removal update the catalog, as do prepared argument-schema changes when `catalog_argument_schemas` is enabled, without rewriting runner definitions or the active instruction prefix. Handoff and compaction establish the new baseline from retained discovery and current availability in the same outgoing request. Suspended provider continuation preserves the original instruction prefix and existing deltas until the next ordinary request. Realtime sessions receive the shared catalog through native instruction resolution after final tool preparation.
 
-Each sandbox callback:
+Each nested function-tool callback:
 
 1. resolves its sandbox name in the immutable execution catalog;
 2. admits the call under the per-execution count limit before host argument materialization;
@@ -143,9 +144,17 @@ For a proxy call callback, the existing CodeAct bridge resolves the exact `(grou
 
 Both `run_code` and `run_program` use this path and the same bounded value, cancellation, side-effect uncertainty, and unresolved-deferral behavior. Proxy call callbacks remain conservatively sequential barriers, including inside `asyncio.gather`. Completing a sequential callback does not turn its async callable into a plain synchronous return; every host call remains awaitable.
 
+### Final Output Submission
+
+`allow_final_output` defaults to `False`. When enabled on a non-realtime run with available structured output targets, both runners expose the current `RunContext.output_tools` as final-output functions. Plain `output_type=str` runs do not expose Pydantic AI's synthetic text submission target. The catalog labels final-output functions and includes their argument schemas, including for targets without a native tool declaration. Output names follow the same sandbox name conversion and must not collide with each other, any eligible sandbox tool (including undiscovered tools), or either runner name.
+
+Call a listed output function with keyword arguments, for example `final_result(value=total)`. The call stops the snippet at that point, including when it appears inside `try` or `finally`. The runner charges the argument payload and attempt to its existing limits, settles preceding host callbacks, and closes the stopped feed (resetting the inline session). An unresolved or failed deferred callback blocks submission even if the snippet caught its error. Successful inline approval or deferred resolution permits submission.
+
+The runner remains in the foreground when final-output functions are available. A retained runner cannot acquire output targets from a later step. The foreground runner's async tool call submits the arguments through Pydantic AI's `RunContext.submit_output()`, which owns output validation, hooks, and completion. A rejection reaches the model through the native output retry budget and feedback. A new attempt requires a new runner call.
+
 ## Retained Runner Execution
 
-Both runners participate as whole invocations in [Host-held tool execution](07-tool-execution.md#host-held-tool-executions). Foreground expiry or immediate steering returns one outer receipt; nested calls continue awaiting real values on the original prepared ToolManager without independent runtime admission. A nested process-backed Shell call returns its native result or original-scope `process-*` reference, so subsequent callbacks can read output or send input within that runner. The retained scope keeps Monty, callbacks, policy/credential hooks, dynamic Environment generations and output resources alive until the actual runner settles. Task-affine cleanup remains with the task that entered each resource.
+Runners without final-output functions participate as whole invocations in [Host-held tool execution](07-tool-execution.md#host-held-tool-executions). Foreground expiry or immediate steering returns one outer receipt; nested calls continue awaiting real values on the original prepared ToolManager without independent runtime admission. A nested process-backed Shell call returns its native result or original-scope `process-*` reference, so subsequent callbacks can read output or send input within that runner. The retained scope keeps Monty, callbacks, policy/credential hooks, dynamic Environment generations and output resources alive until the actual runner settles. Task-affine cleanup remains with the task that entered each resource.
 
 The original manager's native discovery and capability-loading evidence remains coupled to the logical Run's history. [Context replacement](09-context-and-memory.md#retained-execution-boundary) is deferred until the retained invocation releases its resources: automatic compaction skips preparation, and explicit Handoff returns tool-failure feedback asking the Agent to wait and inspect the result. CodeAct continues to use native availability checks without copying or overriding framework-owned evidence.
 
@@ -260,9 +269,9 @@ CodeAct source is written for Monty's supported Python subset, not CPython. Harn
 ## Invariants
 
 01. Omitting `CodeActCapability` exposes neither runner and starts no Monty resource.
-02. A tool is unavailable to CodeAct unless its owning typed policy resolves true; arbitrary metadata cannot opt it in.
-03. Every nested call validates and executes through the active final `ToolManager` and original owning Toolset.
-04. Runner names, output/external/deferred/control surfaces, and sanitized-name collisions fail closed.
+02. Ordinary tools require true owner-defined CodeAct eligibility; arbitrary metadata cannot opt them in.
+03. Every nested function-tool call validates and executes through the active final `ToolManager` and original owning Toolset.
+04. Reserved names and sandbox-name collisions fail closed. Final-output functions use the opt-in submission path; other excluded tool surfaces remain unavailable.
 05. Root, child, fork, and independent Harness runs never share a catalog or interpreter state.
 06. A failed inline feed clears its session; `restart=True` clears it before evaluation.
 07. Each program invocation rereads bounded strict UTF-8 source through the current Environment and uses a fresh session.

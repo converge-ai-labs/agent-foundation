@@ -75,6 +75,7 @@ const untranslatedExceptions: Record<string, string[]> = {
   "configuration/device-fields.tsx": ["/api/devices/", "/connect"],
   "configuration/envd.tsx": ["envd"],
   "configuration/envd-fields.tsx": ["envd"],
+  "configuration/update-notices.tsx": ["a13n-harness-ui update"],
   "i18n/language.tsx": ["English"],
   "shell/debug.tsx": ["undefined"],
   "configuration/project-folders.tsx": ["/path/to/project"],

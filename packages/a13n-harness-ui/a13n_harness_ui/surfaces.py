@@ -20,7 +20,7 @@ from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_controls import ModelControlSelection
-from a13n_harness_ui.model_fast import FastControl
+from a13n_harness_ui.model_fast import FastControl, FastState
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
 from a13n_harness_ui.model_thinking import ThinkingControl
 from a13n_harness_ui.storage import ThreadConfiguration
@@ -147,9 +147,12 @@ class RootActivityView(SurfaceModel):
         return self
 
 
+ThreadRole = Literal["ordinary", "coordinator", "worker"]
+
+
 class ThreadSummary(SurfaceModel):
     memory_scope: str | None = None
-    role: Literal["ordinary", "coordinator", "worker"] = "ordinary"
+    role: ThreadRole = "ordinary"
     auto_followup: bool | None = None
     unarchived_worker_count: int | None = Field(default=None, ge=0)
     thread_id: str = Field(min_length=1, max_length=80)
@@ -242,11 +245,22 @@ class DeferredRequestView(SurfaceModel):
     metadata_omitted: bool = False
 
 
+class ThreadModelDisplay(SurfaceModel):
+    """Read-only display summary of a Thread's effective Agent and Model."""
+
+    agent_name: str | None = None
+    model_name: str | None = None
+    model_identity: str | None = None
+    thinking_summary: str | None = None
+    fast: FastState = "default"
+
+
 class ThreadDetail(SurfaceModel):
     thread: ThreadSummary
     continuation_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     deferred_requests: tuple[DeferredRequestView, ...] = ()
     available_actions: tuple[Literal["run", "respond", "wait", "steer", "cancel", "archive", "clear_context"], ...] = ()
+    model_display: ThreadModelDisplay | None = None
 
 
 class AppliedEditView(SurfaceModel):
@@ -336,13 +350,19 @@ class BranchPoint(SurfaceModel):
 
 class BranchPoints(SurfaceModel):
     source: str
+    edit_source: str
     points: dict[str, BranchPoint]
 
 
 class BranchRequest(SurfaceModel):
     expected_continuation_id: str = Field(pattern=r"^(?:initial:)?[0-9a-f]{64}$")
     turn_key: str = Field(min_length=1, max_length=512)
-    side: Literal["before", "after"]
+    side: Literal["after"]
+
+
+class MessageEditSelection(SurfaceModel):
+    expected_source: str = Field(pattern=r"^(?:(?:initial:)?[0-9a-f]{64}|receipt-[0-9a-f]{32})$")
+    turn_key: str = Field(min_length=1, max_length=512)
 
 
 class TranscriptTurn(SurfaceModel):
@@ -467,6 +487,11 @@ class RootRunReceipt(SurfaceModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Receipt timestamp must include a UTC offset")
         return value.astimezone(UTC)
+
+
+class MessageEditReceipt(SurfaceModel):
+    receipt: RootRunReceipt
+    continuation_id: str
 
 
 class RootOperationView(SurfaceModel):

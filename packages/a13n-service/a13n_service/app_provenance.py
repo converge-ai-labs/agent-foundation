@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
+from pydantic import StringConstraints
 from sqlalchemy import CheckConstraint, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -12,6 +14,11 @@ from a13n_service.infra.db import trigger
 from a13n_service.infra.errors import invalid
 
 APP_ID_MAX_LENGTH = 128
+APP_ID_PATTERN = r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*"
+
+type AppIdFilter = Annotated[
+    str, StringConstraints(min_length=1, max_length=APP_ID_MAX_LENGTH, pattern=f"^{APP_ID_PATTERN}$")
+]
 
 
 @dataclass(frozen=True, slots=True)

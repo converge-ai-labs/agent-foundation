@@ -26,10 +26,33 @@ class InputModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class PermissionOptionView(InputModel):
+    option_id: str
+    name: str
+    kind: Literal["allow_once", "allow_always", "reject_once", "reject_always"]
+
+
+class PermissionRequestDetail(InputModel):
+    tool_kind: str | None = None
+    tool_name: str | None = None
+    command: str | None = None
+    cwd: str | None = None
+    environment_keys: tuple[str, ...] = ()
+    locations: tuple[str, ...] = ()
+    arguments: dict[str, JsonValue] | None = None
+    options: tuple[PermissionOptionView, ...] = ()
+
+
+class PermissionInputRequest(InputModel):
+    message: str
+    detail: PermissionRequestDetail
+
+
 class McpInputRequestView(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     kind: Literal["mcp_elicitation"] = "mcp_elicitation"
+    source: Literal["mcp", "acp"] = "mcp"
     request_id: str
     thread_id: str
     run_id: str | None = None
@@ -37,9 +60,10 @@ class McpInputRequestView(BaseModel):
     server_id: str
     server_name: str | None = None
     view_id: str | None = None
-    mode: Literal["form", "url", "question"]
+    mode: Literal["form", "url", "question", "permission"]
     message: str
     questions: tuple[UserQuestion, ...] = ()
+    permission: PermissionRequestDetail | None = None
     schema_: dict[str, JsonValue] | None = Field(default=None, alias="schema")
     url: str | None = None
     url_host: str | None = None
@@ -191,10 +215,12 @@ class Inputs:
 
     async def request(
         self,
-        params: ElicitRequestParams | AskUserQuestionRequest,
+        params: ElicitRequestParams | AskUserQuestionRequest | PermissionInputRequest,
         *,
         thread_id: str,
         server_id: str,
+        server_name: str | None = None,
+        source: Literal["mcp", "acp"] = "mcp",
         require_active: Callable[[], None],
         run_id: str | None = None,
         tool_call_id: str | None = None,
@@ -210,12 +236,48 @@ class Inputs:
             return ElicitResult(action="decline")
         timeout = self._timeout if timeout_seconds is None else timeout_seconds
         expires = datetime.now(UTC) + timedelta(seconds=timeout)
-        if isinstance(params, AskUserQuestionRequest):
-            questions = params.questions
+        if isinstance(params, PermissionInputRequest):
+            options = params.detail.options
+            if not options:
+                return ElicitResult(action="decline")
+            allowed_options = frozenset(option.option_id for option in options)
             view = McpInputRequestView(
+                source=source,
                 request_id=f"mcpinp_{uuid4().hex}",
                 thread_id=thread_id,
                 server_id=server_id,
+                server_name=server_name,
+                run_id=run_id,
+                tool_call_id=tool_call_id,
+                view_id=view_id,
+                mode="permission",
+                message=params.message[:8192],
+                permission=params.detail,
+                expires_at=expires,
+            )
+
+            def validate_permission(response: McpInputResponse) -> McpInputResponse:
+                if response.action != "accept":
+                    return response
+                content = response.content
+                if (
+                    content is None
+                    or set(content) != {"option"}
+                    or not isinstance(option_id := content.get("option"), str)
+                    or option_id not in allowed_options
+                ):
+                    raise ValueError("Select one of the offered permission options.")
+                return response
+
+            validator: Callable[[McpInputResponse], McpInputResponse] = validate_permission
+        elif isinstance(params, AskUserQuestionRequest):
+            questions = params.questions
+            view = McpInputRequestView(
+                source=source,
+                request_id=f"mcpinp_{uuid4().hex}",
+                thread_id=thread_id,
+                server_id=server_id,
+                server_name=server_name,
                 run_id=run_id,
                 tool_call_id=tool_call_id,
                 view_id=view_id,
@@ -234,7 +296,7 @@ class Inputs:
                     raise ValueError("Input does not answer the pending questions.") from exc
                 return McpInputResponse.model_validate({"action": "accept", "content": content})
 
-            validator: Callable[[McpInputResponse], McpInputResponse] = validate_question
+            validator = validate_question
         else:
             form = isinstance(params, ElicitRequestFormParams)
             prompt = McpTaskInputRequest(
@@ -248,11 +310,13 @@ class Inputs:
                 request_id=f"mcpinp_{uuid4().hex}",
                 thread_id=thread_id,
                 server_id=server_id,
+                server_name=server_name,
                 run_id=run_id,
                 tool_call_id=tool_call_id,
                 expires_at=expires,
             ).model_copy(
                 update={
+                    "source": source,
                     "view_id": view_id,
                     **(
                         {

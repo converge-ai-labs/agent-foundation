@@ -1,0 +1,54 @@
+diff --git a/lib/index.js b/lib/index.js
+index c5ca771c24dd914e342f791716a822431ee32b3a..9c462ec15ef8b2544880d2cbe8c5307a8c810432 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -131,7 +131,7 @@ function transformGfmAutolinkLiterals(tree) {
+   findAndReplace(
+     tree,
+     [
+-      [/(https?:\/\/|www(?=\.))([-.\w]+)([^ \t\r\n]*)/gi, findUrl],
++      [/(https?:\/\/|www(?=\.))([-.\w]+)([^\s‘’‚‛“”„‟、。〈〉《》「」『』【】〔〕〖〗〘〙〚〛！＂＇（），．：；？［］｛｝｟｠｡｢｣､]*)/gi, findUrl],
+       [/(?<=^|\s|\p{P}|\p{S})([-.\w+]+)@([-\w]+(?:\.[-\w]+)+)/gu, findEmail]
+     ],
+     {ignore: ['link', 'linkReference']}
+@@ -239,10 +239,26 @@ function isCorrectDomain(domain) {
+  * @returns {[string, string | undefined]}
+  */
+ function splitUrl(url) {
++  // A CJK letter is a valid IRI character unless separated by an unmatched
++  // closing parenthesis (optionally followed by a period).
++  let suffix = ''
++  let openParens = 0
++  for (const match of url.matchAll(/\(|\)(\.*(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]))?/gu)) {
++    if (match[0] === '(') {
++      openParens++
++    } else if (openParens) {
++      openParens--
++    } else if (match[1] !== undefined) {
++      suffix = url.slice(match.index)
++      url = url.slice(0, match.index)
++      break
++    }
++  }
++
+   const trailExec = /[!"&'),.:;<>?\]}]+$/.exec(url)
+-
++
+   if (!trailExec) {
+-    return [url, undefined]
++    return [url, suffix]
+   }
+-
++
+   url = url.slice(0, trailExec.index)
+@@ -259,7 +275,7 @@ function splitUrl(url) {
+     closingParens++
+   }
+-
++
+-  return [url, trail]
++  return [url, trail + suffix]
+ }
+-
++
+ /**

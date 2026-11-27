@@ -17,6 +17,7 @@ from uuid import uuid4
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.acp import AcpError
 from a13n_harness.capabilities.skills import BoundSkillCatalog
+from a13n_harness.content import content_items
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
@@ -46,11 +47,11 @@ from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_models import RestartItem
-from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor, RootRunOutcome
+from a13n_harness_ui.root_execution import RootContinuationSelection, RootRunAdmission, RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.root_inputs import InputDelivery, StrictRootInputs
 from a13n_harness_ui.shutdown import Shutdown
-from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
+from a13n_harness_ui.storage import ObjectRef, Thread, ThreadConfigurationMutation
 from a13n_harness_ui.storage.contracts import ThreadExecution, ThreadRunOutput
 from a13n_harness_ui.surfaces import (
     ContinuationSelectionView,
@@ -67,9 +68,12 @@ from a13n_harness_ui.surfaces import (
     RunModelOverrides,
     ThreadDeferredResponse,
 )
+from a13n_harness_ui.thread_branch import EditableInput, editable_input
+from a13n_harness_ui.thread_service import MessageBranchSource, MessageRewind
 from a13n_harness_ui.tool_executions import ToolExecutions
 
 _MAX_WAIT_SECONDS = 60.0
+_EDIT_STOP_SECONDS = 8.0
 _MAX_VALUE_BYTES = 64 * 1024
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 _JSON_MAPPING_ADAPTER = TypeAdapter(dict[str, JsonValue])
@@ -94,8 +98,11 @@ class _RootOperation:
     stream: HarnessRunStream[Any] | None = None
     acp_turn: AcpTurn | None = None
     input_files: RootInputFiles | None = None
-    branch_base: ObjectRef | None = None
+    branch_source: Thread | None = None
+    selected_checkpoint: ObjectRef | None = None
+    checkpoint_selection_failed: bool = False
     continuing_turn: bool = False
+    editable_input: EditableInput | None = None
     composition: ObjectRef | None = None
     run_id: str | None = None
     started_at: datetime | None = None
@@ -124,6 +131,13 @@ class _InteractionWait:
 class _ThreadFence:
     lock: Lock
     users: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class MessageEditAdmission:
+    reservation: Event
+    prepare: Callable[[], Awaitable[MessageRewind]]
+    select: Callable[[MessageRewind, ObjectRef], Awaitable[Thread]]
 
 
 class RootRunCoordinator:
@@ -175,6 +189,7 @@ class RootRunCoordinator:
         self._fences_idle.set()
         self._operations: dict[str, _RootOperation] = {}
         self._active_by_thread: dict[str, str] = {}
+        self._message_edits: dict[str, Event] = {}
         self._latest_terminal: OrderedDict[str, RootOperationView] = OrderedDict()
         self._terminal_receipts: OrderedDict[str, None] = OrderedDict()
         self._terminal_retention = terminal_retention
@@ -330,9 +345,9 @@ class RootRunCoordinator:
         """Serialize an idle-only mutation against root admission for one Thread."""
 
         async with self._thread_fence(thread_id):
-            if thread_id in self._active_by_thread:
+            if thread_id in self._active_by_thread or thread_id in self._message_edits:
                 raise RunCoordinationError(
-                    "Wait for the active root operation to finish before changing this Thread.",
+                    "Wait for the active root operation or message edit to finish before changing this Thread.",
                     code="thread_run_active",
                 )
             yield
@@ -351,21 +366,67 @@ class RootRunCoordinator:
             raise
 
     @asynccontextmanager
-    async def message_branch_source(
-        self, thread_id: str, *, editing: bool = False
-    ) -> AsyncGenerator[tuple[ObjectRef | None, bool]]:
-        """An active operation can only branch from history that preceded admission."""
+    async def message_branch_source(self, thread_id: str) -> AsyncGenerator[MessageBranchSource | None]:
+        """Pin admission while resolving historical and current input boundaries."""
         async with self._thread_fence(thread_id):
-            receipt = self._active_by_thread.get(thread_id)
-            if receipt is None:
-                yield None, False
-            else:
-                if editing:
-                    raise RunCoordinationError(
-                        "Wait for the active run to finish before editing a message.", code="thread_run_active"
-                    )
-                operation = self._operations[receipt]
-                yield operation.branch_base, operation.continuing_turn
+            yield self._message_branch_source(thread_id)
+
+    def _message_branch_source(self, thread_id: str) -> MessageBranchSource | None:
+        receipt = self._active_by_thread.get(thread_id)
+        if receipt is None:
+            return None
+        operation = self._operations[receipt]
+        assert operation.branch_source is not None
+        return MessageBranchSource(
+            operation.branch_source, receipt, operation.continuing_turn, operation.editable_input, operation.run_id
+        )
+
+    @asynccontextmanager
+    async def reserve_message_edit(self, thread_id: str) -> AsyncGenerator[tuple[MessageBranchSource | None, Event]]:
+        # A reservation excludes competing admissions and idle mutations while
+        # the selected Run settles. The fence itself is released before Stop.
+        async with self._thread_fence(thread_id):
+            if thread_id in self._message_edits:
+                raise RunCoordinationError("This Thread already has a pending message edit.", code="thread_run_active")
+            reservation = self._message_edits[thread_id] = Event()
+            source = self._message_branch_source(thread_id)
+        try:
+            yield source, reservation
+        finally:
+            del self._message_edits[thread_id]
+            reservation.set()
+
+    async def stop_for_message_edit(self, receipt_id: str) -> ObjectRef | None:
+        """Only stop the captured receipt, outside the admission fence."""
+        operation = self._operations.get(receipt_id)
+        if operation is None:
+            raise RunCoordinationError("Conversation history changed. Reopen the message.", code="thread_branch_stale")
+        with move_on_after(_EDIT_STOP_SECONDS):
+            await self.cancel(receipt_id)
+            await operation.done.wait()
+        if not operation.done.is_set():
+            raise RunCoordinationError(
+                "The active run did not stop in time. Your edit was not applied.", code="thread_edit_stop_timeout"
+            )
+        if operation.checkpoint_selection_failed or (
+            operation.failure is not None and operation.failure.code == "execution_status_save_failed"
+        ):
+            raise RunCoordinationError(
+                "The active run could not settle safely. Your edit was not applied.", code="thread_edit_stop_failed"
+            )
+        assert operation.branch_source is not None
+        return operation.selected_checkpoint or operation.branch_source.continuation
+
+    def settled_message_checkpoint(self, thread_id: str, receipt_id: str) -> ObjectRef | None:
+        operation = self._operations.get(receipt_id)
+        if (
+            operation is None
+            or operation.receipt.thread_id != thread_id
+            or not operation.done.is_set()
+            or operation.checkpoint_selection_failed
+        ):
+            return None
+        return operation.selected_checkpoint
 
     async def submit_prompt(
         self,
@@ -385,6 +446,7 @@ class RootRunCoordinator:
         run_capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
         on_admitted: Callable[[RootRunReceipt], None] | None = None,
         retain_run: bool = False,
+        edit: MessageEditAdmission | None = None,
     ) -> RootRunReceipt:
         if thread_id == BOT_THREAD_ID and not (human_input or bot_input):
             raise RunCoordinationError("Bot accepts only user, heartbeat or Connector input.", code="bot_wake_rejected")
@@ -405,6 +467,7 @@ class RootRunCoordinator:
             run_capabilities=run_capabilities,
             on_admitted=on_admitted,
             retain_run=retain_run,
+            edit=edit,
         )
 
     async def submit_organization(self, thread_id: str, organization: MemoryOrganizationRun) -> RootRunReceipt:
@@ -469,6 +532,7 @@ class RootRunCoordinator:
         run_capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
         on_admitted: Callable[[RootRunReceipt], None] | None = None,
         retain_run: bool = False,
+        edit: MessageEditAdmission | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -491,9 +555,11 @@ class RootRunCoordinator:
                     self._restart.require_input()
             if not self._accepting or self._task_group is None:
                 raise RunCoordinationError("Root coordination is not accepting work.", code="app_stopping")
-            if thread_id in self._active_by_thread:
+            if thread_id in self._active_by_thread or self._message_edits.get(thread_id) is not (
+                edit.reservation if edit is not None else None
+            ):
                 raise RunCoordinationError(
-                    "This Thread already has an active root operation.",
+                    "This Thread already has an active root operation or message edit.",
                     code="thread_run_active",
                 )
             pending = self._interaction_waits.get(thread_id)
@@ -506,7 +572,13 @@ class RootRunCoordinator:
                     and pending.response.expected_continuation_id == response.expected_continuation_id
                 )
             )
-            if pending is not None and matching and timeout is None and monotonic() >= pending.deadline:
+            if (
+                edit is None
+                and pending is not None
+                and matching
+                and timeout is None
+                and monotonic() >= pending.deadline
+            ):
                 raise RunCoordinationError("The interaction deadline has elapsed.", code="thread_interaction_expired")
             with CancelScope(shield=True):
                 if touch and self._touch_thread is not None:
@@ -521,6 +593,7 @@ class RootRunCoordinator:
                             "Could not update Thread navigation recency; work was not admitted.",
                             code="thread_touch_failed",
                         ) from exc
+                rewind = await edit.prepare() if edit is not None else None
                 admission = await self._executor.capture(
                     thread_id=thread_id,
                     prompt=prompt,
@@ -529,7 +602,8 @@ class RootRunCoordinator:
                     mutation=mutation,
                     model_overrides=None if model_overrides is None else model_overrides.model_copy(deep=True),
                     environment=environment,
-                    **({"organization": organization} if organization is not None else {}),
+                    organization=organization,
+                    rewind=rewind,
                 )
                 # Additional source authority must survive lock, touch and capture
                 # waits. Nothing suspends between this guard and registration.
@@ -542,8 +616,16 @@ class RootRunCoordinator:
                     raise RunCoordinationError(
                         "A lifecycle notice cannot answer pending decisions.", code="thread_deferred_pending"
                     )
-                operation.branch_base = admission.thread.continuation or admission.thread.initial_state
+                if edit is not None and rewind is not None:
+                    selected = await edit.select(rewind, admission.published.reference)
+                    admission = replace(admission, thread=selected)
+                    if pending is not None:
+                        self._interaction_waits.pop(thread_id, None)
+                        pending.cancelled.set()
+                operation.branch_source = admission.thread
                 operation.continuing_turn = admission.prompt is None or admission.response is not None
+                if human_input and admission.prompt is not None and not operation.continuing_turn:
+                    operation.editable_input = editable_input(content_items(admission.prompt))
                 operation.composition = admission.published.reference
                 if (
                     pending is not None
@@ -858,6 +940,13 @@ class RootRunCoordinator:
             else:
                 await self._running(receipt_id, stream, input_files, acp_turn=acp_turn)
 
+        def on_checkpoint(selection: RootContinuationSelection) -> None:
+            if selection.status == "selected":
+                operation.selected_checkpoint = selection.reference
+                operation.checkpoint_selection_failed = False
+            elif selection.status == "failed":
+                operation.checkpoint_selection_failed = True
+
         try:
             # Registration is the admission boundary (including source authority).
             # Save even a pre-start cancellation, before any execution effects.
@@ -874,6 +963,7 @@ class RootRunCoordinator:
                         on_main_account=lambda value: self._main_account_changed(operation, value),
                         on_skill_catalog=lambda value: self._skill_catalog_resolved(operation, value),
                         on_stream=on_stream,
+                        on_checkpoint=on_checkpoint,
                     )
             if outcome is None:
                 cancelled = True
@@ -1018,18 +1108,21 @@ class RootRunCoordinator:
                 self._browser_handback.retry(thread_id)
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
-            try:
-                notice = root_operation_notice(
-                    _view(operation),
-                    output=outcome.result.output
-                    if outcome is not None and isinstance(outcome.result.output, str)
-                    else None,
-                    deferred=outcome.result.deferred if outcome is not None else None,
-                )
-            except Exception:
-                notice = None
-            if thread_id == BOT_THREAD_ID and operation.status is RootOperationStatus.completed:
-                notice = None
+            notice = None
+            if not (
+                operation.status is RootOperationStatus.completed
+                and (thread_id == BOT_THREAD_ID or admission.published.value.coordinator_thread_id is not None)
+            ):
+                try:
+                    notice = root_operation_notice(
+                        _view(operation),
+                        output=outcome.result.output
+                        if outcome is not None and isinstance(outcome.result.output, str)
+                        else None,
+                        deferred=outcome.result.deferred if outcome is not None else None,
+                    )
+                except Exception:
+                    pass
             await self._publish_change(operation, notice=None if operation.observation_only else notice)
             if self._on_settled is not None and self._accepting and not operation.observation_only:
                 try:
@@ -1081,6 +1174,9 @@ class RootRunCoordinator:
             active = self._operations.get(active_id) if active_id is not None else None
             if active is not None:
                 await active.done.wait()
+                continue
+            if (reservation := self._message_edits.get(thread_id)) is not None:
+                await reservation.wait()
                 continue
             try:
                 await self._submit(

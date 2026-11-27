@@ -91,6 +91,31 @@ calculator = HarnessBuilder().build(
 
 在 `run_code` 内，模型可使用 `await asyncio.gather(double(value=10), double(value=20))` 并发调用工具，通过 `run_program` 执行工作区中的 `.codeact.py` 脚本，并使用 `await store(key, value)`、`await load(key)` 与 `await forget(key)` 在 `HarnessState` 中跨轮次持久化 JSON 状态。
 
+### 直接提交结构化输出
+
+设置 `CodeActConfig(allow_final_output=True)`，即可在同一轮模型调用中通过 CodeAct 提交结构化结果。下面的示例为 Agent 配置了一个 Pydantic 输出模型：
+
+```python
+import os
+
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import CodeActCapability, CodeActConfig
+from pydantic import BaseModel
+
+
+class Answer(BaseModel):
+    total: int
+
+
+calculator = HarnessBuilder().build(
+    AgentSpec(model=os.environ["HARNESS_MODEL"]),
+    output_type=Answer,
+    capabilities=(CodeActCapability(CodeActConfig(allow_final_output=True)),),
+)
+```
+
+对于采用结构化输出的非实时 Run，CodeAct 目录会列出 `run_code` 和 `run_program` 均可调用的输出函数。在上面的 Agent 中，模型可用 `final_result(total=6 * 7)` 结束代码片段。调用输出函数时，代码片段在调用处停止，参数随即提交校验。如果参数未通过 Schema 校验，或结果被输出验证器拒绝，Pydantic AI 会通过原生的输出重试机制将反馈传给模型。普通文本（`output_type=str`）和实时 Run 的行为不变。
+
 ## 异步子智能体
 
 当子任务需要跨越父轮次在后台持续运行时，由宿主提供 `SubagentOperator`：

@@ -19,7 +19,7 @@ description: 在 Harness 中通过模型原生多模态输入或专用媒体分�
 from a13n_harness import AgentSpec, HarnessModelCharacteristics, ModelCapability
 
 agent_spec = AgentSpec(
-    model="google-cloud:gemini-2.5-pro",
+    model="google-cloud:gemini-3.5-flash",
     model_characteristics=HarnessModelCharacteristics(
         capabilities=frozenset({
             ModelCapability.IMAGE_UNDERSTANDING,

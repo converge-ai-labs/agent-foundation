@@ -80,6 +80,7 @@ class RemoteServer:
         client_secret: str | None = None,
         extra_tools: int = 0,
         distinct_clients: bool = False,
+        instructions: str | None = None,
     ) -> None:
         self.url = ""
         self.distinct_clients = distinct_clients
@@ -99,7 +100,7 @@ class RemoteServer:
         # When set, renewals (refresh or client-credentials grants) answer this status and OAuth error.
         self.refusal: tuple[int, str] | None = None
         self.revocation_status = 200
-        mcp = FastMCP("remote")
+        mcp = FastMCP("remote", instructions=instructions)
 
         @mcp.tool
         def echo(text: str) -> str:

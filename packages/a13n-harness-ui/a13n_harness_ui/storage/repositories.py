@@ -1062,6 +1062,8 @@ class ThreadRepository:
         updated_at: datetime | None = None,
         clear_compaction: bool = False,
         clear_acp_state: bool = False,
+        acp_state_json: str | None = None,
+        edit_source: Thread | None = None,
         compaction_settlement: CompactionSettlement | None = None,
         tool_completions: tuple[str, ...] = (),
     ) -> Thread:
@@ -1080,12 +1082,33 @@ class ThreadRepository:
                     None if expected is None else expected.logical_digest,
                     None if actual is None else actual.logical_digest,
                 )
+            if edit_source is not None:
+                previous_execution = (
+                    ThreadExecution.model_validate_json(record.last_execution_json)
+                    if record.last_execution_json is not None
+                    else None
+                )
+                if (
+                    record.archived
+                    or configuration.version != edit_source.configuration.version
+                    or previous_execution != edit_source.last_execution
+                    or await session.get(CoordinatorRecord, thread_id) is not None
+                    or await session.get(CoordinatorWorkerRecord, thread_id) is not None
+                ):
+                    raise StoreConflictError(
+                        "Conversation history changed. Reopen the message.", code="thread_branch_stale"
+                    )
             await settle_compaction(session, thread_id, settlement=compaction_settlement, clear=clear_compaction)
             from .tool_executions import consume_completions
 
             await consume_completions(session, thread_id, tool_completions)
             if clear_acp_state:
-                record.acp_state_json = None
+                record.acp_state_json = acp_state_json
+            if edit_source is not None:
+                record.completion_run_id = None
+                record.completion_digest = None
+                record.completed_at = None
+                record.last_execution_json = None
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest
@@ -1714,8 +1737,7 @@ def _search_text(record: ThreadRecord) -> str:
 
 def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> Thread:
     completion = None
-    if record.completion_version:
-        assert record.completion_run_id is not None
+    if record.completion_run_id is not None:
         assert record.completion_digest is not None
         assert record.completed_at is not None
         completion = ThreadCompletion(

@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import StoreConflictError
+from a13n_harness_ui.live import InboxNotice, RootOperationNotice
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.storage import ThreadConfigurationMutation, open_local_store
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, ThreadMetadataMutation
+from a13n_harness_ui.web_push import WebPush
 from anyio import Event, create_task_group, fail_after
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -35,13 +37,21 @@ async def test_followup_setting_persists_without_running(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize("active", [False, True])
-async def test_terminal_notice_runs_or_steers_lead_and_never_notifies_itself(
+async def test_worker_completion_runs_or_steers_lead_and_notifies_only_for_lead(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, active: bool
 ) -> None:
     root = coordinator_configuration(tmp_path)
     lead_id = ""
     started, release, notified = Event(), Event(), Event()
     notices = []
+    pushed: list[tuple[str, RootOperationNotice | InboxNotice]] = []
+    original_enqueue = WebPush.enqueue
+
+    def observe_enqueue(self: WebPush, thread_id: str, notice: RootOperationNotice | InboxNotice) -> None:
+        pushed.append((thread_id, notice))
+        original_enqueue(self, thread_id, notice)
+
+    monkeypatch.setattr(WebPush, "enqueue", observe_enqueue)
 
     async def resolve(self, context, model_id):
         async def model(messages, info):
@@ -61,7 +71,10 @@ async def test_terminal_notice_runs_or_steers_lead_and_never_notifies_itself(
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
+    async with (
+        open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app,
+        app.summary_events() as summaries,
+    ):
         lead = await create_coordinator(app, "project-main")
         lead_id = lead.thread_id
         worker = await app.create_thread(
@@ -96,6 +109,15 @@ async def test_terminal_notice_runs_or_steers_lead_and_never_notifies_itself(
             assert (await app.wait_root_operation(target.receipt.receipt_id)).status is RootOperationStatus.completed
             await lead_settled.wait()
             assert await app._root_runs.active(lead_id) is None
+            async for summary in summaries:
+                if summary.thread_id == worker.thread_id:
+                    assert summary.notice is None
+                if summary.notice is not None and summary.notice.receipt_id == target.receipt.receipt_id:
+                    assert summary.thread_id == lead_id and summary.notice.status == "completed"
+                    assert pushed == [(lead_id, summary.notice)]
+                    break
+            else:
+                pytest.fail("Coordinator completion notice was not published")
         assert len(notices) == 1
         assert receipt.receipt_id in notices[0] and worker.thread_id in notices[0]
         assert "Status: completed" in notices[0]

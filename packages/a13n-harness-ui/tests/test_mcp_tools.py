@@ -55,6 +55,43 @@ async def test_selection_preserves_private_connection_and_siblings(tmp_path: Pat
             assert source.mcp_servers["mcp-two"].transport.command == "python"
 
 
+async def test_instruction_authority_patch_keeps_credential_and_tool_settings(tmp_path: Path):
+    source_document = {
+        "schema_version": "2",
+        "mcpServers": {
+            "one": {
+                "url": "https://example.com/mcp",
+                "headers": {"Authorization": "fixture-value"},
+                "tools": ["search"],
+            },
+            "two": {"command": "python", "authority": "user"},
+        },
+    }
+    root, file = _source(tmp_path, source_document, suffix="json")
+    source = await load_harness_ui_configuration(root)
+    for fields, expected in [({"authority": "none"}, "none"), ({}, "none"), ({"authority": "operator"}, "operator")]:
+        settings = tool_settings(root, source, "mcp-one")
+        path, mutation = selection_mutation(
+            root,
+            source,
+            "mcp-one",
+            McpToolSelection.model_validate(
+                {"resource_digest": settings.resource_digest, "tools": ["search"], **fields}
+            ),
+        )
+        source = (await mutate_configuration_source(root, path, mutation)).configuration
+        settings = tool_settings(root, source, "mcp-one")
+        assert settings.authority == expected
+        assert settings.tools == ["search"]
+        assert "fixture-value" not in settings.model_dump_json()
+        stored = json.loads(file.read_text())
+        entry = stored["mcpServers"]["one"]
+        assert entry.pop("authority", "operator") == expected
+        assert stored == source_document
+        if expected == "operator":
+            assert '"authority": "operator"' not in file.read_text()
+
+
 async def test_stale_selection_does_not_overwrite_connection(tmp_path: Path):
     root, file = _source(tmp_path, {"mcpServers": {"one": {"command": "python"}}})
     source = await load_harness_ui_configuration(root)

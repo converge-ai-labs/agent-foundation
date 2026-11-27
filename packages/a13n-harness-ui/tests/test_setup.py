@@ -1186,3 +1186,86 @@ async def test_terminal_anthropic_defaults_survive_preview_publication_and_reloa
     source = await load_harness_ui_configuration(path)
     assert source.models[document["id"]].settings == {}
     assert saved.read_bytes() == original
+
+
+@pytest.mark.anyio
+async def test_pure_acp_and_additional_presets_publish_without_native_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    selection = SetupSelection.model_validate(
+        {
+            "primary_acp_agent": {"preset": "claude_code"},
+            "additional_acp_presets": ["claude_code", "gemini_cli", "gemini_cli"],
+            "environment_profile": "environment-native",
+        }
+    )
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    assert preview.agent_id == "acp-claude-code"
+    assert set(preview.files) == {path.name, "acp_agents/acp-claude-code.yaml", "acp_agents/acp-gemini-cli.yaml"}
+    result = await publish_setup(path, selection, validate_candidate=_validate())
+    assert result.completed
+    document = yaml.safe_load(path.read_text())
+    assert document["defaults"]["agent"] == "acp-claude-code"
+    assert document["memory"]["auto_organize"]["enabled"] is False
+    assert not {"live", "dictation", "agent_creation"}.intersection(document)
+    assert not document.get("security", {}).get("shell_review", {}).get("enabled")
+    assert not (tmp_path / "models").exists()
+    assert not (await preview_setup(path, selection, validate_candidate=_validate())).files.keys() - {path.name}
+    with pytest.raises(ValueError, match="Full Control"):
+        SetupSelection.model_validate({**selection.model_dump(), "environment_profile": "environment-sandbox"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("partial", [False, True])
+async def test_resource_only_retries_keep_an_identity_and_preserve_the_root(tmp_path: Path, partial: bool) -> None:
+    path = tmp_path / "config.yaml"
+    first = _selection(tmp_path)
+    assert (await publish_setup(path, first, validate_candidate=_validate())).completed
+    root = path.read_bytes()
+    selection = _selection(tmp_path, set_as_default=False, additional_acp_presets=["codex"])
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    assert preview.agent_id and preview.agent_id != first.default_agent
+    assert path.name not in preview.files
+    if partial:
+        model_file = next(name for name in preview.files if name.startswith("models/"))
+        (tmp_path / model_file).write_text(preview.files[model_file])
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    retry = await preview_setup(path, selection, validate_candidate=_validate())
+    assert retry.agent_id == preview.agent_id
+    assert retry.files == {}
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    assert path.read_bytes() == root
+    assert len(list((tmp_path / "agents").glob("*.yaml"))) == 2
+
+
+@pytest.mark.anyio
+async def test_additional_preset_uses_an_unused_id_when_the_canonical_id_is_occupied(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    await publish_setup(path, _selection(tmp_path), validate_candidate=_validate())
+    additions = path.parent / "acp_agents"
+    additions.mkdir()
+    custom = additions / "acp-codex.yaml"
+    original = 'schema_version: "1"\nkind: acp_agent\nid: acp-codex\nname: Other ACP\ncommand: another-cli\n'
+    custom.write_text(original)
+    selection = _selection(tmp_path, set_as_default=False, additional_acp_presets=["codex"])
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    loaded = await load_harness_ui_configuration(path)
+    assert loaded.acp_agents["acp-codex-2"].preset == "codex"
+    assert custom.read_text() == original
+    assert not (await preview_setup(path, selection, validate_candidate=_validate())).files
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("choice", "configured"), [(None, True), (True, True), (False, False)])
+async def test_codex_dictation_defaults_and_opt_out(tmp_path: Path, choice: bool | None, configured: bool) -> None:
+    path = tmp_path / "config.yaml"
+    assert (
+        await publish_setup(path, _selection(tmp_path, enable_dictation=choice), validate_candidate=_validate())
+    ).completed
+    root = yaml.safe_load(path.read_text())
+    assert (root.get("dictation") == {"backend": "codex"}) is configured
+    root["dictation"] = {"backend": "model"}
+    path.write_text(yaml.safe_dump(root))
+    assert (
+        await publish_setup(path, _selection(tmp_path, enable_dictation=True), validate_candidate=_validate())
+    ).completed
+    assert yaml.safe_load(path.read_text())["dictation"] == {"backend": "model"}

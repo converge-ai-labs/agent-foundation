@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from contextlib import AbstractAsyncContextManager
 from functools import partial
 from pathlib import Path
@@ -27,7 +26,10 @@ from a13n_harness.providers.environment.configuration import HostLocalProviderCo
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.eip import EIPEnvironmentSession, open_eip_environment
 from a13n_harness.providers.environment.eip.binding import configured_descriptor
-from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdEnvironmentConfiguration,
+    local_envd_native_path,
+)
 from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime
 
 _PROVIDER_KEY = "local_envd"
@@ -192,9 +194,4 @@ class LocalEnvdExecution(ExecutionBackend):
 
 def _native_directory(directory: str) -> Path:
     """Device paths are slash-rooted; Windows drive and UNC paths regain native form."""
-    if os.name == "nt":  # pragma: no cover - exercised on Windows
-        if len(directory) >= 4 and directory[2:4] == ":/":
-            return Path(directory[1:])
-        if directory.startswith("/UNC/"):
-            return Path("//" + directory[5:])
-    return Path(directory)
+    return local_envd_native_path(directory)

@@ -1,6 +1,6 @@
 import { LanguageChoice } from "../i18n/language";
 import { useTranslation } from "../i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,15 +14,26 @@ import {
   DialogFooter,
   FormField,
   Textarea,
+  Switch,
 } from "a13n-ui";
-import { ArrowRight, Check, ShieldCheck, Desktop } from "@phosphor-icons/react";
+import {
+  ArrowRight,
+  Check,
+  Desktop,
+  Key,
+  ShieldCheck,
+  Sparkle,
+} from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
+import { SettingsRow, SettingsSection } from "../shell/settings";
+import { acpPresetBrand, ModelIcon } from "../shell/model-identity";
 import {
-  ModelEditor,
+  connectionId,
   type ModelEditorDraft,
 } from "../configuration/model-editor";
+import { importablePresets, SetupConnections } from "./connections";
 import {
   dismissWizard,
   finishWizard,
@@ -31,31 +42,56 @@ import {
   type WizardDraft,
 } from "./wizard-state";
 import { ShellReviewModel } from "./shell-review";
-import { LiveOptIn } from "./live-opt-in";
 import styles from "./wizard.module.css";
 type Selection = Schema<"SetupSelection">;
 
-export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
+export function SetupWizard({
+  status,
+  returnTo,
+}: {
+  status: Schema<"SetupStatus">;
+  returnTo?: WizardDraft["returnTo"];
+}) {
   const { t } = useTranslation();
   const { client } = useTransport();
   const queries = useQueryClient();
   const navigate = useNavigate();
   const scope = status.draft_scope!;
-  const [draft, setDraft] = useState<WizardDraft>(
-    () =>
-      readWizardDraft(scope) ?? {
-        version: 2,
-        step: 0,
-        selection: {
-          environment_profile: "environment-native",
-          ...status.defaults,
-          include_default_subagents: true,
-          default_agent: "agent-primary",
-        },
-        threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
+  const [draft, setDraft] = useState<WizardDraft>(() => {
+    const existing = readWizardDraft(scope);
+    if (
+      existing?.pending ||
+      (existing && existing.returnTo === returnTo && existing.track)
+    )
+      return existing;
+    let agentId = "agent-primary";
+    for (let i = 2; status.agents[agentId]; i += 1)
+      agentId = `agent-primary-${i}`;
+    return {
+      version: 2,
+      step: 0,
+      originalDefault: status.default_agent,
+      returnTo,
+      selection: {
+        environment_profile: "environment-native",
+        ...status.defaults,
+        default_agent: agentId,
+        set_as_default: !status.default_agent,
+        configure_workspace: !status.default_agent,
+        include_default_subagents: true,
       },
-  );
+      threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
+    };
+  });
   const [modelReady, setModelReady] = useState(false);
+  const [acpNeedsSignIn, setAcpNeedsSignIn] = useState(false);
+  const onConnectionReady = useCallback(
+    (ready: boolean, needsSignIn = false) => {
+      setModelReady(ready);
+      setAcpNeedsSignIn(needsSignIn);
+    },
+    [],
+  );
   const changeModelDraft = useCallback(
     (modelDraft: ModelEditorDraft) =>
       setDraft((value) => ({ ...value, modelDraft })),
@@ -82,12 +118,115 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   }, [draft.step]);
   const selection: Selection = draft.selection;
   const apiKey = selection.model?.authentication.kind === "api_key";
-  const steps = apiKey
-    ? [t("Model"), t("Shell review"), t("Workspace")]
-    : [t("Model"), t("Workspace")];
-  const workspaceStep = steps.length - 1;
-  const reviewStep = apiKey && draft.step === 1;
+  const codex = selection.model?.authentication.kind === "codex_subscription";
+  const acp = selection.primary_acp_agent;
+  const steps = [t("Start"), t("Connect"), t("Workspace")];
+  const workspaceStep = 2;
   const workspaceActive = draft.step === workspaceStep && !draft.pending;
+  const configureWorkspace =
+    selection.configure_workspace !== false &&
+    selection.set_as_default !== false;
+  const configureDefaults = selection.set_as_default !== false;
+  const needsReviewModel =
+    apiKey &&
+    configureDefaults &&
+    !!selection.shell_review &&
+    !selection.shell_review_model;
+  const connectionsQuery = useQuery({
+    queryKey: ["model-choices"],
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/models/choices", { signal })),
+  });
+  const presetsQuery = useQuery({
+    queryKey: ["acp-presets"],
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/acp-agents/presets", { signal })),
+  });
+  const connections = connectionsQuery.data?.connections ?? [];
+  const presets = presetsQuery.data ?? [];
+  const detectedEnvKeys = status.detected_env_keys ?? [];
+  const detectedAccounts = status.providers
+    .filter((provider) => provider.available)
+    .map(
+      ({ provider }) =>
+        connections.find((item) => item.account?.provider === provider)?.account
+          ?.label ?? provider,
+    );
+  const detectedClis = importablePresets(presets, status);
+  const extraClis = importablePresets(
+    presets,
+    status,
+    acp,
+    selection.model?.authentication.kind,
+  );
+  const selectEngine = (
+    engine: string,
+    preset?: NonNullable<Selection["primary_acp_agent"]>["preset"],
+  ) => {
+    if (engine === draft.engine) return;
+    setModelReady(false);
+    setAcpNeedsSignIn(false);
+    setDraft((value) => ({
+      ...value,
+      engine,
+      modelDraft: undefined,
+      selection: {
+        ...value.selection,
+        model: null,
+        primary_acp_agent: preset ? { preset } : null,
+        additional_acp_presets: [],
+        shell_review_model: null,
+        shell_review: false,
+        enable_live: false,
+        enable_dictation: false,
+        auto_organize_memory: !preset,
+        configure_workspace:
+          !value.originalDefault ||
+          !!(
+            value.selection.set_as_default &&
+            preset &&
+            status.environment_profile !== "environment-native"
+          ),
+        ...(preset || value.originalDefault
+          ? {
+              environment_profile:
+                !preset && status.environment_profile === "environment-sandbox"
+                  ? "environment-sandbox"
+                  : "environment-native",
+            }
+          : {}),
+      },
+    }));
+  };
+  const changeModel = useCallback((model: NonNullable<Selection["model"]>) => {
+    setDraft((value) => {
+      const kind = model.authentication.kind;
+      const previous = value.selection.model;
+      const reviewChanged =
+        model.route !== previous?.route ||
+        model.model_configuration?.base_url !==
+          previous?.model_configuration?.base_url;
+      return {
+        ...value,
+        selection: {
+          ...value.selection,
+          model,
+          ...(kind !== previous?.authentication.kind
+            ? {
+                enable_live: kind === "codex_subscription",
+                enable_dictation: kind === "codex_subscription",
+                shell_review:
+                  kind === "codex_subscription" || kind === "grok_subscription",
+                auto_organize_memory: true,
+              }
+            : {}),
+          ...(reviewChanged && kind === "api_key"
+            ? { shell_review_model: null, shell_review: false }
+            : {}),
+        },
+      };
+    });
+  }, []);
   const preview = useQuery({
     queryKey: ["setup-preview", scope, selection],
     queryFn: ({ signal }) =>
@@ -98,7 +237,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
     gcTime: 0,
   });
   const currentPreview = preview.data;
-  const sandbox = selection.environment_profile === "environment-sandbox";
+  const sandbox =
+    configureWorkspace &&
+    selection.environment_profile === "environment-sandbox";
   const targets =
     workspaceActive && sandbox ? currentPreview?.project_paths : undefined;
   const [cancelledTargets, setCancelledTargets] = useState<string>();
@@ -201,10 +342,13 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
     const saved = await result(
       client.GET("/api/setup", { params: { query: { rediscover: true } } }),
     );
+    const agentId = pending.agentId ?? pending.selection.default_agent;
     if (
-      saved.needed ||
       saved.diagnostic ||
-      saved.default_agent !== pending.selection.default_agent
+      !agentId ||
+      (pending.selection.set_as_default === false
+        ? !saved.agents[agentId]
+        : saved.needed || saved.default_agent !== agentId)
     )
       throw new Error(
         "Check the saved configuration files before trying again.",
@@ -213,6 +357,13 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   const openConversation = async (
     pending: NonNullable<WizardDraft["pending"]>,
   ) => {
+    if (draft.returnTo || pending.selection.set_as_default === false) {
+      finishWizard(scope);
+      void queries.invalidateQueries();
+      navigate(draft.returnTo ?? "/settings/agents", { replace: true });
+      return;
+    }
+    const agentId = pending.agentId ?? pending.selection.default_agent;
     setPhase("Opening your first chat…");
     const lookup = async () => {
       try {
@@ -235,9 +386,12 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             body: {
               thread_id: draft.threadId,
               defaults: {
-                agent_id: pending.selection.default_agent,
+                agent_id: agentId,
                 project_id: pending.selection.project ?? null,
                 environment_profile_id: pending.selection.environment_profile,
+                ...(pending.selection.primary_acp_agent
+                  ? { environment_bindings: [] }
+                  : {}),
               },
             },
           }),
@@ -251,8 +405,11 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
     const configured = found?.thread.configuration;
     if (
       !configured ||
-      configured.agent_source.kind !== "agent" ||
-      configured.agent_source.id !== pending.selection.default_agent ||
+      configured.agent_source.kind !==
+        (pending.selection.primary_acp_agent ? "acp_agent" : "agent") ||
+      configured.agent_source.id !== agentId ||
+      (!!pending.selection.primary_acp_agent &&
+        !!configured.environment_bindings?.length) ||
       configured.environment_profile_id !==
         pending.selection.environment_profile ||
       (configured.project_id ?? null) !== (pending.selection.project ?? null)
@@ -272,10 +429,15 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         !currentPreview ||
         preparing ||
         preparationError ||
+        needsReviewModel ||
         (sandbox && !sandboxReady)
       )
         return;
-      const pending = { selection, files: currentPreview.files };
+      const pending = {
+        selection,
+        files: currentPreview.files,
+        agentId: currentPreview.agent_id ?? undefined,
+      };
       const next = { ...draft, pending };
       // Persist the exact publication intent before sending. Reload never resubmits it.
       if (!saveWizardDraft(scope, next))
@@ -301,11 +463,12 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   const close = () => {
     if (busyRef.current) return;
     dismissWizard(scope);
-    navigate("/?setup=later", { replace: true });
+    navigate(draft.returnTo ?? "/?setup=later", { replace: true });
   };
   return (
     <Dialog
       open
+      disablePointerDismissal
       onOpenChange={(open) => {
         if (!open) close();
       }}
@@ -313,43 +476,49 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       <DialogPopup
         initialFocus={heading}
         finalFocus={false}
-        className={styles.wizard}
+        className={`${styles.wizard} ${draft.step === 0 && !draft.pending ? styles.start : ""}`}
         closeProps={{
-          "aria-label": t("Set up later"),
+          "aria-label": t("Cancel setup"),
           disabled: busy,
         }}
       >
-        <DialogHeader>
+        <DialogHeader className={styles.header}>
           <DialogTitle className={styles.title}>
             {t("Set up Harness")}
           </DialogTitle>
           <DialogDescription>
-            {t("Connect a model and choose where it can work.")}
+            {t("Connect a model or local agent and choose where it can work.")}
           </DialogDescription>
-          <LanguageChoice />
-          <ol className={styles.steps} aria-label={t("Setup progress")}>
-            {steps.map((step, index) => (
-              <li
-                key={index}
-                aria-current={index === draft.step ? "step" : undefined}
-                data-complete={index < draft.step}
-              >
-                <span>
-                  {index < draft.step ? <Check size={14} /> : index + 1}
-                </span>
-                {step}
-              </li>
-            ))}
-          </ol>
+          <div className={styles.progress}>
+            <ol className={styles.steps} aria-label={t("Setup progress")}>
+              {steps.map((step, index) => (
+                <li
+                  key={index}
+                  aria-current={index === draft.step ? "step" : undefined}
+                  data-complete={index < draft.step}
+                >
+                  <span>
+                    {index < draft.step ? (
+                      <Check size={12} weight="bold" aria-hidden />
+                    ) : (
+                      index + 1
+                    )}
+                  </span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            {!draft.returnTo && <LanguageChoice compact />}
+          </div>
         </DialogHeader>
-        <DialogPanel scrollFade={false}>
+        <DialogPanel className={styles.panel}>
           <div className={styles.content}>
             <h2 ref={heading} tabIndex={-1}>
               {draft.step === 0
-                ? t("Choose your everyday model")
-                : reviewStep
-                  ? t("Choose a shell review model")
-                  : t("Decide where your agent works")}
+                ? t("Choose how to start")
+                : draft.step === 1
+                  ? t("Connect your primary engine")
+                  : t("Capabilities and workspace")}
             </h2>
             <ErrorNotice
               error={error}
@@ -400,263 +569,467 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             ) : (
               <fieldset disabled={busy} className={styles.fields}>
                 {draft.step === 0 && (
-                  <div className={styles.stack}>
-                    <ModelEditor
-                      draft={draft.modelDraft}
-                      onDraftChange={changeModelDraft}
-                      value={selection.model ?? null}
-                      onChange={(model) =>
-                        changeSelection({
-                          model,
-                          shell_review_model: null,
-                          shell_review: model.authentication.kind !== "api_key",
-                        })
-                      }
-                      onReady={setModelReady}
-                    />
-                    <details className={styles.advanced}>
-                      <summary>{t("Agent options")}</summary>
-                      <div className={styles.stack}>
-                        <label className={styles.check}>
-                          <input
-                            type="checkbox"
-                            checked={selection.tool_capabilities == null}
-                            onChange={(event) =>
-                              changeSelection({
-                                tool_capabilities: event.target.checked
-                                  ? null
-                                  : [],
-                              })
-                            }
-                          />{" "}
-                          {t("Enable recommended model tools")}
-                        </label>
-                        <label className={styles.check}>
-                          <input
-                            type="checkbox"
-                            checked={
-                              selection.include_default_subagents ?? true
-                            }
-                            onChange={(event) =>
-                              changeSelection({
-                                include_default_subagents: event.target.checked,
-                              })
-                            }
-                          />{" "}
-                          {t("Include built-in subagents")}
-                        </label>
-                        <FormField label={t("Additional agent instructions")}>
-                          <Textarea
-                            rows={4}
-                            value={selection.instructions ?? ""}
-                            onChange={(event) =>
-                              changeSelection({
-                                instructions: event.target.value,
-                              })
-                            }
+                  <div
+                    className={styles.connections}
+                    role="group"
+                    aria-label={t("Connection tracks")}
+                  >
+                    {(["subscription", "api"] as const).map((track) => (
+                      <button
+                        key={track}
+                        type="button"
+                        className={styles.choiceCard}
+                        aria-pressed={draft.track === track}
+                        onClick={() => {
+                          if (draft.track !== track) {
+                            patch({ track });
+                            selectEngine(
+                              track === "subscription"
+                                ? "codex"
+                                : "openai-responses",
+                            );
+                          }
+                        }}
+                      >
+                        <span className={styles.cardTitle}>
+                          {track === "subscription" ? (
+                            <Sparkle size={18} aria-hidden />
+                          ) : (
+                            <Key size={18} aria-hidden />
+                          )}
+                          <strong>
+                            {track === "subscription"
+                              ? t("Subscription")
+                              : t("API Key")}
+                          </strong>
+                          {track === "subscription" && (
+                            <small className={styles.badge}>
+                              {t("Recommended")}
+                            </small>
+                          )}
+                          <Check
+                            size={14}
+                            weight="bold"
+                            className={styles.selectedMark}
+                            aria-hidden
                           />
-                        </FormField>
-                      </div>
-                    </details>
+                        </span>
+                        <span className={styles.cardDescription}>
+                          {track === "subscription"
+                            ? t("Use a subscription account or a local AI CLI.")
+                            : t("Connect to an API provider with a key.")}
+                        </span>
+                        {track === "subscription"
+                          ? (detectedAccounts.length > 0 ||
+                              detectedClis.length > 0) && (
+                              <span className={styles.detection}>
+                                {!!detectedAccounts.length && (
+                                  <small>
+                                    {t("Accounts found: {{names}}", {
+                                      names: detectedAccounts.join(", "),
+                                    })}
+                                  </small>
+                                )}
+                                {!!detectedClis.length && (
+                                  <small>
+                                    {t("Local CLIs found: {{names}}", {
+                                      names: detectedClis
+                                        .map(({ name }) => name)
+                                        .join(", "),
+                                    })}
+                                  </small>
+                                )}
+                              </span>
+                            )
+                          : detectedEnvKeys.length > 0 && (
+                              <span className={styles.detection}>
+                                <small>
+                                  {t("Server keys found: {{names}}", {
+                                    names: detectedEnvKeys.join(", "),
+                                  })}
+                                </small>
+                              </span>
+                            )}
+                      </button>
+                    ))}
                   </div>
                 )}
-                {reviewStep && selection.model && (
-                  <div className={styles.stack}>
-                    <ShellReviewModel
-                      model={selection.model}
-                      value={selection.shell_review_model ?? ""}
-                      onChange={(value) =>
-                        changeSelection({
-                          shell_review_model: value || null,
-                          shell_review: !!value.trim(),
-                        })
-                      }
+                {draft.step === 1 && draft.track && (
+                  <>
+                    <ErrorNotice
+                      error={connectionsQuery.error || presetsQuery.error}
                     />
-                  </div>
+                    {connectionsQuery.isPending ? (
+                      <p role="status">{t("Loading model connections…")}</p>
+                    ) : (
+                      <SetupConnections
+                        track={draft.track}
+                        engine={
+                          draft.engine ??
+                          connectionId(selection.model ?? null, connections)
+                        }
+                        connections={connections}
+                        presets={presets}
+                        draft={draft.modelDraft}
+                        recipe={selection.model ?? null}
+                        candidate={acp}
+                        detectedEnvKeys={detectedEnvKeys}
+                        onEngine={selectEngine}
+                        onCandidate={(primary_acp_agent) =>
+                          changeSelection({ primary_acp_agent })
+                        }
+                        onDraft={changeModelDraft}
+                        onModel={changeModel}
+                        onReady={onConnectionReady}
+                      />
+                    )}
+                  </>
                 )}
                 {draft.step === workspaceStep && (
                   <div className={styles.stack}>
-                    <div
-                      className={styles.environments}
-                      role="group"
-                      aria-label={t("Local mode - Harness server")}
-                    >
-                      {(
-                        [
-                          [
-                            "environment-native",
-                            t("Full Control"),
-                            Desktop,
-                            t(
-                              "Run directly as your host account with full filesystem and network access.",
-                            ),
-                          ],
-                          [
-                            "environment-sandbox",
-                            t("Sandbox"),
-                            ShieldCheck,
-                            t(
-                              "Runs in a sandbox. Downloads envd if needed and checks isolation.",
-                            ),
-                          ],
-                        ] as const
-                      ).map(([value, label, Icon, description]) => (
-                        <button
-                          type="button"
-                          key={value}
-                          aria-label={label}
-                          aria-pressed={selection.environment_profile === value}
-                          onClick={() =>
-                            changeSelection({ environment_profile: value })
+                    {draft.originalDefault && (
+                      <SettingsSection variant="grouped">
+                        <SetupToggle
+                          label={t("Set as default agent")}
+                          description={t("Current default: {{agent}}", {
+                            agent:
+                              status.agents[draft.originalDefault] ??
+                              draft.originalDefault,
+                          })}
+                          checked={configureDefaults}
+                          onChange={(set_as_default) =>
+                            changeSelection({
+                              set_as_default,
+                              configure_workspace: !!(
+                                set_as_default &&
+                                acp &&
+                                status.environment_profile !==
+                                  "environment-native"
+                              ),
+                            })
                           }
-                        >
-                          <Icon size={22} />
-                          <strong>{label}</strong>
-                          <span>{description}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className={styles.runtimeStatus}>
-                      <strong>
-                        {sandbox ? t("Sandbox runtime") : t("Direct execution")}
-                      </strong>
+                        />
+                      </SettingsSection>
+                    )}
+                    {acp ? (
                       <p>
-                        {sandbox
-                          ? t("envd runs on this server.")
-                          : t(
-                              "No envd download is needed for Full Control with Direct.",
-                            )}
+                        {t(
+                          "Local CLI agents use Full Control. Add a native model to use Live Voice, Dictation, Sandbox, and automatic memory organization.",
+                        )}
                       </p>
-                      <Link to="/settings/runtime">
-                        {t("Manage envd & Computer Use")}
-                      </Link>
-                      {sandbox && (
-                        <>
-                          <p role="status">{preparationStatus}</p>
-                          {sandboxCheck.isFetching &&
-                            runtime.data?.phase === "downloading" && (
-                              <progress
-                                aria-label={t("envd download")}
-                                max={runtime.data.total_bytes ?? undefined}
-                                value={
-                                  runtime.data.total_bytes
-                                    ? runtime.data.downloaded_bytes
-                                    : undefined
-                                }
-                              />
+                    ) : (
+                      <SettingsSection
+                        variant="grouped"
+                        title={t("Auto-configured capabilities")}
+                        description={
+                          configureDefaults
+                            ? undefined
+                            : t(
+                                "Application defaults stay unchanged when adding a connection.",
+                              )
+                        }
+                      >
+                        <SetupToggle
+                          label={
+                            configureDefaults
+                              ? t("Recommended tools & built-in subagents")
+                              : t("Recommended model tools")
+                          }
+                          checked={selection.tool_capabilities == null}
+                          onChange={(enabled) =>
+                            changeSelection({
+                              tool_capabilities: enabled ? null : [],
+                              include_default_subagents: enabled,
+                            })
+                          }
+                        />
+                        {configureDefaults ? (
+                          <>
+                            {codex && (
+                              <>
+                                <SetupToggle
+                                  label={t("Live Voice")}
+                                  checked={selection.enable_live ?? true}
+                                  onChange={(enable_live) =>
+                                    changeSelection({ enable_live })
+                                  }
+                                />
+                                <SetupToggle
+                                  label={t("Voice Dictation")}
+                                  checked={selection.enable_dictation ?? true}
+                                  onChange={(enable_dictation) =>
+                                    changeSelection({ enable_dictation })
+                                  }
+                                />
+                              </>
                             )}
-                          {sandboxCheck.isFetching && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setCancelledTargets(targetKey);
-                                void queries.cancelQueries({
-                                  queryKey: ["setup-sandbox", scope, targets],
-                                  exact: true,
-                                });
-                              }}
-                            >
-                              {t("Cancel preparation")}
-                            </Button>
+                            <SetupToggle
+                              label={
+                                codex
+                                  ? t("Guardian Shell Review")
+                                  : t("Shell review")
+                              }
+                              checked={!!selection.shell_review}
+                              onChange={(shell_review) =>
+                                changeSelection({
+                                  shell_review,
+                                  ...(shell_review
+                                    ? {}
+                                    : { shell_review_model: null }),
+                                })
+                              }
+                            />
+                            {apiKey &&
+                              selection.shell_review &&
+                              selection.model && (
+                                <ShellReviewModel
+                                  model={selection.model}
+                                  value={selection.shell_review_model ?? ""}
+                                  onChange={(value) =>
+                                    changeSelection({
+                                      shell_review_model: value || null,
+                                    })
+                                  }
+                                />
+                              )}
+                            <SetupToggle
+                              label={t("Auto-organize Memory")}
+                              description={t(
+                                "Automatic memory updates use model quota.",
+                              )}
+                              checked={selection.auto_organize_memory ?? true}
+                              onChange={(auto_organize_memory) =>
+                                changeSelection({ auto_organize_memory })
+                              }
+                            />
+                          </>
+                        ) : null}
+                      </SettingsSection>
+                    )}
+                    {!!extraClis.length && (
+                      <SettingsSection
+                        variant="grouped"
+                        title={t("Also add detected local CLI agents")}
+                      >
+                        {extraClis.map(({ id, name }) => (
+                          <SetupToggle
+                            key={id}
+                            label={name}
+                            brand={acpPresetBrand(id)}
+                            checked={
+                              selection.additional_acp_presets?.includes(id) ??
+                              false
+                            }
+                            onChange={(enabled) =>
+                              changeSelection({
+                                additional_acp_presets: enabled
+                                  ? [
+                                      ...(selection.additional_acp_presets ??
+                                        []),
+                                      id,
+                                    ]
+                                  : selection.additional_acp_presets?.filter(
+                                      (preset) => preset !== id,
+                                    ),
+                              })
+                            }
+                          />
+                        ))}
+                      </SettingsSection>
+                    )}
+                    {configureWorkspace && (
+                      <>
+                        <div className={styles.sectionGroup}>
+                          <h3 className={styles.sectionHeading}>
+                            {t("Execution environment")}
+                          </h3>
+                          {acp && draft.originalDefault && (
+                            <p>
+                              {t(
+                                "Setting an ACP agent as default changes the execution default to Full Control.",
+                              )}
+                            </p>
                           )}
-                          {Object.entries(readiness)
-                            .filter(([, value]) => !value.ready)
-                            .map(([path, value]) => (
-                              <div key={path}>
-                                <p>{value.message}</p>
-                                {value.instructions?.map((line) => (
-                                  <p key={line}>{line}</p>
-                                ))}
-                              </div>
+                          <div
+                            className={styles.environments}
+                            role="group"
+                            aria-label={t("Local mode - Harness server")}
+                          >
+                            {(
+                              [
+                                [
+                                  "environment-native",
+                                  t("Full Control"),
+                                  Desktop,
+                                  t(
+                                    "Run directly as your host account with full filesystem and network access.",
+                                  ),
+                                ],
+                                [
+                                  "environment-sandbox",
+                                  t("Sandbox"),
+                                  ShieldCheck,
+                                  t(
+                                    "Runs in a sandbox. Downloads envd if needed and checks isolation.",
+                                  ),
+                                ],
+                              ] as const
+                            ).map(([value, label, Icon, description]) => (
+                              <button
+                                type="button"
+                                key={value}
+                                className={styles.choiceCard}
+                                aria-label={label}
+                                aria-pressed={
+                                  selection.environment_profile === value
+                                }
+                                disabled={
+                                  !!acp && value === "environment-sandbox"
+                                }
+                                onClick={() =>
+                                  changeSelection({
+                                    environment_profile: value,
+                                  })
+                                }
+                              >
+                                <span className={styles.cardTitle}>
+                                  <Icon size={18} aria-hidden />
+                                  <strong>{label}</strong>
+                                  <Check
+                                    size={14}
+                                    weight="bold"
+                                    className={styles.selectedMark}
+                                    aria-hidden
+                                  />
+                                </span>
+                                <span className={styles.cardDescription}>
+                                  {description}
+                                </span>
+                              </button>
                             ))}
-                          {!preparing && !sandboxReady && currentPreview && (
+                          </div>
+                        </div>
+                        <div className={styles.runtimeStatus}>
+                          <strong>
+                            {sandbox
+                              ? t("Sandbox runtime")
+                              : t("Direct execution")}
+                          </strong>
+                          <p>
+                            {sandbox
+                              ? t("envd runs on this server.")
+                              : t(
+                                  "No envd download is needed for Full Control with Direct.",
+                                )}
+                          </p>
+                          <Link to="/settings/runtime">
+                            {t("Manage envd & Computer Use")}
+                          </Link>
+                          {sandbox && (
+                            <>
+                              <p role="status">{preparationStatus}</p>
+                              {sandboxCheck.isFetching &&
+                                runtime.data?.phase === "downloading" && (
+                                  <progress
+                                    aria-label={t("envd download")}
+                                    max={runtime.data.total_bytes ?? undefined}
+                                    value={
+                                      runtime.data.total_bytes
+                                        ? runtime.data.downloaded_bytes
+                                        : undefined
+                                    }
+                                  />
+                                )}
+                              {sandboxCheck.isFetching && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setCancelledTargets(targetKey);
+                                    void queries.cancelQueries({
+                                      queryKey: [
+                                        "setup-sandbox",
+                                        scope,
+                                        targets,
+                                      ],
+                                      exact: true,
+                                    });
+                                  }}
+                                >
+                                  {t("Cancel preparation")}
+                                </Button>
+                              )}
+                              {Object.entries(readiness)
+                                .filter(([, value]) => !value.ready)
+                                .map(([path, value]) => (
+                                  <div key={path}>
+                                    <p>{value.message}</p>
+                                    {value.instructions?.map((line) => (
+                                      <p key={line}>{line}</p>
+                                    ))}
+                                  </div>
+                                ))}
+                              {!preparing &&
+                                !sandboxReady &&
+                                currentPreview && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (cancelled)
+                                        setCancelledTargets(undefined);
+                                      else void sandboxCheck.refetch();
+                                    }}
+                                  >
+                                    {t("Retry sandbox")}
+                                  </Button>
+                                )}
+                            </>
+                          )}
+                          <ErrorNotice error={preparationError} />
+                          {preview.error && (
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => {
-                                if (cancelled) setCancelledTargets(undefined);
-                                else void sandboxCheck.refetch();
-                              }}
+                              onClick={() => void preview.refetch()}
                             >
-                              {t("Retry sandbox")}
+                              {t("Check again")}
                             </Button>
                           )}
-                        </>
-                      )}
-                      <ErrorNotice error={preparationError} />
-                      {preview.error && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void preview.refetch()}
-                        >
-                          {t("Check again")}
-                        </Button>
-                      )}
-                    </div>
-                    <TextField
-                      label={t("Project directory (optional)")}
-                      value={selection.project_path ?? ""}
-                      onChange={(path) =>
-                        changeSelection({
-                          project: path ? "project-workspace" : null,
-                          project_path: path || null,
-                        })
-                      }
-                      description={t(
-                        "An existing folder on the server. Leave blank for a new workspace.",
-                      )}
-                    />
-                    <LiveOptIn
-                      model={selection.model}
-                      enabled={selection.enable_live ?? true}
-                      onChange={(enable_live) =>
-                        changeSelection({ enable_live })
-                      }
-                    />
-                    {!apiKey && (
-                      <details className={styles.advanced}>
-                        <summary>{t("Shell review")}</summary>
-                        <label className={styles.check}>
-                          <input
-                            type="checkbox"
-                            checked={selection.shell_review ?? true}
-                            onChange={(event) =>
-                              changeSelection({
-                                shell_review: event.target.checked,
-                              })
-                            }
-                          />{" "}
-                          {t("Review shell commands before execution")}
-                        </label>
-                        <p>{t("Uses model requests to review commands.")}</p>
-                      </details>
-                    )}
-                    {apiKey && (
-                      <p>
-                        {t("Shell review: {{model}}", {
-                          model:
-                            selection.shell_review_model ||
-                            t("Off — no model selected"),
-                        })}
-                      </p>
-                    )}
-                    <div className={styles.summary}>
-                      <strong>{selection.model?.route}</strong>
-                      <span>
-                        {sandbox ? t("Sandbox") : t("Full Control")} -{" "}
-                        {selection.project_path || t("Without a project")}
-                      </span>
-                    </div>
-                    {currentPreview && (
-                      <>
-                        <p>
-                          {t(
-                            "Automatic memory updates use model quota. Manage them in Settings → Memory.",
+                        </div>
+                        <TextField
+                          label={t("Project directory (optional)")}
+                          value={selection.project_path ?? ""}
+                          onChange={(path) =>
+                            changeSelection({
+                              project: path ? "project-workspace" : null,
+                              project_path: path || null,
+                            })
+                          }
+                          description={t(
+                            "An existing folder on the server. Leave blank for a new workspace.",
                           )}
-                        </p>
-                        <details className={styles.advanced}>
+                        />
+                      </>
+                    )}
+                    {!configureWorkspace && (
+                      <ErrorNotice error={preparationError} />
+                    )}
+                    <details className={styles.advanced}>
+                      <summary>{t("Advanced")}</summary>
+                      <FormField label={t("Additional agent instructions")}>
+                        <Textarea
+                          rows={4}
+                          value={selection.instructions ?? ""}
+                          onChange={(event) =>
+                            changeSelection({
+                              instructions: event.target.value,
+                            })
+                          }
+                        />
+                      </FormField>
+                      {currentPreview && (
+                        <details>
                           <summary>
                             {t("Generated files ({{count}})", {
                               count: Object.keys(currentPreview.files).length,
@@ -671,8 +1044,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                             ),
                           )}
                         </details>
-                      </>
-                    )}
+                      )}
+                    </details>
                   </div>
                 )}
               </fieldset>
@@ -691,7 +1064,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             disabled={busy}
             onClick={close}
           >
-            {t("Set up later")}
+            {draft.returnTo ? t("Cancel") : t("Set up later")}
           </button>
           <div>
             <span className={styles.stepCount}>
@@ -718,27 +1091,26 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     preparing ||
                     !!preparationError ||
                     !currentPreview ||
+                    needsReviewModel ||
                     (sandbox && !sandboxReady)
                   }
                   onClick={() => void save()}
                 >
-                  {t("Save and start")}
+                  {draft.returnTo ? t("Save connection") : t("Save and start")}
                   <ArrowRight />
                 </Button>
               ) : (
                 <Button
                   disabled={
                     busy ||
-                    (draft.step === 0 && !modelReady) ||
-                    (reviewStep &&
-                      !!selection.shell_review_model &&
-                      /\s/.test(selection.shell_review_model))
+                    (draft.step === 0 && !draft.track) ||
+                    (draft.step === 1 && !modelReady)
                   }
                   onClick={() => patch({ step: draft.step + 1 })}
                 >
-                  {reviewStep && !selection.shell_review_model
-                    ? t("Skip shell review")
-                    : t("Continue")}{" "}
+                  {draft.step === 1 && acp && acpNeedsSignIn
+                    ? t("Continue without signing in")
+                    : t("Continue")}
                   <ArrowRight />
                 </Button>
               ))}
@@ -746,5 +1118,44 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         </DialogFooter>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+function SetupToggle({
+  label,
+  description,
+  brand,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  brand?: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <SettingsRow
+      label={
+        brand ? (
+          <span className={styles.brandedLabel}>
+            <ModelIcon modelIdentity={brand} />
+            {label}
+          </span>
+        ) : (
+          label
+        )
+      }
+      description={description}
+      controlId={id}
+    >
+      <Switch
+        id={id}
+        aria-describedby={description ? `${id}-description` : undefined}
+        checked={checked}
+        onCheckedChange={onChange}
+      />
+    </SettingsRow>
   );
 }

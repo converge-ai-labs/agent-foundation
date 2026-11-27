@@ -5,7 +5,7 @@ import { useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
-import { IconTile } from "../../shared/identity";
+import { AppBadge, IconTile } from "../../shared/identity";
 import { DetailHeader, DetailPage, useTabParam } from "../../shared/page";
 import { memoryQueries } from "./api";
 import { MemoryFiles } from "./detail/files";
@@ -70,7 +70,12 @@ function SpaceTabs({ resource }: { resource: SpaceResource }) {
             </IconTile>
           }
           name={space.name}
-          status={<StatePill state={space.enabled ? "enabled" : "disabled"} />}
+          status={
+            <>
+              <StatePill state={space.enabled ? "enabled" : "disabled"} />
+              {space.app_id && <AppBadge appId={space.app_id} />}
+            </>
+          }
           description={space.description}
         />
       }

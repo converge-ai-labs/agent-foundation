@@ -414,11 +414,8 @@ class HostFiles:
                 with os.fdopen(fd, "wb") as stream:
                     stream.write(data)
                     stream.flush()
-                    if current is not None:
-                        if os.name == "posix":
-                            os.fchmod(stream.fileno(), current.mode)
-                        else:
-                            os.chmod(temporary, current.mode)
+                    if current is not None and os.name == "posix":
+                        os.fchmod(stream.fileno(), current.mode)
                     os.fsync(stream.fileno())
                 _expect(target, expected_revision)
                 if current is None:

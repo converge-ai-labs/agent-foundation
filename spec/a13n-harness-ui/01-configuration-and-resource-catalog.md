@@ -60,6 +60,7 @@ schema_version: "1"
 
 process:
   pricing_auto_update: true
+  update_check: true
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
@@ -129,7 +130,9 @@ The root `browser` object configures the optional Host browser runtime. `mode` i
 
 `process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
 
-`process.terminal_update_check` defaults to `true` and enables the terminal-only startup package update check and confirmation prompt. It never authorizes installation; startup installation requires a fresh explicit answer. The separate `a13n-harness-ui update` command explicitly requests installation and is not controlled by this setting. `--no-update-check` disables detection for one invocation without editing configuration, and the source-development `make a13n-harness-ui` target always sets it. The [interactive contract](07-interactive-cli.md#startup-and-terminal-ownership) owns caching, confirmation, installer handoff, logging, and exit behavior. `process.log_format` continues to control noninteractive logging; interactive diagnostics are always structured files.
+`process.update_check` defaults to `true` and enables the [WebUI update and advisory checks](webui/04-workbench-interaction.md#update-notices) and the [terminal startup release check](07-interactive-cli.md#startup-and-terminal-ownership). `process.terminal_update_check` also defaults to `true` and remains an additional terminal-only switch. These process settings take effect at launch. The root `--no-update-check` flag skips detection for one invocation of either surface; the source-development `make a13n-harness-ui` target always sets it. `a13n-harness-ui update` explicitly requests installation independently of detection settings.
+
+`process.log_format` controls noninteractive logging; interactive diagnostics use structured files.
 
 The root also accepts `display.theme` (`auto` by default, or `dark`/`light`), `display.mode` (`concise` by default), `display.show_status` (true), `display.max_tool_result_lines` (5, range 1–200), and `display.max_tool_argument_chars` (8192, range 128–65536). The CLI reads these at startup; explicit launch or live mode selections take precedence. These are presentation settings, not model or permission controls. Listener bind address and API key are process-local `a13n-harness-ui webui` arguments, not desired-resource configuration. The [interactive contract](07-interactive-cli.md) owns terminal behavior.
 

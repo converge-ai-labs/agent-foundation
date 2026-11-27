@@ -197,7 +197,12 @@ def test_api_wizard_backtracking_drops_incompatible_settings_and_endpoints() -> 
     while wizard.question is None or wizard.question.key != "api_provider":
         assert wizard.back()
     wizard.accept("openai-responses")
-    assert wizard.values == {"model_source": "new", "provider": "api", "api_provider": "openai-responses"}
+    assert wizard.values == {
+        "model_source": "new",
+        "track": "api",
+        "provider": "api",
+        "api_provider": "openai-responses",
+    }
     assert wizard.question.default == "https://api.openai.com/v1"
 
 
@@ -219,7 +224,7 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
     questions, output = [], []
 
     async def ask(question, selection):
-        if question.key in {"tools", "review_model"}:
+        if question.key in {"tools", "review_model", "additional_acp"}:
             return question.default
         questions.append(question)
         assert answers, question
@@ -260,7 +265,7 @@ async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_p
     answers = deque(["api", "anthropic", "https://api.anthropic.com", "new", "fixture-key"])
 
     async def ask(question, selection):
-        if question.key in {"tools", "review_model"}:
+        if question.key in {"tools", "review_model", "additional_acp"}:
             return question.default
         if not answers:
             raise SetupCancelled()
@@ -627,6 +632,16 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
     assert wizard.values["model"] == "Qwen/My-Custom-Model"
 
 
+@pytest.mark.parametrize(
+    ("provider", "model_id"),
+    [("google", "gemini-2.5-pro"), ("google", "gemini-2.5-flash"), ("openrouter", "google/gemini-2.5-pro")],
+)
+def test_deprecated_gemini_models_are_not_suggested(provider: str, model_id: str) -> None:
+    from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS
+
+    assert model_id not in API_MODEL_SUGGESTIONS[provider]
+
+
 @pytest.mark.parametrize("hint,expected", [(None, 350000), (1000000, 350000), (128000, 128000)])
 def test_api_context_defaults_manual_override_and_model_change(hint, expected) -> None:
     wizard = SetupWizard()
@@ -716,7 +731,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
     answers = deque(["api", provider, "", "off", "new", "env:TEST_KEY", model_id, "", "none", "", "", "full-control"])
 
     async def ask(question, selection):
-        if question.key in {"tools", "review_model"}:
+        if question.key in {"tools", "review_model", "additional_acp"}:
             return question.default
         assert answers, question
         return answers.popleft()

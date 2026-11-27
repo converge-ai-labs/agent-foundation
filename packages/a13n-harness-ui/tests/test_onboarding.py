@@ -15,6 +15,11 @@ from a13n_harness_ui.interactive.setup import SetupWizard
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
 
+@pytest.fixture(autouse=True)
+def isolate_acp_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("a13n_harness_ui.acp_sessions.acp_presets", lambda: ())
+
+
 def _codex_login_file(expiry: datetime) -> Path:
     home = Path(os.environ["CODEX_HOME"])
     home.mkdir(parents=True, exist_ok=True)
@@ -44,7 +49,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=-1 if expired else 1))
     original = account.read_bytes()
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
-    answers = deque(["codex", "gpt-6-sol", fast, "", "full-control"])
+    answers = deque(["subscription", "codex", "gpt-6-sol", fast, "", "full-control"])
     asked, output = [], []
 
     async def ask(question, selection):
@@ -60,7 +65,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
         codex_login=unexpected,
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
-    assert asked == ["provider", "model", "fast", "tools", "environment"]
+    assert asked == ["track", "provider", "model", "fast", "tools", "environment"]
     assert not answers
     assert "Using existing Codex login" in "\n".join(output)
     assert account.read_bytes() == original
@@ -100,7 +105,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
     )
     original = project.read_bytes()
     output = []
-    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
+    answers = deque(["subscription", "codex", "gpt-6-sol", "", "", "full-control"])
 
     async def ask(question, selection):
         return answers.popleft()
@@ -144,12 +149,12 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
         )
     )
     original = grok.read_bytes()
-    answers = deque(["grok", "", "", "full-control"])
+    answers = deque(["subscription", "grok", "", "", "full-control"])
     output = []
 
     async def ask(question, selection):
         if question.key == "provider":
-            assert question.default == "grok"
+            assert question.default == "codex"
             assert "existing login" in selection.choices[1].description
         if question.key == "model":
             assert question.default == "grok-4.7"
@@ -190,7 +195,7 @@ async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cance
 @pytest.mark.anyio
 async def test_missing_account_offers_explicit_login_and_allows_configuring_later(tmp_path: Path) -> None:
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
-    answers = deque(["codex", "later", "gpt-6-sol", "", "", "full-control"])
+    answers = deque(["subscription", "codex", "later", "gpt-6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -215,7 +220,9 @@ async def test_missing_account_offers_explicit_login_and_allows_configuring_late
 async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> None:
     answers = deque(
         [
+            "subscription",
             "codex",
+            SetupBack(),
             SetupBack(),
             "api",
             "openai-responses",
@@ -247,6 +254,7 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
 
 def test_custom_settings_are_optional_and_connection_change_clears_stale_values() -> None:
     wizard = SetupWizard(advanced=True)
+    wizard.accept("subscription")
     wizard.accept("codex")
     wizard.accept("gpt-6-astra")
     for value in ("on", "all", "extended", "low", "", "no", "be concise", "full-control"):
@@ -256,7 +264,7 @@ def test_custom_settings_are_optional_and_connection_change_clears_stale_values(
     while wizard.history:
         assert wizard.back()
     wizard.accept("api")
-    assert wizard.values == {"provider": "api"}
+    assert wizard.values == {"track": "api", "provider": "api"}
     assert wizard.advanced
 
 
@@ -501,7 +509,7 @@ async def test_landing_busy_cancellation_releases_terminal() -> None:
 async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaults(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
+    answers = deque(["subscription", "codex", "gpt-6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -515,9 +523,9 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
         root = path.read_bytes()
         asked.clear()
-        answers.extend(["new", "codex", "gpt-6-astra", "", "", "Astra coding"])
+        answers.extend(["new", "subscription", "codex", "gpt-6-astra", "", "", "Astra coding"])
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
-        assert asked == ["model_source", "provider", "model", "fast", "tools", "name"]
+        assert asked == ["model_source", "track", "provider", "model", "fast", "tools", "name"]
         assert path.read_bytes() == root
         source = await app.current_configuration()
         assert source.models[source.agents["agent-astra-coding"].model].route == "openai-codex:gpt-6-astra"
@@ -529,7 +537,7 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
 async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, api: bool) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
+    answers = deque(["subscription", "codex", "gpt-6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -559,12 +567,12 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
                     "later",
                 ]
                 if api
-                else ["codex", "gpt-6-astra", "", "Shared model", "later"]
+                else ["subscription", "codex", "gpt-6-astra", "", "Shared model", "later"]
             )
             assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_model=True)
             assert asked == (
                 [
-                    "provider",
+                    "track",
                     "api_provider",
                     "base_url",
                     "credential_source",
@@ -576,7 +584,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
                     "action",
                 ]
                 if api
-                else ["provider", "model", "fast", "name", "action"]
+                else ["track", "provider", "model", "fast", "name", "action"]
             )
         source = await app.current_configuration()
         assert set(source.agents) == {"agent-codex"}
@@ -606,7 +614,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
 @pytest.mark.anyio
 async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
-    answers = deque(["codex", "gpt-6-sol", "", "", "full-control"])
+    answers = deque(["subscription", "codex", "gpt-6-sol", "", "", "full-control"])
 
     async def ask(question, selection):
         value = answers.popleft()
@@ -619,7 +627,9 @@ async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path:
         configuration_path=tmp_path / "config.yaml",
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
-        answers.extend(["model-codex", SetupBack(), "new", "codex", "gpt-6-astra", "", "", "Independent"])
+        answers.extend(
+            ["model-codex", SetupBack(), "new", "subscription", "codex", "gpt-6-astra", "", "", "Independent"]
+        )
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
         source = await app.current_configuration()
         assert source.agents["agent-independent"].model == "model-agent-independent"
@@ -661,6 +671,8 @@ async def test_inline_login_uses_shared_sessions_and_survives_setup_cancellation
             presented.set()
 
     async def ask(question, selection):
+        if question.key == "track":
+            return "subscription"
         if question.key == "provider":
             return "codex"
         if question.key == "action":
@@ -689,6 +701,7 @@ async def test_cancelling_inline_login_stops_the_shared_session(
     import asyncio
 
     from a13n_harness_ui.interactive.onboarding import _ensure_account
+    from a13n_harness_ui.model_authoring import SUBSCRIPTION_CONNECTIONS
     from anyio import Event, fail_after
 
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
@@ -708,10 +721,103 @@ async def test_cancelling_inline_login_stops_the_shared_session(
         configuration_path=tmp_path / "config.yaml",
     ) as app:
         with fail_after(5):
-            task = asyncio.create_task(_ensure_account(app, "codex", ask, lambda message: None))
-            await waiting.wait()
+            codex = SUBSCRIPTION_CONNECTIONS[0].account
+            assert codex is not None
+            task = asyncio.create_task(_ensure_account(app, codex, ask, lambda message: None))
+            started = asyncio.create_task(waiting.wait())
+            try:
+                done, _ = await asyncio.wait((task, started), return_when=asyncio.FIRST_COMPLETED)
+                if task in done:
+                    task.result()
+                    pytest.fail("Setup returned before starting account authorization")
+            finally:
+                started.cancel()
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
             assert await app.active_login() is None
     assert not (Path(os.environ["CODEX_HOME"]) / "auth.json").exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("reentry", [False, True])
+async def test_cli_acp_authentication_and_optional_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reentry: bool
+) -> None:
+    from a13n_harness_ui.acp_auth import AcpAuthMethod, AcpAuthStatus
+    from a13n_harness_ui.acp_sessions import AcpPresetView
+    from a13n_harness_ui.app import HarnessUiApp
+    from a13n_harness_ui.configuration.setup import SetupSelection
+
+    path = tmp_path / "config.yaml"
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    presets = (
+        AcpPresetView(id="codex", name="Codex", detected_path="/usr/bin/codex"),
+        AcpPresetView(id="claude_code", name="Claude Code", detected_path="/usr/bin/claude"),
+    )
+    monkeypatch.setattr("a13n_harness_ui.acp_sessions.acp_presets", lambda: presets)
+    auth_calls: list[tuple[str, str | None]] = []
+    method = AcpAuthMethod(id="browser", name="Browser login", kind="agent")
+
+    async def auth(self, request):
+        assert request.preset == "codex"
+        assert not (tmp_path / "acp_agents").exists()
+        auth_calls.append((request.action, request.method_id))
+        if request.action == "login":
+            return AcpAuthStatus(state="login_completed")
+        return (
+            AcpAuthStatus(state="auth_required", methods=(method,))
+            if len(auth_calls) == 1
+            else AcpAuthStatus(state="ready")
+        )
+
+    monkeypatch.setattr(HarnessUiApp, "acp_preset_auth", auth)
+    asked = []
+    messages = []
+
+    async def ask(question, selection):
+        asked.append(question.key)
+        if question.key == "track":
+            assert "Claude Code" in selection.choices[0].description
+            return "subscription"
+        if question.key == "provider":
+            assert selection.choices[0].value == "codex"
+            assert "Recommended" in selection.choices[0].label
+            assert "acp:codex" not in question.choices
+            return "more"
+        if question.key == "subscription_more":
+            assert "Live Voice" in next(item.description for item in selection.choices if item.value == "chatgpt")
+            return "acp:codex"
+        if question.key == "action":
+            if question.text == "Next action":
+                assert any("Choose local CLI numbers or IDs" in message for message in messages)
+                return "retry"
+            assert "later" in question.choices
+            return "login:0"
+        if question.key == "additional_acp":
+            assert question.choices == ("claude_code",)
+            assert selection.multiple
+            return "not-a-cli" if asked.count("additional_acp") == 1 else "claude_code"
+        if question.key == "set_default":
+            assert "Default Agent" in question.text
+            assert question.default == "no"
+            assert [choice.label for choice in selection.choices] == ["Keep current default", "Set as default"]
+        if question.key == "save":
+            assert selection.choices[0].label == "Save connection"
+        return question.default
+
+    async with open_harness_ui_app(settings, configuration_path=path, mcp_input_enabled=True) as app:
+        if reentry:
+            assert (await app.apply_setup(SetupSelection(environment_profile="environment-native"))).completed
+            original = path.read_bytes()
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=messages.append)
+        assert ("set_default" in asked) == reentry
+        assert auth_calls == [("probe", None), ("login", "browser"), ("probe", None)]
+        assert "Ready · Signed in" in messages
+        assert any("Choose local CLI numbers or IDs" in message for message in messages)
+        configuration = await load_harness_ui_configuration(path)
+        assert set(configuration.acp_agents) == {"acp-codex", "acp-claude-code"}
+        if reentry:
+            assert path.read_bytes() == original
+        else:
+            assert configuration.document.defaults.agent == "acp-codex"

@@ -52,6 +52,7 @@ class Browser(BaseModel):
     name: str
     status: BrowserStatus
     control: ControlStatus
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     generation: int
     episode: int
     control_expires_at: datetime | None

@@ -117,7 +117,7 @@ _PATH = click.Path(path_type=Path)
     default=None,
     help="Presentation only; overrides display.mode (default concise). /mode switches live.",
 )
-@click.option("--no-update-check", is_flag=True, help="Skip startup update detection for this invocation.")
+@click.option("--no-update-check", is_flag=True, help="Skip update checks for this invocation.")
 @click.version_option(package_name="a13n-harness-ui")
 @click.pass_context
 def cli(

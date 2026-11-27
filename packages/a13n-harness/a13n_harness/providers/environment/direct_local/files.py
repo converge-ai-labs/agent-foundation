@@ -7,6 +7,7 @@ import codecs
 import ctypes
 import errno
 import itertools
+import ntpath
 import os
 import shutil
 import stat as stat_module
@@ -305,10 +306,12 @@ class LocalFileOperator:
         return "/" if not relative.parts else f"/{relative.as_posix()}"
 
     def _lexical(self, path: str) -> tuple[str, ...]:
-        if not path.startswith("/") or "\x00" in path:
+        if not path.startswith("/") or path.startswith("//") or "\x00" in path:
             raise EnvironmentError("Provider-local file paths must be absolute.", code="environment_request_invalid")
         pure = PurePosixPath(path)
-        if any(part in {".", ".."} for part in pure.parts):
+        if os.name == "nt" and any("\\" in part or ":" in part or ntpath.isreserved(part) for part in pure.parts[1:]):
+            raise EnvironmentError("Invalid Windows file path.", code="environment_request_invalid")
+        if any(part == ".." for part in pure.parts):
             raise EnvironmentError("File path traversal is invalid.", code="environment_request_invalid")
         return tuple(part for part in pure.parts if part != "/")
 
@@ -331,9 +334,16 @@ class LocalFileOperator:
         except OSError as exc:
             raise _environment_error_from_os(exc, action="resolve a file path") from exc
         try:
-            resolved.relative_to(self._root)
+            suffix = resolved.relative_to(self._root).parts
+            if os.name == "nt":
+                # Windows path comparisons are case-insensitive even on case-sensitive directories.
+                ancestor = resolved.parents[len(suffix) - 1] if suffix else resolved
+                if not ancestor.samefile(self._root):
+                    raise ValueError
         except ValueError:
             raise EnvironmentError("File path escapes the configured root.", code="environment_denied") from None
+        except OSError as exc:
+            raise _environment_error_from_os(exc, action="verify a file path is confined") from exc
         return resolved
 
     async def resolve_native_directory(self, path: str) -> Path:
@@ -385,7 +395,7 @@ class LocalFileOperator:
             return
         except OSError as exc:
             raise _environment_error_from_os(exc, action="inspect a write destination") from exc
-        if stat_module.S_ISLNK(destination.st_mode):
+        if _is_link(path):
             raise EnvironmentError("Writing through a symlink is denied.", code="environment_denied")
         if not stat_module.S_ISREG(destination.st_mode):
             raise EnvironmentError("Destination is not a regular file.", code="environment_request_invalid")
@@ -397,10 +407,10 @@ class LocalFileOperator:
         mode: FileWriteMode,
     ) -> None:
         self._require_writable(destination)
-        exists = destination.exists() or destination.is_symlink()
-        if destination.is_symlink():
+        exists = destination.exists()
+        if _is_link(destination):
             raise EnvironmentError("Writing through a symlink is denied.", code="environment_denied")
-        if exists and destination.is_dir():
+        if destination.is_dir():
             raise EnvironmentError("Destination is a directory.", code="environment_request_invalid")
         if mode in {"replace", "append"} and not exists:
             raise EnvironmentError("Destination does not exist.", code="environment_not_found")
@@ -628,7 +638,7 @@ class LocalFileOperator:
         except OSError as exc:
             raise _environment_error_from_os(exc, action="inspect file metadata") from exc
         mode = metadata.st_mode
-        if stat_module.S_ISLNK(mode):
+        if _is_link(native):
             kind: FileKind = "symlink"
         elif stat_module.S_ISREG(mode):
             kind = "file"
@@ -844,12 +854,21 @@ class LocalFileOperator:
         self._require_writable(source_native)
         self._require_writable(destination_native)
         source_metadata = source_native.lstat()
-        if source_native == destination_native:
+        if str(source_native) == str(destination_native):
             return
+        if os.name == "nt" and source_native == destination_native:
+            # Let the OS compare directory entries, including case-sensitive Windows directories.
+            try:
+                case_only = os.path.samestat(source_metadata, destination_native.lstat())
+            except FileNotFoundError:
+                case_only = False
+            if case_only:
+                _rename_no_replace(source_native, destination_native)
+                return
         if destination_native.exists() and not replace:
             raise EnvironmentError("Move destination exists.", code="environment_conflict")
-        if destination_native.is_symlink():
-            raise EnvironmentError("Move destination symlink is denied.", code="environment_denied")
+        if _is_link(destination_native):
+            raise EnvironmentError("Move destination link is denied.", code="environment_denied")
         if not replace:
             _rename_no_replace(source_native, destination_native)
             return
@@ -857,20 +876,30 @@ class LocalFileOperator:
             destination_metadata = destination_native.lstat()
         except FileNotFoundError:
             destination_metadata = None
-        if destination_metadata is not None and stat_module.S_ISDIR(source_metadata.st_mode) != stat_module.S_ISDIR(
+        source_is_directory = stat_module.S_ISDIR(source_metadata.st_mode) and not _is_link(source_native)
+        if destination_metadata is not None and source_is_directory != stat_module.S_ISDIR(
             destination_metadata.st_mode
         ):
             raise EnvironmentError("Move source and destination kinds differ.", code="environment_request_invalid")
         try:
             os.replace(source_native, destination_native)
         except OSError as exc:
-            if not stat_module.S_ISDIR(source_metadata.st_mode):
+            if not source_is_directory:
                 raise
             if sys.platform == "win32":
                 if destination_metadata is None or exc.errno not in {errno.EACCES, errno.EEXIST, errno.ENOTEMPTY}:
                     raise
+                # Compare directory identities because alternate Windows names can
+                # refer to an ancestor without sharing the same path spelling.
+                for ancestor in (source_native, *source_native.parents):
+                    if ancestor == self._root:
+                        break
+                    if os.path.samestat(ancestor.stat(), destination_metadata):
+                        raise EnvironmentError(
+                            "Move destination contains the source.", code="environment_request_invalid"
+                        ) from exc
                 # Windows has no directory exchange; replacement accepts the remove/rename gap.
-                shutil.rmtree(destination_native)
+                _remove_directory(destination_native, recursive=True)
                 os.replace(source_native, destination_native)
                 return
             if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
@@ -900,13 +929,15 @@ class LocalFileOperator:
         native = self._resolve(path, follow_final=False)
         self._require_writable(native)
         metadata = native.lstat()
-        if stat_module.S_ISLNK(metadata.st_mode) or stat_module.S_ISREG(metadata.st_mode):
+        if _is_link(native):
+            if native.is_junction():
+                native.rmdir()
+            else:
+                native.unlink()
+        elif stat_module.S_ISREG(metadata.st_mode):
             native.unlink()
         elif stat_module.S_ISDIR(metadata.st_mode):
-            if recursive:
-                shutil.rmtree(native)
-            else:
-                native.rmdir()
+            _remove_directory(native, recursive=recursive)
         else:
             raise EnvironmentError("Unsupported file kind.", code="environment_unsupported")
 
@@ -1143,7 +1174,7 @@ def _iter_native_paths(
             if not include_hidden and any(part.startswith(".") for part in relative.parts):
                 continue
             try:
-                is_directory = child.is_dir() and not child.is_symlink()
+                is_directory = not _is_link(child) and child.is_dir()
             except OSError:
                 continue
             if ignore_mode == "git" and _is_git_ignored(child, is_directory, active_specs):
@@ -1270,8 +1301,19 @@ def _collect_query_slice(
     return selected, False
 
 
+def _is_link(path: Path) -> bool:
+    return path.is_symlink() or path.is_junction()
+
+
+def _remove_directory(path: Path, *, recursive: bool) -> None:
+    if recursive and not path.is_junction():
+        shutil.rmtree(path)
+    else:
+        path.rmdir()
+
+
 def _native_kind(path: Path) -> str:
-    if path.is_symlink():
+    if _is_link(path):
         return "symlink"
     if path.is_file():
         return "file"

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -348,4 +354,95 @@ it("sorts through the Service, clears the previous cursor and keeps filters", as
   );
   expect(requests.at(-1)?.searchParams.get("direction")).toBe("desc");
   cache.clear();
+});
+
+it("filters on trusted App provenance from a row without changing caller-provided Origin", async () => {
+  let finishResponse!: () => void;
+  const filteredResponse = new Promise<void>((resolve) => {
+    finishResponse = resolve;
+  });
+  const owned = {
+    ...session("Owned"),
+    app_id: "reports.headless",
+    origin: { application: "external.importer", name: "Imported report" },
+  };
+  const operator = {
+    ...session("Operator"),
+    origin: { application: "reports.headless", name: "Operator report" },
+  };
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      requests.push(url);
+      const selected = url.searchParams.has("app_id");
+      const second = url.searchParams.get("cursor") === "two";
+      if (selected) await filteredResponse;
+      return Response.json({
+        items: selected
+          ? [owned]
+          : second
+            ? [owned, operator]
+            : [session("First")],
+        next_cursor: selected ? null : second ? "three" : "two",
+      });
+    },
+  });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <SessionList />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await screen.findByText("First");
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("Imported report");
+  expect(screen.getByRole("button", { name: "reports.headless" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "external.importer" }),
+  ).toBeTruthy();
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "Report" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Filter by reports.headless" }),
+  );
+  expect(
+    (screen.getByRole("button", { name: "Next" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await waitFor(() =>
+    expect(
+      requests.some(
+        ({ searchParams }) =>
+          searchParams.get("q") === "Report" &&
+          searchParams.get("app_id") === "reports.headless",
+      ),
+    ).toBe(true),
+  );
+  finishResponse();
+  await waitFor(() => expect(screen.queryByText("Operator report")).toBeNull());
+  const filtered = requests.filter((url) => url.searchParams.has("app_id"));
+  expect(filtered.length).toBeGreaterThan(0);
+  expect(
+    filtered.every(
+      (url) =>
+        url.searchParams.get("app_id") === "reports.headless" &&
+        !url.searchParams.has("cursor") &&
+        !url.searchParams.has("application"),
+    ),
+  ).toBe(true);
+  expect(screen.getByRole("combobox", { name: /^App/ }).textContent).toContain(
+    "reports.headless",
+  );
+  await user.click(screen.getByRole("button", { name: "Clear" }));
+  await screen.findByText("First");
+  expect(screen.queryByRole("combobox", { name: /^App/ })).toBeNull();
 });

@@ -14,7 +14,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { IconTile } from "../../shared/identity";
+import { AppBadge, IconTile } from "../../shared/identity";
 import { DetailHeader, DetailPage, useTabParam } from "../../shared/page";
 import shared from "../../shared/shared.module.css";
 import { credentialKeys, credentialQueries, type Credential } from "./api";
@@ -57,11 +57,7 @@ export function CredentialDetail() {
             <>
               <StatePill state={credential.state} />
               {credential.app_id && (
-                <span className={shared.muted}>
-                  {t("Managed by {{appId}}", {
-                    appId: credential.app_id,
-                  })}
-                </span>
+                <AppBadge appId={credential.app_id} managed />
               )}
             </>
           }

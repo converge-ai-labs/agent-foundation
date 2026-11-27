@@ -6,7 +6,7 @@ export type Schedule = Schema["Schedule"];
 export type Occurrence = Schema["OccurrenceSummary"];
 export type ScheduleFilters = Pick<
   NonNullable<paths["/api/v1/schedules"]["get"]["parameters"]["query"]>,
-  "state" | "q"
+  "state" | "q" | "app_id"
 >;
 
 export function scheduleKeys(workspaceId: string) {

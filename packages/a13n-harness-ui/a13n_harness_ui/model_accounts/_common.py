@@ -138,8 +138,9 @@ def _write_if_unchanged(path: Path, payload: bytes, expected_digest: str | None)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as target:
+            if hasattr(os, "fchmod"):
+                os.fchmod(target.fileno(), 0o600)
             target.write(payload)
             target.flush()
             os.fsync(target.fileno())
@@ -147,7 +148,8 @@ def _write_if_unchanged(path: Path, payload: bytes, expected_digest: str | None)
             if _current_digest(path) != expected_digest:
                 raise _ChangedDuringWrite
             os.replace(temporary, path)
-            os.chmod(path, 0o600)
+            if os.name != "nt":
+                os.chmod(path, 0o600)
         if hasattr(os, "O_DIRECTORY"):
             directory_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
             try:
@@ -155,10 +157,7 @@ def _write_if_unchanged(path: Path, payload: bytes, expected_digest: str | None)
             finally:
                 os.close(directory_fd)
     finally:
-        try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
+        temporary.unlink(missing_ok=True)
 
 
 async def write_json_if_unchanged(

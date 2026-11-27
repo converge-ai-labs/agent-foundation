@@ -18,15 +18,28 @@
 .heading {
   justify-content: space-between;
 }
-.heading h3,
+.heading h3 {
+  margin: 0;
+  font-size: calc(var(--a13n-text-body) * 15 / 14);
+  font-weight: 500;
+  line-height: 1.35;
+}
 .destination strong {
   font-weight: 500;
 }
 .hint {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  line-height: 1.5;
   color: var(--a13n-secondary);
 }
 .reason {
+  margin: 0;
+  line-height: 1.55;
   white-space: pre-wrap;
+}
+.actions {
+  padding-top: 4px;
 }
 .destination {
   display: grid;

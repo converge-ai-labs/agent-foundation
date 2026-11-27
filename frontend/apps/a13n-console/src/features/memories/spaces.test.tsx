@@ -111,20 +111,23 @@ it("builds minimal patches and preserves explicit clearing semantics", () => {
     }),
   ).toBe(false);
 });
-function show(route: string, conflict = false) {
+function show(route: string, conflict = false, appId?: string) {
+  const reads: URL[] = [];
   const writes: {
     method: string;
     path: string;
     body: unknown;
     etag: string | null;
   }[] = [];
-  let current = { ...space };
+  let current = { ...space, app_id: appId };
   client = createClient({
     baseUrl: "https://service.example",
     auth: { type: "session", csrfToken: "fixture-csrf" },
     fetch: async (input, init) => {
       const request = new Request(input, init),
-        path = new URL(request.url).pathname;
+        url = new URL(request.url),
+        path = url.pathname;
+      if (request.method === "GET") reads.push(url);
       if (request.method !== "GET") {
         const text = await request.text(),
           body = text ? JSON.parse(text) : undefined;
@@ -209,7 +212,7 @@ function show(route: string, conflict = false) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { writes, cache, user: userEvent.setup() };
+  return { reads, writes, cache, user: userEvent.setup() };
 }
 function SessionLocation() {
   const location = useLocation();
@@ -367,4 +370,27 @@ it("validates whole-number timing and threshold boundaries", () => {
   expect(
     validSpaceDraft({ ...draft, cooldown: "0", checkInterval: "86400" }),
   ).toBe(true);
+});
+
+it("passes App provenance to the Memory Spaces query and retains it on the detail header", async () => {
+  const appId = "knowledge.app";
+  const { reads, user } = show(
+    `/w/memory-spaces?app_id=${appId}`,
+    false,
+    appId,
+  );
+  expect(
+    (await screen.findByRole("row", { name: /Team knowledge/ })).textContent,
+  ).toContain(appId);
+  expect(
+    reads.some(
+      (url) =>
+        url.pathname.endsWith("/memory-spaces") &&
+        url.searchParams.get("app_id") === appId,
+    ),
+  ).toBe(true);
+  await user.click(screen.getByRole("link", { name: /Team knowledge/ }));
+  expect(
+    (await screen.findByText(appId)).closest("[title]")?.getAttribute("title"),
+  ).toBe(appId);
 });

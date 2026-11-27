@@ -4,13 +4,19 @@ from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import HarnessState
-from a13n_harness_ui.display_history import DisplayHistoryCollector, import_display_history
+from a13n_harness_ui.display_history import DisplayHistory, DisplayHistoryCollector, import_display_history
 from a13n_harness_ui.display_projection import display_entries, display_turns
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import open_local_store
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
 from a13n_harness_ui.storage.contracts import Continuation
-from a13n_harness_ui.storage.display import DisplayArchive, read_display, read_display_windows, seal_display
+from a13n_harness_ui.storage.display import (
+    DisplayArchive,
+    crop_display_archive,
+    read_display,
+    read_display_windows,
+    seal_display,
+)
 from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
@@ -70,6 +76,54 @@ async def test_archive_reopens_without_reading_prefix_and_rebuilds_exact_coordin
         assert len(collector.capture().items) == 2
         assert seen == [ObjectKind.continuation, ObjectKind.continuation_state, ObjectKind.continuation_display]
         assert len(reopened.model_dump_json()) < 5000
+
+
+async def test_crop_display_archive_reuses_sealed_turns_for_tail_edits(tmp_path, monkeypatch):
+    original = history(150)
+    turns = display_turns(original)
+
+    def key(turn):
+        return f"{turn.turn_id}@{turn.timestamp.isoformat().replace('+00:00', 'Z')}"
+
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        archive = await seal_display(store.objects, DisplayArchive(tail=original))
+        assert archive.prefix is not None
+        read = store.objects.read_model
+        reads = []
+
+        async def record(ref, model):
+            reads.append(ref)
+            return await read(ref, model)
+
+        monkeypatch.setattr(store.objects, "read_model", record)
+        cropped = await crop_display_archive(store.objects, archive, key(turns[-1]))
+        assert cropped is not None
+        assert not reads
+        assert cropped.prefix == archive.prefix
+        assert cropped.entry_offset == archive.entry_offset
+        assert cropped.turn_offset == archive.turn_offset
+        assert not cropped.tail.items
+        assert display_turns(await read_display(store.objects, cropped)) == turns[:-1]
+
+        reads.clear()
+        earlier = await crop_display_archive(store.objects, archive, key(turns[1]))
+        assert earlier is not None
+        assert reads
+        assert display_turns(await read_display(store.objects, earlier)) == turns[:1]
+
+
+async def test_tail_alias_is_rejected_when_also_present_in_sealed_turn(tmp_path):
+    original = history(2)
+    items = tuple(
+        item.model_copy(update={"content": {**item.content, "metadata": {"source_id": "reused-input"}}})
+        if "turn" in item.content
+        else item
+        for item in original.items
+    )
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        archive = await seal_display(store.objects, DisplayArchive(tail=DisplayHistory(items=items)))
+        assert archive.prefix is not None
+        assert await crop_display_archive(store.objects, archive, "reused-input") is None
 
 
 async def test_failed_prefix_publication_does_not_mutate_source(tmp_path, monkeypatch):

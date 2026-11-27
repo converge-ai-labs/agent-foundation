@@ -418,6 +418,126 @@ export function submitContinuation(
   );
 }
 
+export type ComposerOwner = {
+  title: string;
+  to?: string;
+  onRemove?: () => void;
+  locked?: boolean;
+};
+
+function ComposerIdentity({
+  owner,
+  coordinatorActive = false,
+  disabled = false,
+}: {
+  owner?: ComposerOwner;
+  coordinatorActive?: boolean;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  if (owner) {
+    const label = t("Managed by {{name}}", { name: owner.title });
+    const text = t("Managed by - {{name}}", { name: owner.title });
+    if (owner.to && !owner.onRemove)
+      return (
+        <Link
+          to={owner.to}
+          className={styles.workerIdentity}
+          aria-label={label}
+          title={label}
+        >
+          <CoordinatorIcon size={16} />
+          <span>{text}</span>
+        </Link>
+      );
+    return (
+      <span className={styles.workerIdentity} title={label}>
+        <CoordinatorIcon size={16} />
+        <span>{text}</span>
+        {owner.onRemove && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("Remove Coordinator assignment")}
+            title={t("Create an independent chat instead")}
+            disabled={disabled}
+            onClick={owner.onRemove}
+          >
+            <X aria-hidden />
+          </Button>
+        )}
+      </span>
+    );
+  }
+  if (coordinatorActive)
+    return (
+      <span
+        className={styles.coordinatorIdentity}
+        title={t("This chat is a coordinator. This can't be undone.")}
+      >
+        <CoordinatorIcon size={16} /> <span>{t("Coordinator")}</span>
+      </span>
+    );
+  return null;
+}
+
+export function ReadOnlyComposer({
+  notice,
+  feedback,
+  owner,
+  coordinatorActive = false,
+  controls,
+  renderHeader,
+}: {
+  notice: string;
+  feedback?: ReactNode;
+  owner?: ComposerOwner;
+  coordinatorActive?: boolean;
+  controls?: ReactNode;
+  renderHeader?: (identity: ReactNode) => ReactNode;
+}) {
+  const { t } = useTranslation();
+  const identity =
+    owner || coordinatorActive ? (
+      <ComposerIdentity owner={owner} coordinatorActive={coordinatorActive} />
+    ) : null;
+  return (
+    <section className={styles.composer} aria-label={t("Message composer")}>
+      <div className={styles.composerFeedback}>{feedback}</div>
+      <div className={styles.composerBody}>
+        {renderHeader
+          ? renderHeader(identity)
+          : identity && <div className={styles.composerHeader}>{identity}</div>}
+        <div className={styles.composerInput} data-readonly="true">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className={styles.attachButton}
+            aria-label={t("Attach files")}
+            disabled
+          >
+            <Plus />
+          </Button>
+          <p className={styles.readOnlyInput}>{notice}</p>
+          <div className={styles.composerActions}>
+            <div className={styles.composerChoices}>{controls}</div>
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            className={styles.sendButton}
+            aria-label={t("Send")}
+            disabled
+          >
+            <ArrowUp />
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export type ComposerBlockAction = {
   label: string;
   onClick?: () => void;
@@ -455,6 +575,7 @@ export function Composer({
   threadId,
   activity,
   runBlock,
+  editingMessage = false,
   dictation,
   canClearContext = false,
   continuationId,
@@ -469,6 +590,7 @@ export function Composer({
   threadId: string;
   activity: Schema<"RootActivityView">;
   runBlock?: ComposerBlock | null;
+  editingMessage?: boolean;
   dictation?: DictationTarget;
   canClearContext?: boolean;
   continuationId?: string | null;
@@ -494,7 +616,7 @@ export function Composer({
     locked?: boolean;
     defaultEnabled?: boolean;
   };
-  owner?: { title: string; onRemove?: () => void; locked?: boolean };
+  owner?: ComposerOwner;
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
@@ -691,7 +813,10 @@ export function Composer({
     [imagePreview],
   );
   const busy = activity.state !== "inactive";
-  const pending = draft.submission.kind === "pending" || !!queuedInput?.pending;
+  const pending =
+    editingMessage ||
+    draft.submission.kind === "pending" ||
+    !!queuedInput?.pending;
   const unknown = draft.submission.kind === "unknown";
   const input = values(draft.doc);
   const missing = selections.some(({ key, id }, index) =>
@@ -1170,34 +1295,14 @@ export function Composer({
     draft.notify();
   };
   const canChooseCoordinator = !owner && !coordinatorActive && coordinator;
-  const identity = owner ? (
-    <span
-      className={styles.workerIdentity}
-      title={t("Managed by {{name}}", { name: owner.title })}
-    >
-      <CoordinatorIcon size={16} />
-      <span>{t("Managed by - {{name}}", { name: owner.title })}</span>
-      {owner.onRemove && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t("Remove Coordinator assignment")}
-          title={t("Create an independent chat instead")}
-          disabled={owner.locked || preparing || pending || unknown}
-          onClick={owner.onRemove}
-        >
-          <X aria-hidden />
-        </Button>
-      )}
-    </span>
-  ) : coordinatorActive ? (
-    <span
-      className={styles.coordinatorIdentity}
-      title={t("This chat is a coordinator. This can't be undone.")}
-    >
-      <CoordinatorIcon size={16} /> <span>{t("Coordinator")}</span>
-    </span>
-  ) : null;
+  const identity =
+    owner || coordinatorActive ? (
+      <ComposerIdentity
+        owner={owner}
+        coordinatorActive={coordinatorActive}
+        disabled={owner?.locked || preparing || pending || unknown}
+      />
+    ) : null;
   return (
     <section
       className={styles.composer}

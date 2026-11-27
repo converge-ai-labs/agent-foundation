@@ -795,6 +795,91 @@
         }
       }
     },
+    "/api/inbox/threads/{thread_id}/unread": {
+      "get": {
+        "summary": "Thread Inbox Unread",
+        "operationId": "thread_inbox_unread_api_inbox_threads__thread_id__unread_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InboxUnreadPost"
+                  },
+                  "title": "Response Thread Inbox Unread Api Inbox Threads  Thread Id  Unread Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inbox/threads/{thread_id}/mark-read": {
+      "post": {
+        "summary": "Thread Inbox Mark Read",
+        "operationId": "thread_inbox_mark_read_api_inbox_threads__thread_id__mark_read_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadInboxMarkReadRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/inbox/mark-read": {
       "post": {
         "summary": "Inbox Mark Read",
@@ -1248,6 +1333,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListenerStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update-notices": {
+      "get": {
+        "summary": "Update Notices",
+        "operationId": "update_notices_api_update_notices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateNotices"
                 }
               }
             }
@@ -5781,6 +5884,105 @@
         }
       }
     },
+    "/api/acp-agents/preset-auth": {
+      "post": {
+        "summary": "Acp Preset Auth",
+        "operationId": "acp_preset_auth_api_acp_agents_preset_auth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpPresetAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpAuthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/acp-agents/preset-auth/inputs": {
+      "get": {
+        "summary": "Acp Preset Auth Inputs",
+        "operationId": "acp_preset_auth_inputs_api_acp_agents_preset_auth_inputs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpInputRequestView"
+                  },
+                  "type": "array",
+                  "title": "Response Acp Preset Auth Inputs Api Acp Agents Preset Auth Inputs Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/acp-agents/preset-auth/inputs/{request_id}/response": {
+      "post": {
+        "summary": "Respond Acp Preset Auth Input",
+        "operationId": "respond_acp_preset_auth_input_api_acp_agents_preset_auth_inputs__request_id__response_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpInputRequestView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpInputResponse"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/acp-agents/{agent_id}/options": {
       "get": {
         "summary": "Acp Agent Options",
@@ -7446,6 +7648,72 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/BranchRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/edit-message": {
+      "post": {
+        "summary": "Edit Message",
+        "operationId": "edit_message_api_threads__thread_id__edit_message_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-harness-browser",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^browser_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Harness-Browser"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageEditReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageEditRequest"
               }
             }
           }
@@ -9367,6 +9635,33 @@
             }
           },
           {
+            "name": "coordinator_thread_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Coordinator Thread Id"
+            }
+          },
+          {
+            "name": "independent_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Independent Only"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -10275,6 +10570,54 @@
         }
       }
     },
+    "/api/shared/{share_id}/threads/{thread_id}/usage": {
+      "get": {
+        "summary": "Usage",
+        "operationId": "usage_api_shared__share_id__threads__thread_id__usage_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadUsageView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/shared/{share_id}/threads/{thread_id}/work": {
       "get": {
         "summary": "Work",
@@ -10751,6 +11094,60 @@
         ],
         "title": "AccountSelection",
         "type": "object"
+      },
+      "AcpAgentCandidate": {
+        "properties": {
+          "preset": {
+            "$ref": "#/components/schemas/AcpAgentPreset"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "preset"
+        ],
+        "title": "AcpAgentCandidate"
       },
       "AcpAgentPreset": {
         "type": "string",
@@ -13029,6 +13426,10 @@
             "type": "string",
             "title": "Source"
           },
+          "edit_source": {
+            "type": "string",
+            "title": "Edit Source"
+          },
           "points": {
             "additionalProperties": {
               "$ref": "#/components/schemas/BranchPoint"
@@ -13041,6 +13442,7 @@
         "type": "object",
         "required": [
           "source",
+          "edit_source",
           "points"
         ],
         "title": "BranchPoints"
@@ -18078,13 +18480,13 @@
         "title": "FastControl"
       },
       "FastState": {
-        "type": "string",
         "enum": [
           "on",
           "off",
           "ultrafast",
           "default"
-        ]
+        ],
+        "type": "string"
       },
       "FileCapture": {
         "properties": {
@@ -19574,6 +19976,36 @@
         ],
         "title": "InboxUnreadCounts"
       },
+      "InboxUnreadPost": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "tool_call_id": {
+            "type": "string",
+            "title": "Tool Call Id"
+          },
+          "has_transcript": {
+            "type": "boolean",
+            "title": "Has Transcript"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "tool_call_id",
+          "has_transcript",
+          "created_at"
+        ],
+        "title": "InboxUnreadPost"
+      },
       "InputPredictionResponse": {
         "properties": {
           "continuation_id": {
@@ -20037,6 +20469,15 @@
             "title": "Kind",
             "type": "string"
           },
+          "source": {
+            "default": "mcp",
+            "enum": [
+              "mcp",
+              "acp"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "request_id": {
             "title": "Request Id",
             "type": "string"
@@ -20101,7 +20542,8 @@
             "enum": [
               "form",
               "url",
-              "question"
+              "question",
+              "permission"
             ],
             "title": "Mode",
             "type": "string"
@@ -20117,6 +20559,17 @@
             },
             "title": "Questions",
             "type": "array"
+          },
+          "permission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PermissionRequestDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "schema": {
             "anyOf": [
@@ -20278,6 +20731,16 @@
               }
             ],
             "title": "Tools"
+          },
+          "authority": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "user",
+              "none"
+            ],
+            "title": "Authority",
+            "default": "operator"
           },
           "server_id": {
             "type": "string",
@@ -20553,6 +21016,24 @@
           "availability"
         ],
         "title": "MemoryOrganizationStatus"
+      },
+      "MessageEditReceipt": {
+        "properties": {
+          "receipt": {
+            "$ref": "#/components/schemas/RootRunReceipt"
+          },
+          "continuation_id": {
+            "type": "string",
+            "title": "Continuation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt",
+          "continuation_id"
+        ],
+        "title": "MessageEditReceipt"
       },
       "MetricsSample": {
         "properties": {
@@ -22232,6 +22713,130 @@
           "count"
         ],
         "title": "PendingDecisionSummary"
+      },
+      "PermissionOptionView": {
+        "additionalProperties": false,
+        "properties": {
+          "option_id": {
+            "title": "Option Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "allow_once",
+              "allow_always",
+              "reject_once",
+              "reject_always"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "option_id",
+          "name",
+          "kind"
+        ],
+        "title": "PermissionOptionView",
+        "type": "object"
+      },
+      "PermissionRequestDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "tool_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Kind"
+          },
+          "tool_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Name"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Command"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
+          "environment_keys": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Environment Keys",
+            "type": "array"
+          },
+          "locations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Arguments"
+          },
+          "options": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PermissionOptionView"
+            },
+            "title": "Options",
+            "type": "array"
+          }
+        },
+        "title": "PermissionRequestDetail",
+        "type": "object"
       },
       "PluginSubscriptionAuthentication": {
         "properties": {
@@ -23941,6 +24546,50 @@
         ],
         "title": "SavedOutputView"
       },
+      "SecurityAdvisory": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "high",
+              "critical"
+            ],
+            "title": "Severity"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "summary",
+          "severity",
+          "url",
+          "updated_at"
+        ],
+        "title": "SecurityAdvisory"
+      },
       "SelectableResourceSummary": {
         "properties": {
           "resource_id": {
@@ -24230,6 +24879,16 @@
             },
             "type": "array",
             "title": "Project Paths"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -24294,6 +24953,16 @@
             "type": "array",
             "title": "Published Paths"
           },
+          "agent_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "error_code": {
             "anyOf": [
               {
@@ -24336,6 +25005,56 @@
                 "type": "null"
               }
             ]
+          },
+          "primary_acp_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpAgentCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "additional_acp_presets": {
+            "items": {
+              "$ref": "#/components/schemas/AcpAgentPreset"
+            },
+            "type": "array",
+            "title": "Additional Acp Presets",
+            "default": []
+          },
+          "set_as_default": {
+            "type": "boolean",
+            "title": "Set As Default",
+            "default": true
+          },
+          "configure_workspace": {
+            "type": "boolean",
+            "title": "Configure Workspace",
+            "default": true
+          },
+          "enable_dictation": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enable Dictation"
+          },
+          "auto_organize_memory": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Organize Memory"
           },
           "instructions": {
             "type": "string",
@@ -24551,12 +25270,27 @@
             "type": "array",
             "title": "Providers"
           },
+          "detected_env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Detected Env Keys",
+            "default": []
+          },
           "agents": {
             "additionalProperties": {
               "type": "string"
             },
             "type": "object",
             "title": "Agents"
+          },
+          "acp_presets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Acp Presets"
           },
           "projects": {
             "additionalProperties": {
@@ -24654,6 +25388,22 @@
           "title": {
             "type": "string",
             "title": "Title"
+          },
+          "target_role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ordinary",
+                  "coordinator",
+                  "worker"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Role"
           }
         },
         "additionalProperties": false,
@@ -24901,6 +25651,29 @@
           "reset_at"
         ],
         "title": "SpendControlLimit"
+      },
+      "StableRelease": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "is_newer": {
+            "type": "boolean",
+            "title": "Is Newer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "url",
+          "is_newer"
+        ],
+        "title": "StableRelease"
       },
       "Status": {
         "properties": {
@@ -26683,6 +27456,17 @@
             },
             "title": "Available Actions",
             "type": "array"
+          },
+          "model_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadModelDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -26803,6 +27587,66 @@
           "submitted_at"
         ],
         "title": "ThreadExecution",
+        "type": "object"
+      },
+      "ThreadModelDisplay": {
+        "additionalProperties": false,
+        "description": "Read-only display summary of a Thread's effective Agent and Model.",
+        "properties": {
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent Name"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Name"
+          },
+          "model_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Identity"
+          },
+          "thinking_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Thinking Summary"
+          },
+          "fast": {
+            "$ref": "#/components/schemas/FastState",
+            "default": "default"
+          }
+        },
+        "title": "ThreadModelDisplay",
         "type": "object"
       },
       "ThreadPage": {
@@ -28203,6 +29047,47 @@
           "kind"
         ],
         "title": "UnlimitedMemoryLimit"
+      },
+      "UpdateNotices": {
+        "properties": {
+          "current_version": {
+            "type": "string",
+            "title": "Current Version"
+          },
+          "latest_stable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StableRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "advisories": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityAdvisory"
+            },
+            "type": "array",
+            "title": "Advisories"
+          },
+          "install_method": {
+            "type": "string",
+            "enum": [
+              "uv_tool",
+              "other"
+            ],
+            "title": "Install Method"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_version",
+          "latest_stable",
+          "advisories",
+          "install_method"
+        ],
+        "title": "UpdateNotices"
       },
       "UrlInputSupport": {
         "properties": {
@@ -31227,6 +32112,26 @@
         ],
         "title": "BotPause"
       },
+      "ThreadInboxMarkReadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "item_ids": {
+            "items": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Item Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item_ids"
+        ],
+        "title": "ThreadInboxMarkReadRequest",
+        "type": "object"
+      },
       "InboxMarkReadRequest": {
         "properties": {
           "group": {
@@ -32469,6 +33374,16 @@
               }
             ],
             "title": "Tools"
+          },
+          "authority": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "user",
+              "none"
+            ],
+            "title": "Authority",
+            "type": "string"
           }
         },
         "required": [
@@ -32477,6 +33392,83 @@
         ],
         "title": "McpToolSelection",
         "type": "object"
+      },
+      "AcpPresetAuthRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "probe",
+              "login",
+              "logout"
+            ],
+            "title": "Action"
+          },
+          "method_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method Id"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AcpAgentPreset"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "preset"
+        ],
+        "title": "AcpPresetAuthRequest"
       },
       "AcpOptionChange": {
         "additionalProperties": false,
@@ -33009,10 +34001,7 @@
             "type": "string"
           },
           "side": {
-            "enum": [
-              "before",
-              "after"
-            ],
+            "const": "after",
             "title": "Side",
             "type": "string"
           }
@@ -33023,6 +34012,106 @@
           "side"
         ],
         "title": "BranchRequest",
+        "type": "object"
+      },
+      "MessageEditSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_source": {
+            "pattern": "^(?:(?:initial:)?[0-9a-f]{64}|receipt-[0-9a-f]{32})$",
+            "title": "Expected Source",
+            "type": "string"
+          },
+          "turn_key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Turn Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_source",
+          "turn_key"
+        ],
+        "title": "MessageEditSelection",
+        "type": "object"
+      },
+      "SkillReference": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Catalog Id",
+            "type": "string"
+          },
+          "item_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_id",
+          "item_id",
+          "name"
+        ],
+        "title": "SkillReference",
+        "type": "object"
+      },
+      "MessageEditRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/InputAttachmentReference"
+                }
+              ]
+            },
+            "maxItems": 1024,
+            "title": "Parts",
+            "type": "array"
+          },
+          "skill_references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillReference"
+            },
+            "maxItems": 512,
+            "title": "Skill References",
+            "type": "array"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "pattern": "^input[-_][0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/MessageEditSelection"
+          }
+        },
+        "required": [
+          "parts",
+          "selection"
+        ],
+        "title": "MessageEditRequest",
         "type": "object"
       },
       "ApprovalDecision": {
@@ -33450,34 +34539,6 @@
           "pro"
         ],
         "type": "string"
-      },
-      "SkillReference": {
-        "additionalProperties": false,
-        "properties": {
-          "catalog_id": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Catalog Id",
-            "type": "string"
-          },
-          "item_id": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Item Id",
-            "type": "string"
-          },
-          "name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "catalog_id",
-          "item_id",
-          "name"
-        ],
-        "title": "SkillReference",
-        "type": "object"
       },
       "SubmitRequest": {
         "additionalProperties": false,

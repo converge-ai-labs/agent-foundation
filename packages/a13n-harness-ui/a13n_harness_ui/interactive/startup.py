@@ -70,7 +70,8 @@ async def run_terminal(
                 )
                 if not request.no_update_check:
                     configuration = await backend.app.current_configuration()
-                    if configuration is None or configuration.document.process.terminal_update_check:
+                    process = configuration.document.process if configuration is not None else None
+                    if process is None or (process.update_check and process.terminal_update_check):
                         root = resolve_harness_ui_data_root(request.config_path, data_root=request.data_root)
                         update_task = asyncio.create_task(
                             notify_update(root, chat_ready, emit), name="harness-ui-update-check"

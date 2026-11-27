@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
@@ -42,7 +43,15 @@ from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
-from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, acp_auth, auth_input_scope, preview_acp_options
+from a13n_harness_ui.acp_auth import (
+    ACP_SETUP_AUTH_SCOPE,
+    AcpAuthRequest,
+    AcpAuthStatus,
+    AcpPresetAuthRequest,
+    acp_auth,
+    auth_input_scope,
+    preview_acp_options,
+)
 from a13n_harness_ui.acp_sessions import (
     AcpCommand,
     AcpOption,
@@ -67,7 +76,12 @@ from a13n_harness_ui.browser import (
     HostBrowsers,
 )
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
-from a13n_harness_ui.chat_titles import generate_title
+from a13n_harness_ui.chat_titles import (
+    TitleMessage,
+    generate_title,
+    title_message_from_entry,
+    title_message_from_prompt,
+)
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -103,6 +117,7 @@ from a13n_harness_ui.configuration.mcp_tools import (
     tool_settings,
 )
 from a13n_harness_ui.configuration.models import (
+    AcpAgentResource,
     BrowserConfiguration,
     ComposerSendShortcut,
     DeviceResource,
@@ -112,6 +127,7 @@ from a13n_harness_ui.configuration.models import (
 )
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
+    SETUP_DIRECTORIES,
     SetupPreview,
     SetupPublication,
     SetupSelection,
@@ -274,6 +290,7 @@ from a13n_harness_ui.model_authoring import (
     prepare_model,
 )
 from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
+from a13n_harness_ui.model_presets import API_PROVIDERS
 from a13n_harness_ui.model_providers import AccountContext, ModelProviderPlugin
 from a13n_harness_ui.model_providers.credentials import PluginAccountStore, PluginCredentialSource
 from a13n_harness_ui.model_providers.transport import provider_http_client
@@ -304,9 +321,9 @@ from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor
-from a13n_harness_ui.root_input import authored_text, detach_input
+from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_inputs import InputDelivery, StrictRootInputs
-from a13n_harness_ui.root_run import RootRunCoordinator
+from a13n_harness_ui.root_run import MessageEditAdmission, RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
 from a13n_harness_ui.settings import HarnessUiSettings
@@ -321,6 +338,8 @@ from a13n_harness_ui.sharing import Sharing
 from a13n_harness_ui.skill_input import prepare_skill_input
 from a13n_harness_ui.storage import (
     LocalStore,
+    ObjectRef,
+    Thread,
     ThreadConfiguration,
     ThreadConfigurationMutation,
     open_local_store,
@@ -348,6 +367,8 @@ from a13n_harness_ui.surfaces import (
     LaunchProjectResolution,
     MemoryFileEntry,
     MemoryFileText,
+    MessageEditReceipt,
+    MessageEditSelection,
     NewThreadDefaults,
     NotePage,
     ProjectDefaultsApply,
@@ -396,6 +417,7 @@ from a13n_harness_ui.thread_files import (
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import (
+    MessageRewind,
     RootThreadDefaults,
     ThreadService,
     configured_agent_source,
@@ -720,28 +742,11 @@ class HarnessUiApp:
 
     async def suggest_chat_title(self, thread_id: str, *, model_id: str | None = None) -> str:
         async with self._operation():
-            messages = []
-            for entry in await self._projections.title_entries(thread_id):
-                pieces = []
-                for part in entry.parts:
-                    meta = part.metadata.model_extra or {}
-                    if (
-                        part.kind != "user"
-                        or not part.metadata.display
-                        or meta.get("a13n.steering-source", "user") != "user"
-                    ):
-                        continue
-                    ui = meta.get("harness_ui", {})
-                    if ui.get("long_text"):
-                        _, data = await self._thread_files.read(thread_id, ui["attachment"]["attachment_id"])
-                        pieces.append(data.decode("utf-8"))
-                    elif (
-                        not (ui.get("attachment") or ui.get("long_text_skipped") or ui.get("mcp_app_context"))
-                        and part.text
-                    ):
-                        pieces.append(part.text)
-                if pieces:
-                    messages.append(" ".join(pieces))
+            read_attachment = partial(self._thread_files.read, thread_id)
+            messages = [
+                await title_message_from_entry(entry, read_attachment)
+                for entry in await self._projections.title_entries(thread_id)
+            ]
             source = await self._configurations.current()
             if source is None:
                 raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
@@ -754,13 +759,19 @@ class HarnessUiApp:
             return await self._generate_chat_title(thread_id, messages, source, model_id)
 
     async def _generate_chat_title(
-        self, thread_id: str, messages: list[str], source: LoadedHarnessUiConfiguration, model_id: str
+        self, thread_id: str, messages: list[TitleMessage], source: LoadedHarnessUiConfiguration, model_id: str
     ) -> str:
         try:
             model, recipe = await self._utility_model(source, model_id, thread_id)
         except ModelResolutionError as exc:
             raise HarnessUiError(str(exc), code=exc.code) from None
-        return await generate_title(messages, model, recipe.settings)
+        return await generate_title(
+            messages,
+            model,
+            recipe,
+            configuration=source.document.run_configuration,
+            read_attachment=partial(self._thread_files.read, thread_id),
+        )
 
     async def _title_new_chat(self, admission: RootRunAdmission) -> None:
         if not admission.source.document.auto_chat_title:
@@ -771,10 +782,8 @@ class HarnessUiApp:
         prompt = admission.prompt
         if prompt is None:
             return
-        text = (
-            prompt if isinstance(prompt, str) else " ".join(value for part in prompt if (value := authored_text(part)))
-        )
-        if not text.strip():
+        message = title_message_from_prompt(prompt)
+        if not message.has_input:
             return
         model = admission.published.value.root.model
         title_model_id = admission.source.document.chat_title_model or (model.model_id if model is not None else None)
@@ -784,7 +793,7 @@ class HarnessUiApp:
             try:
                 title = await self._generate_chat_title(
                     thread.thread_id,
-                    [text],
+                    [message],
                     admission.source,
                     title_model_id,
                 )
@@ -964,6 +973,10 @@ class HarnessUiApp:
     async def delete_api_key(self, reference: str) -> None:
         async with self._operation():
             await self._api_keys.delete(reference)
+
+    @property
+    def data_root(self) -> Path:
+        return self._settings.storage.data_root
 
     @property
     def state(self) -> AppState:
@@ -1666,20 +1679,70 @@ class HarnessUiApp:
             return await self._projections.get_thread(thread.thread_id)
 
     async def branch_points(self, thread_id: str) -> BranchPoints:
-        async with self._operation(), self._root_runs.message_branch_source(thread_id) as (base, continuing):
-            return await self._threads.branch_points(thread_id, base, continuing)
+        async with self._operation(), self._root_runs.message_branch_source(thread_id) as active:
+            return await self._threads.branch_points(thread_id, active)
 
     async def branch_thread(self, thread_id: str, request: BranchRequest) -> ThreadSummary:
         async with self._operation():
-            async with self._root_runs.message_branch_source(thread_id, editing=request.side == "before") as (
-                base,
-                continuing,
-            ):
-                thread = await self._threads.fork(
-                    thread_id, files=self._thread_files, branch=request, base=base, continuing=continuing
-                )
+            async with self._root_runs.message_branch_source(thread_id) as active:
+                thread = await self._threads.fork(thread_id, files=self._thread_files, branch=request, active=active)
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
+
+    async def edit_thread_message(
+        self,
+        *,
+        thread_id: str,
+        selection: MessageEditSelection,
+        prompt: ComposerInput,
+        skill_references: tuple[SkillReference, ...] = (),
+    ) -> MessageEditReceipt:
+        """Stop the selected operation, replace its history suffix, and admit the new input."""
+        async with self._operation(), self._root_runs.reserve_message_edit(thread_id) as (active, reservation):
+            target = await self._threads.message_edit_target(
+                thread_id,
+                turn_key=selection.turn_key,
+                expected_source=selection.expected_source,
+                attachment_ids=prompt.attachment_ids,
+                settled_at=self._root_runs.settled_message_checkpoint(thread_id, selection.expected_source),
+                active=active,
+            )
+            prepared = await self._prepare_user_input(thread_id, prompt, skill_references=skill_references)
+            stopped_at = (
+                await self._root_runs.stop_for_message_edit(target.receipt_id)
+                if target.receipt_id is not None
+                else None
+            )
+
+            async def prepare() -> MessageRewind:
+                return await self._threads.prepare_message_rewind(target, stopped_at)
+
+            continuation_id = None
+
+            async def select(rewind: MessageRewind, composition: ObjectRef) -> Thread:
+                nonlocal continuation_id
+                await self._acp_sessions.retire(thread_id)
+                selected = await self._threads.select_message_rewind(rewind, composition)
+                assert selected.continuation is not None
+                continuation_id = selected.continuation.logical_digest
+                try:
+                    await self._reset_context_runtime(thread_id)
+                except Exception:
+                    get_logger(__name__).warning("Could not clear stale Thread runtime state", exc_info=True)
+                return selected
+
+            receipt = await self._root_runs.submit_prompt(
+                thread_id=thread_id,
+                prompt=append_surface_provenance(prepared, "webui"),
+                touch=True,
+                human_input=True,
+                edit=MessageEditAdmission(reservation, prepare, select),
+            )
+            assert continuation_id is not None
+            self._tool_executions.retry(thread_id, refresh=True)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
+            return MessageEditReceipt(receipt=receipt, continuation_id=continuation_id)
 
     async def promote_coordinator(self, thread_id: str) -> ThreadSummary:
         """Convert an idle independent root without replacing its conversation."""
@@ -1931,33 +1994,50 @@ class HarnessUiApp:
             resource = source.acp_agents.get(agent_id) if source is not None else None
             if resource is None:
                 raise HarnessUiError("The external Agent is not configured.", code="acp_agent_missing")
-            if agent_id in self._acp_auth_active:
-                raise HarnessUiError(
-                    "An authentication operation is already active for this Agent.", code="acp_auth_busy"
-                )
-            self._acp_auth_active.add(agent_id)
-            try:
-                return await acp_auth(resource, self._store.settings.data_root, request, self._mcp_inputs)
-            finally:
-                self._acp_auth_active.discard(agent_id)
-                if request.action != "probe":
-                    self._acp_options_cache.clear()
+            return await self._run_acp_auth(resource, request, auth_input_scope(agent_id))
+
+    async def acp_preset_auth(self, request: AcpPresetAuthRequest) -> AcpAuthStatus:
+        async with self._operation():
+            return await self._run_acp_auth(
+                request.resource("acp-setup-preview", "ACP Agent"), request, ACP_SETUP_AUTH_SCOPE
+            )
+
+    async def _run_acp_auth(self, resource: AcpAgentResource, request: AcpAuthRequest, scope: str) -> AcpAuthStatus:
+        if scope in self._acp_auth_active:
+            raise HarnessUiError("An authentication operation is already active for this Agent.", code="acp_auth_busy")
+        self._acp_auth_active.add(scope)
+        try:
+            return await acp_auth(resource, self._store.settings.data_root, request, self._mcp_inputs, scope=scope)
+        finally:
+            self._acp_auth_active.discard(scope)
+            if request.action != "probe":
+                self._acp_options_cache.clear()
 
     async def acp_auth_inputs(self, agent_id: str) -> tuple[McpInputRequestView, ...]:
+        return await self._acp_input_requests(auth_input_scope(agent_id))
+
+    async def acp_preset_auth_inputs(self) -> tuple[McpInputRequestView, ...]:
+        return await self._acp_input_requests(ACP_SETUP_AUTH_SCOPE)
+
+    async def _acp_input_requests(self, scope: str) -> tuple[McpInputRequestView, ...]:
         async with self._operation():
-            if self._mcp_inputs is None or agent_id not in self._acp_auth_active:
+            if self._mcp_inputs is None or scope not in self._acp_auth_active:
                 return ()
-            return tuple(
-                view for view in self._mcp_inputs.requests({auth_input_scope(agent_id)}) if view.state == "pending"
-            )
+            return tuple(view for view in self._mcp_inputs.requests({scope}) if view.state == "pending")
 
     async def respond_acp_auth_input(
         self, agent_id: str, request_id: str, response: McpInputResponse
     ) -> McpInputRequestView:
+        return await self._respond_acp_input(auth_input_scope(agent_id), request_id, response)
+
+    async def respond_acp_preset_auth_input(self, request_id: str, response: McpInputResponse) -> McpInputRequestView:
+        return await self._respond_acp_input(ACP_SETUP_AUTH_SCOPE, request_id, response)
+
+    async def _respond_acp_input(self, scope: str, request_id: str, response: McpInputResponse) -> McpInputRequestView:
         async with self._operation():
-            if self._mcp_inputs is None:
+            if self._mcp_inputs is None or scope not in self._acp_auth_active:
                 raise HarnessUiError("Interactive input is unavailable.", code="mcp_input_not_found")
-            return await self._mcp_inputs.respond({auth_input_scope(agent_id)}, request_id, response)
+            return await self._mcp_inputs.respond({scope}, request_id, response)
 
     async def _mcp_input_scope(self, thread_id: str) -> set[str]:
         await self._threads.get(thread_id)
@@ -2075,6 +2155,8 @@ class HarnessUiApp:
         include_archived: bool = False,
         unread: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
+        coordinator_thread_id: str | None = None,
+        independent_only: bool = False,
         sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
         limit: int = 20,
@@ -2088,6 +2170,8 @@ class HarnessUiApp:
                 include_archived=include_archived,
                 unread=unread,
                 project_ids=project_ids,
+                coordinator_thread_id=coordinator_thread_id,
+                independent_only=independent_only,
                 sort=sort,
                 cursor=cursor,
                 limit=limit,
@@ -2251,19 +2335,22 @@ class HarnessUiApp:
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
                 await self._acp_sessions.retire(thread_id)
-                self._root_runs.cancel_prediction(thread_id)
-                draft = None
-                async with self._shared_drafts_lock:
-                    if thread_id in self._shared_drafts or await self._store.drafts.get(thread_id) is not None:
-                        draft = await self._load_shared_draft(thread_id)
-                if draft is not None:
-                    await draft.set_prediction(None)
-                self._tool_executions.clear_state(thread_id)
-                if self._browsers is not None:
-                    self._browsers.handback.suppress(thread_id)
+                await self._reset_context_runtime(thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
             return await self._projections.detail(thread_id)
+
+    async def _reset_context_runtime(self, thread_id: str) -> None:
+        self._root_runs.cancel_prediction(thread_id)
+        self._tool_executions.clear_state(thread_id)
+        if self._browsers is not None:
+            self._browsers.handback.suppress(thread_id)
+        draft = None
+        async with self._shared_drafts_lock:
+            if thread_id in self._shared_drafts or await self._store.drafts.get(thread_id) is not None:
+                draft = await self._load_shared_draft(thread_id)
+        if draft is not None:
+            await draft.set_prediction(None)
 
     async def delete_thread(self, *, thread_id: str, expected_version: int) -> tuple[str, ...]:
         """Permanently remove an idle conversation and its subagent history."""
@@ -2920,6 +3007,25 @@ class HarnessUiApp:
             await self._threads.get(thread_id)
             await self._store.threads.replace_external_context(thread_id, context)
 
+    async def _prepare_user_input(
+        self,
+        thread_id: str,
+        prompt: RunInputValue | ComposerInput,
+        *,
+        attachment_ids: tuple[str, ...] = (),
+        skill_references: tuple[SkillReference, ...] = (),
+        environment: EnvironmentSelectionPatch | None = None,
+        mutation: ThreadConfigurationMutation | None = None,
+    ) -> RunInputValue:
+        if not skill_references:
+            return await self._prepare_input(thread_id, prompt, attachment_ids)
+        catalog = await self._terminal_projections.skill_catalog(
+            thread_id=thread_id, environment=environment, mutation=mutation
+        )
+        selected = self._terminal_projections.validate_references_against(catalog, skill_references)
+        prepared = await self._prepare_input(thread_id, prompt, attachment_ids)
+        return prepare_skill_input(prepared, catalog, selected)
+
     async def submit_thread(
         self,
         *,
@@ -2973,19 +3079,14 @@ class HarnessUiApp:
                 if configuration is None:
                     raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
                 goal = GoalView(objective=objective, max_iterations=configuration.document.max_goal_iterations)
-            catalog = None
-            selected_skills: tuple[str, ...] = ()
-            if skill_references:
-                catalog = await self._terminal_projections.skill_catalog(
-                    thread_id=thread_id,
-                    environment=environment,
-                    mutation=mutation,
-                )
-                selected_skills = self._terminal_projections.validate_references_against(catalog, skill_references)
-            await self._threads.get(thread_id)
-            prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
-            if catalog is not None:
-                prompt = prepare_skill_input(prompt, catalog, selected_skills)
+            prompt = await self._prepare_user_input(
+                thread_id,
+                prompt,
+                attachment_ids=attachment_ids,
+                skill_references=skill_references,
+                environment=environment,
+                mutation=mutation,
+            )
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
                     TextContent(
@@ -3316,7 +3417,9 @@ class HarnessUiApp:
         attachment_ids: tuple[str, ...] = (),
         draft: DraftCapture | None = None,
         allow_acp_interrupt: bool = True,
+        acknowledge_inbox: bool = False,
     ) -> RootControlResult:
+        through = datetime.now(UTC) if acknowledge_inbox else None
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
             if operation.receipt.thread_id == BOT_THREAD_ID:
@@ -3353,6 +3456,8 @@ class HarnessUiApp:
                 if self._browsers is not None:
                     self._browsers.handback.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
+                if through is not None:
+                    await self.inbox().acknowledge_owner_input(operation.receipt.thread_id, through=through)
             return result
 
     async def steer_root_operation_strict(self, receipt_id: str, *, input_id: str, message: str) -> InputDelivery:
@@ -3500,22 +3605,35 @@ class HarnessUiApp:
 
             def untouched() -> bool:
                 return not path.exists() and not any(
-                    any((path.parent / directory).glob("**/*.*"))
-                    for directory in ("agents", "models", "projects", "extensions", "mcp", "subagents")
+                    any((path.parent / directory).glob("**/*.*")) for directory in SETUP_DIRECTORIES
                 )
 
             return SetupStatus(
                 needed=(
                     current is None or defaults is None or defaults.agent not in (current.agents | current.acp_agents)
                 ),
-                fresh=(current is None or not (current.agents or current.models or current.projects))
+                fresh=(
+                    current is None or not (current.agents or current.acp_agents or current.models or current.projects)
+                )
                 and self._candidate_error is None
                 and await to_thread.run_sync(untouched),
                 draft_scope=hashlib.sha256(f"{path.resolve()}\0{self._store.layout.root}".encode()).hexdigest()[:24],
                 configuration_path=str(path),
                 suggested_project_path=str(Path.cwd()),
                 providers=tuple(providers),
-                agents={} if current is None else {key: value.name for key, value in current.agents.items()},
+                detected_env_keys=tuple(
+                    sorted(
+                        {
+                            provider.credential_env
+                            for provider in API_PROVIDERS
+                            if (os.environ.get(provider.credential_env) or "").strip()
+                        }
+                    )
+                ),
+                agents={}
+                if current is None
+                else {key: value.name for key, value in (current.agents | current.acp_agents).items()},
+                acp_presets={} if current is None else {key: value.preset for key, value in current.acp_agents.items()},
                 projects={} if current is None else {key: value.name for key, value in current.projects.items()},
                 project_paths={}
                 if current is None
@@ -3653,15 +3771,23 @@ class HarnessUiApp:
                 self._discovered_models.get(request.connection, ()),
             )
 
+    def _validate_setup_configuration(self, candidate: LoadedHarnessUiConfiguration, selection: SetupSelection) -> None:
+        self._configurations.validate(candidate)
+        if selection.primary_acp_agent is not None and selection.set_as_default and not selection.is_addition:
+            configuration = resolve_thread_configuration(
+                candidate, RootThreadDefaults(agent_id=candidate.document.defaults.agent)
+            )
+            self._threads.acp_workspace(configuration)
+
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
         async with self._operation(), self._configuration_lock:
             preview = await preview_setup(
                 self._require_configuration_path(),
                 selection,
-                validate_candidate=self._configurations.validate,
+                validate_candidate=lambda candidate: self._validate_setup_configuration(candidate, selection),
                 content_plugin_root=self._content_plugin_root,
             )
-            if not selection.is_addition and selection.project is None:
+            if selection.updates_workspace and selection.project is None:
                 preview = preview.model_copy(update={"project_paths": (str(self._store.layout.staging),)})
             return preview
 
@@ -3669,8 +3795,8 @@ class HarnessUiApp:
         async with self._operation(), self._configuration_lock:
 
             def validate_candidate(candidate: LoadedHarnessUiConfiguration) -> None:
-                self._configurations.validate(candidate)
-                if not selection.is_addition and selection.environment_profile == "environment-sandbox":
+                self._validate_setup_configuration(candidate, selection)
+                if selection.updates_workspace and selection.environment_profile == "environment-sandbox":
                     roots = (
                         tuple(Path(root.path).resolve() for root in candidate.projects[selection.project].roots)
                         if selection.project is not None

@@ -280,3 +280,178 @@ it("renders private OAuth callback forms as password fields without retaining su
     ),
   );
 });
+
+it("renders ACP command permissions with structured evidence and direct option buttons", async () => {
+  const permissionRequest = {
+    ...request,
+    thread_id: "root-one",
+    source: "acp",
+    server_id: "acp-antigravity",
+    server_name: "Antigravity",
+    mode: "permission",
+    message: "",
+    schema: null,
+    permission: {
+      tool_kind: "execute",
+      tool_name: "run_command",
+      command: "ps aux | grep -iE 'a13n|harness' | grep -v grep",
+      cwd: "/home/wh1isper/code/oss/agent-foundation",
+      environment_keys: ["API_KEY", "PATH"],
+      locations: ["/home/wh1isper/code/oss/agent-foundation/Makefile:12"],
+      arguments: { SafeToAutoRun: false },
+      options: [
+        { option_id: "reject_once", name: "Reject", kind: "reject_once" },
+        { option_id: "allow_once", name: "Allow once", kind: "allow_once" },
+        {
+          option_id: "allow_always",
+          name: "Allow always",
+          kind: "allow_always",
+        },
+      ],
+    },
+  };
+  client.GET.mockResolvedValue({ data: [permissionRequest] });
+  client.POST.mockResolvedValue({
+    data: { ...permissionRequest, state: "accepted" },
+  });
+  mount();
+  expect(
+    await screen.findByRole("heading", { name: "Command permission" }),
+  ).toBeTruthy();
+  expect(screen.getByText("Antigravity")).toBeTruthy();
+  expect(screen.queryByText("acp-antigravity")).toBeNull();
+  expect(screen.queryByText(/MCP server/)).toBeNull();
+  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(document.querySelector("pre")?.textContent).toBe(
+    "ps aux | grep -iE 'a13n|harness' | grep -v grep",
+  );
+  expect(
+    screen.getByText("/home/wh1isper/code/oss/agent-foundation"),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("/home/wh1isper/code/oss/agent-foundation/Makefile:12"),
+  ).toBeTruthy();
+  expect(screen.getByText("API_KEY, PATH (values hidden)")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
+  const actionButtons = [
+    screen.getByRole("button", { name: "Allow once" }),
+    screen.getByRole("button", { name: "Allow always" }),
+    screen.getByRole("button", { name: "Reject" }),
+  ];
+  expect(
+    actionButtons[0].compareDocumentPosition(actionButtons[1]) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    actionButtons[1].compareDocumentPosition(actionButtons[2]) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  fireEvent.click(actionButtons[0]);
+  await waitFor(() =>
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/threads/{thread_id}/mcp/inputs/{request_id}/response",
+      {
+        params: { path: { thread_id: "root-one", request_id: "mcpinp-one" } },
+        body: { action: "accept", content: { option: "allow_once" } },
+      },
+    ),
+  );
+});
+
+it("offers a Deny fallback when an ACP permission request has no reject option", async () => {
+  const permissionRequest = {
+    ...request,
+    thread_id: "root-one",
+    source: "acp",
+    server_id: "acp-codex",
+    server_name: "Codex",
+    mode: "permission",
+    message: "Write src/app.ts",
+    schema: null,
+    permission: {
+      tool_kind: "edit",
+      tool_name: "write_file",
+      options: [
+        { option_id: "allow_once", name: "Allow once", kind: "allow_once" },
+      ],
+    },
+  };
+  client.GET.mockResolvedValue({ data: [permissionRequest] });
+  client.POST.mockResolvedValue({
+    data: { ...permissionRequest, state: "declined" },
+  });
+  mount();
+  expect(
+    await screen.findByRole("heading", { name: "File edit permission" }),
+  ).toBeTruthy();
+  expect(screen.getByText("write_file")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+  await waitFor(() =>
+    expect(client.POST).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ body: { action: "decline" } }),
+    ),
+  );
+});
+
+it("omits the MCP server warning for ACP questions and renders enum form fields with one label and a placeholder", async () => {
+  const questionRequest = {
+    ...request,
+    thread_id: "root-one",
+    source: "acp",
+    server_id: "acp-antigravity",
+    server_name: "Antigravity",
+    mode: "question",
+    message: "",
+    schema: null,
+    questions: [
+      {
+        header: "Format",
+        question: "Which output format?",
+        multiSelect: false,
+        options: [{ label: "JSON", description: "Machine-readable output" }],
+      },
+    ],
+  };
+  client.GET.mockResolvedValue({ data: [questionRequest] });
+  mount();
+  expect(await screen.findByRole("heading", { name: "Question" })).toBeTruthy();
+  expect(screen.getByText("Antigravity")).toBeTruthy();
+  expect(screen.queryByText(/MCP server/)).toBeNull();
+  cleanup();
+
+  const enumFormRequest = {
+    ...request,
+    thread_id: "root-one",
+    source: "acp",
+    server_id: "acp-antigravity",
+    server_name: "Antigravity",
+    mode: "form",
+    message: "Select a deployment target",
+    schema: {
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          title: "Environment",
+          oneOf: [
+            { const: "staging", title: "Staging" },
+            { const: "prod", title: "Production" },
+          ],
+        },
+      },
+      required: ["target"],
+    },
+  };
+  client.GET.mockResolvedValue({ data: [enumFormRequest] });
+  mount();
+  await screen.findByText("Select a deployment target");
+  expect(screen.getAllByText("Environment")).toHaveLength(1);
+  expect(screen.getByText("Select an option")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Your response goes to this Agent. Don't include passwords, tokens or other secrets.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/MCP server/)).toBeNull();
+});

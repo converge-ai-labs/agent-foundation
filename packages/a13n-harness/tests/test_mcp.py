@@ -257,7 +257,8 @@ def test_mcp_context_header_config_rejects_case_insensitive_duplicates() -> None
 
 
 @pytest.mark.anyio
-async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_per_logical_run() -> None:
+@pytest.mark.parametrize("authority", ["operator", "none"])
+async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_per_logical_run(authority) -> None:
     calls: list[str] = []
 
     async def headers_factory(context: AgentContext) -> dict[str, str]:
@@ -273,6 +274,8 @@ async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_pe
         headers={"X-Static": "static"},
         allowed_tools=["search"],
     )
+    if authority != "operator":
+        capability = capability.with_authority(authority)
     first_deps = _MCPContextDeps("run-1")
 
     assert capability.get_native_tools() == []
@@ -286,6 +289,7 @@ async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_pe
     assert calls == ["run-1", "run-2"]
     assert set(first_deps._capabilities) == {"a13n.mcp.context.context-server"}
     assert isinstance(first, MCP)
+    assert first._effective_authority == authority
     native = first.get_native_tools()[0]
     assert native.headers == {"X-Static": "static", "X-Run": "run-1"}
     assert native.allowed_tools == ["search"]
@@ -505,6 +509,48 @@ async def test_local_mcp_invocation_retains_client_after_foreground_run_close():
     assert "retained MCP value" in str(completed.result)
     assert calls == 1
     assert await runtime.close() == ()
+
+
+@pytest.mark.anyio
+async def test_mcp_server_defers_prepared_tools_until_loaded() -> None:
+    from a13n_harness.mcp import MCPServer as HarnessMCPServer
+    from fastmcp import Client, FastMCP
+
+    server = FastMCP("Lookup")
+
+    @server.tool
+    def lookup() -> str:
+        return "found"
+
+    async def factory() -> MCPToolset[AgentContext]:
+        return MCPToolset(Client(server), id="lookup-server")
+
+    async def prepare(ctx):
+        return factory
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        returns = _tool_returns(messages)
+        visible = {tool.name for tool in info.function_tools}
+        if not returns:
+            assert visible == {"load_capability"}
+            yield {0: DeltaToolCall(name="load_capability", json_args='{"id":"lookup-server"}', tool_call_id="load-1")}
+        elif len(returns) == 1:
+            assert "lookup" in visible
+            yield {0: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="lookup-1")}
+        else:
+            assert returns[-1].content == "found"
+            yield "done"
+
+    capability = HarnessMCPServer(id="lookup-server", prepare=prepare, defer_loading=True)
+    assert capability.defer_loading
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(capability,),
+    )
+    result = await executable.run("Load the lookup tool")
+    assert result.output_or_raise() == "done"
 
 
 @pytest.mark.anyio

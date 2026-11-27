@@ -615,13 +615,17 @@ class LocalProcessManager(NativeProcessTrees):
         if not executable.is_file():
             raise EnvironmentError("Shell profile executable is unavailable.", code="environment_not_found")
         if profile.dialect == "powershell":
-            # EncodedCommand avoids Windows argv quoting and code-page ambiguity.
-            prefix = (
-                "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = "
-                "[System.Text.UTF8Encoding]::new($false);\n"
+            # Keep the command line ASCII and avoid CLIXML stderr in Windows PowerShell.
+            encoded = base64.b64encode(command.script.encode("utf-8")).decode("ascii")
+            decoded = f"[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}'))"
+            loader = (
+                "try { [Console]::InputEncoding = [Console]::OutputEncoding = "
+                "[System.Text.UTF8Encoding]::new($false) } catch {}; "
+                "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+                f". ([scriptblock]::Create([scriptblock]::Create({decoded}).ToString() "
+                "+ [char]10 + [char]10 + 'if (-not $?) { exit 1 }'))"
             )
-            encoded = base64.b64encode((prefix + command.script).encode("utf-16-le")).decode("ascii")
-            return (str(executable), *profile.fixed_arguments, "-OutputFormat", "Text", "-EncodedCommand", encoded)
+            return (str(executable), *profile.fixed_arguments, "-OutputFormat", "Text", "-Command", loader)
         login = ("-l",) if command.login else ()
         return (str(executable), *profile.fixed_arguments, *login, "-c", command.script)
 

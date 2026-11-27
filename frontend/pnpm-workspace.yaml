@@ -2,4 +2,7 @@ packages:
   - apps/*
   - packages/*
 patchedDependencies:
+  # Keep the CJK URL boundary in sync across GFM tokenization and its text-node fallback.
+  mdast-util-gfm-autolink-literal@2.0.1: patches/mdast-util-gfm-autolink-literal@2.0.1.patch
+  micromark-extension-gfm-autolink-literal@2.1.0: patches/micromark-extension-gfm-autolink-literal@2.1.0.patch
   pptx-browser@4.1.5: patches/pptx-browser@4.1.5.patch

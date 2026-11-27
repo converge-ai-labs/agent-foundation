@@ -80,6 +80,18 @@ def test_annotations_keep_per_part_unicode_offsets_and_xml_in_first_appearance_o
     assert retained_skill_spans(source[0].content, {"skills": spans, "long_text": True}) == []
 
 
+def test_selected_skill_description_is_normalized_and_bounded() -> None:
+    source = catalog()
+    review = source.items[0].model_copy(update={"description": "  Review\t changes\n " + "details " * 80})
+    prepared = prepare_skill_input("$review", source.model_copy(update={"items": (review,)}), ("review",))
+    hint = prepared[-1]
+    assert isinstance(hint, TextContent)
+    description = hint.metadata["harness_ui"]["selected_skills"][0]["description"]
+    assert description.startswith("Review changes details ")
+    assert description == " ".join(description.split())
+    assert len(description) <= 200
+
+
 def test_tui_live_history_and_local_echo_preserve_styles_without_catalog_reinterpretation() -> None:
     def text(value: str, index: int) -> TextContent:
         return TextContent(value, metadata={"source_id": "input-test", "harness_ui": {"composer": {"index": index}}})

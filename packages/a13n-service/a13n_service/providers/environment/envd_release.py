@@ -3,7 +3,7 @@
 import shlex
 from pathlib import PurePosixPath
 
-VERSION = "0.8.3"
+VERSION = "0.8.4"
 TARGET = "x86_64-unknown-linux-gnu"
 SOURCE_REVISION = "62139184562f99a050d56bef33b0c869e8820801"
 INSTALLER_SHA256 = "b189250c1bc00620cef343c1c85a82abca18c225ddd93d408279d101bf2f06ae"

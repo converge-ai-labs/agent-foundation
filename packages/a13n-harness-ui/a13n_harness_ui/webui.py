@@ -38,8 +38,8 @@ from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
-from a13n_harness_ui import __version__
-from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus
+from a13n_harness_ui import __version__, updater
+from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, AcpPresetAuthRequest
 from a13n_harness_ui.acp_sessions import (
     AcpCommand,
     AcpOption,
@@ -134,6 +134,8 @@ from a13n_harness_ui.inbox_models import (
     InboxMarkDoneRequest,
     InboxMarkReadRequest,
     InboxPage,
+    InboxUnreadPost,
+    ThreadInboxMarkReadRequest,
 )
 from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
@@ -214,6 +216,8 @@ from a13n_harness_ui.surfaces import (
     DecisionResponseBatch,
     MemoryFileEntry,
     MemoryFileText,
+    MessageEditReceipt,
+    MessageEditSelection,
     NewThreadDefaults,
     ProjectDefaultsApply,
     ProjectDefaultsPreview,
@@ -252,6 +256,7 @@ from a13n_harness_ui.thread_files import (
     InputAttachmentReference,
     ThreadAttachment,
 )
+from a13n_harness_ui.update_notices import UpdateChecker, UpdateNotices
 from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
 from a13n_harness_ui.web_providers import WebProviderCatalogView
 from a13n_harness_ui.webui_lifecycle import ErrorResponse, RequestLog, WebUIServer
@@ -317,6 +322,10 @@ class PromptRequest(SurfaceModel):
             ),
             source_id=self.source_id,
         )
+
+
+class MessageEditRequest(PromptRequest):
+    selection: MessageEditSelection
 
 
 class SteerRequest(SurfaceModel):
@@ -589,11 +598,13 @@ def create_webui(
     host: str = "127.0.0.1",
     static_root: Path = _STATIC,
     stopping: Event | None = None,
+    no_update_check: bool = False,
 ) -> FastAPI:
     """Build the adapter; only its ASGI lifespan opens and owns the App."""
     if api_key == "":
         raise ValueError("API key cannot be empty")
     owner: HarnessUiApp | None = None
+    checker: UpdateChecker | None = None
     allowed_origins: frozenset[str] = frozenset()
     model_logo_origins = ""
     sandbox_url: str | None = None
@@ -603,7 +614,7 @@ def create_webui(
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncGenerator[None]:
-        nonlocal owner, allowed_origins, model_logo_origins, sandbox_url, sandbox_error
+        nonlocal owner, checker, allowed_origins, model_logo_origins, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
             _server.state.shutdown = opened.shutdown
             source = await opened.current_configuration()
@@ -626,12 +637,24 @@ def create_webui(
                     }
                 )
             )
+            checker = UpdateChecker(
+                opened.data_root, __version__, install_method="uv_tool" if updater.update_command() else "other"
+            )
+            check_updates = not no_update_check and (source is None or source.document.process.update_check)
+            if check_updates:
+                await checker.load()
             owner = opened
             try:
-                async with mcp_app.lifespan(mcp_app):
-                    yield
+                async with mcp_app.lifespan(mcp_app), create_task_group() as tasks:
+                    if check_updates:
+                        tasks.start_soon(checker.run)
+                    try:
+                        yield
+                    finally:
+                        tasks.cancel_scope.cancel()
             finally:
                 owner = None
+                checker = None
                 allowed_origins = frozenset()
                 sandbox_url = None
                 sandbox_error = None
@@ -695,9 +718,11 @@ def create_webui(
     )
     async def bot_submit(request: Request) -> BotInput:
         document = await _document(request, BotSubmitRequest)
-        return await app().submit_bot_input(
+        accepted = await app().submit_bot_input(
             BotSubmit(input_id=document.input_id, text=document.text, parts=document.parts), draft=document.draft
         )
+        await app().inbox().acknowledge_owner_input(BOT_THREAD_ID, through=accepted.created_at)
+        return accepted
 
     @server.post("/api/bot/pause", response_model=BotSnapshot, openapi_extra=_body(BotPause))
     async def bot_pause(request: Request) -> BotSnapshot:
@@ -711,6 +736,18 @@ def create_webui(
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ) -> InboxPage:
         return await app().inbox().page(state=state, before=before, limit=limit)
+
+    @server.get("/api/inbox/threads/{thread_id}/unread", response_model=tuple[InboxUnreadPost, ...])
+    async def thread_inbox_unread(thread_id: str) -> tuple[InboxUnreadPost, ...]:
+        return await app().inbox().thread_unread(thread_id)
+
+    @server.post(
+        "/api/inbox/threads/{thread_id}/mark-read", status_code=204, openapi_extra=_body(ThreadInboxMarkReadRequest)
+    )
+    async def thread_inbox_mark_read(thread_id: str, request: Request) -> Response:
+        document = await _document(request, ThreadInboxMarkReadRequest)
+        await app().inbox().mark_thread_read(thread_id, item_ids=document.item_ids)
+        return Response(status_code=204)
 
     @server.post("/api/inbox/mark-read", status_code=204, openapi_extra=_body(InboxMarkReadRequest))
     async def inbox_mark_read(request: Request) -> Response:
@@ -759,7 +796,14 @@ def create_webui(
             "host_git_permission_denied",
         }:
             status = 403
-        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists", "thread_interaction_expired"}:
+        elif code in {
+            "host_files_partial_failure",
+            "thread_run_active",
+            "thread_exists",
+            "thread_interaction_expired",
+            "thread_edit_stop_timeout",
+            "thread_edit_stop_failed",
+        }:
             status = 409
         elif code in {
             "browser_human_control",
@@ -889,6 +933,13 @@ def create_webui(
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
         )
+
+    @server.get("/api/update-notices", response_model=UpdateNotices)
+    async def update_notices(response: Response) -> UpdateNotices:
+        if checker is None:
+            raise HarnessUiError("The WebUI server is not ready.", code="app_not_ready")
+        response.headers["Cache-Control"] = "no-store"
+        return checker.snapshot
 
     @server.get("/api/presence", response_model=PresenceFrame)
     async def presence(participant_id: Annotated[str | None, Query(max_length=80)] = None) -> PresenceFrame:
@@ -1546,7 +1597,9 @@ def create_webui(
             ]
         else:
             command = [
-                str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"),
+                str(
+                    Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+                ),
                 "-NoProfile",
                 "-STA",
                 "-Command",
@@ -1580,7 +1633,7 @@ def create_webui(
                     raise OSError("Finder could not reveal the item.")
             else:
                 await asyncio.create_subprocess_exec(
-                    str(Path(os.environ["SystemRoot"]) / "explorer.exe"), "/select,", entry.path
+                    str(Path(os.environ.get("SystemRoot", "C:/Windows")) / "explorer.exe"), "/select,", entry.path
                 )
         except OSError as exc:
             raise HarnessUiError("Could not reveal the item.", code="host_files_io_error") from exc
@@ -1821,6 +1874,7 @@ def create_webui(
 
     async def while_connected[T](request: Request, operation: Callable[[], Awaitable[T]]) -> T:
         result: list[T] = []
+        failure: HarnessUiError | None = None
         async with create_task_group() as tasks:
 
             async def disconnected() -> None:
@@ -1831,8 +1885,14 @@ def create_webui(
                         return
 
             tasks.start_soon(disconnected)
-            result.append(await operation())
-            tasks.cancel_scope.cancel()
+            try:
+                result.append(await operation())
+            except HarnessUiError as error:
+                failure = error
+            finally:
+                tasks.cancel_scope.cancel()
+        if failure is not None:
+            raise failure
         if not result:
             raise HarnessUiError("The client disconnected.", code="request_disconnected")
         return result[0]
@@ -2057,6 +2117,23 @@ def create_webui(
     async def acp_agent_presets() -> tuple[AcpPresetView, ...]:
         return acp_presets()
 
+    @server.post("/api/acp-agents/preset-auth", response_model=AcpAuthStatus, openapi_extra=_body(AcpPresetAuthRequest))
+    async def acp_preset_auth(request: Request) -> AcpAuthStatus:
+        document = await _document(request, AcpPresetAuthRequest)
+        return await while_connected(request, lambda: app().acp_preset_auth(document))
+
+    @server.get("/api/acp-agents/preset-auth/inputs", response_model=tuple[McpInputRequestView, ...])
+    async def acp_preset_auth_inputs() -> tuple[McpInputRequestView, ...]:
+        return await app().acp_preset_auth_inputs()
+
+    @server.post(
+        "/api/acp-agents/preset-auth/inputs/{request_id}/response",
+        response_model=McpInputRequestView,
+        openapi_extra=_body(McpInputResponse),
+    )
+    async def respond_acp_preset_auth_input(request_id: str, request: Request) -> McpInputRequestView:
+        return await app().respond_acp_preset_auth_input(request_id, await _document(request, McpInputResponse))
+
     @server.get("/api/acp-agents/{agent_id}/options", response_model=AcpOptionsPreview)
     async def acp_agent_options(agent_id: str, project_id: str | None = None) -> AcpOptionsPreview:
         return await app().acp_agent_options(agent_id, project_id)
@@ -2277,6 +2354,24 @@ def create_webui(
     @server.post("/api/threads/{thread_id}/branch", response_model=ThreadSummary, openapi_extra=_body(BranchRequest))
     async def branch_thread(thread_id: str, request: Request) -> ThreadSummary:
         return await app().branch_thread(thread_id, await _document(request, BranchRequest))
+
+    @server.post(
+        "/api/threads/{thread_id}/edit-message",
+        response_model=MessageEditReceipt,
+        openapi_extra=_body(MessageEditRequest),
+        dependencies=[Depends(browser_submission)],
+    )
+    async def edit_message(thread_id: str, request: Request) -> MessageEditReceipt:
+        document = await _document(request, MessageEditRequest)
+        try:
+            return await app().edit_thread_message(
+                thread_id=thread_id,
+                selection=document.selection,
+                prompt=document.input(),
+                skill_references=document.skill_references,
+            )
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="input_invalid") from exc
 
     @server.post("/api/threads/{thread_id}/fork", response_model=ThreadSummary)
     async def fork_thread(thread_id: str) -> ThreadSummary:
@@ -2552,7 +2647,7 @@ def create_webui(
         controls = document.controls().model_dump(exclude_none=True)
         overrides = RunModelOverrides(model_id=document.model_id, **controls) if document.model_id or controls else None
         try:
-            return await app().submit_thread(
+            receipt = await app().submit_thread(
                 thread_id=thread_id,
                 prompt=document.input(),
                 app_context=document.app_context,
@@ -2566,13 +2661,18 @@ def create_webui(
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
 
+        await app().inbox().acknowledge_owner_input(thread_id, through=receipt.submitted_at)
+        return receipt
+
     @server.post(
         "/api/threads/{thread_id}/decisions", response_model=RootRunReceipt, openapi_extra=_body(DecisionResponseBatch)
     )
     async def decisions(thread_id: str, request: Request) -> RootRunReceipt:
-        return await app().respond_decisions(
+        receipt = await app().respond_decisions(
             thread_id=thread_id, response=await _document(request, DecisionResponseBatch)
         )
+        await app().inbox().acknowledge_owner_input(thread_id, through=receipt.submitted_at)
+        return receipt
 
     @server.get("/api/operations/{receipt_id}", response_model=RootOperationView)
     async def operation(receipt_id: str) -> RootOperationView:
@@ -2589,6 +2689,7 @@ def create_webui(
                 message=document.input(),
                 skill_references=document.skill_references,
                 draft=document.draft,
+                acknowledge_inbox=True,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -2686,7 +2787,7 @@ def create_webui(
                                     share_id := socket.path_params.get("share_id"), str
                                 ):
                                     thread = await app().sharing.thread(
-                                        share_id, frame.snapshot.thread.thread.thread_id
+                                        share_id, frame.snapshot.thread.thread.thread_id, include_display=True
                                     )
                                     operation = frame.snapshot.root_operation
                                     if operation is not None:
@@ -2831,14 +2932,32 @@ def create_webui(
     async def shared_threads(
         share_id: str,
         query: Annotated[str | None, Query(max_length=500)] = None,
+        coordinator_thread_id: Annotated[str | None, Query(max_length=80)] = None,
+        independent_only: bool = False,
         cursor: Annotated[str | None, Query(max_length=4096)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 30,
     ) -> ThreadPage:
         grant = await app().sharing.active(share_id)
+        if coordinator_thread_id is not None:
+            if grant.scope == "thread" and coordinator_thread_id != grant.target_id:
+                raise unavailable()
+            if grant.scope == "project":
+                await app().sharing.thread(share_id, coordinator_thread_id)
+            return await app().list_threads(
+                project_id=grant.target_id if grant.scope == "project" else None,
+                coordinator_thread_id=coordinator_thread_id,
+                independent_only=independent_only,
+                query=query,
+                cursor=cursor,
+                limit=limit,
+                sort="touched",
+            )
         if grant.scope == "thread":
             detail = await app().sharing.thread(share_id, grant.target_id)
             return ThreadPage(threads=(detail.thread,), total=1)
-        return await app().list_threads(project_id=grant.target_id, query=query, cursor=cursor, limit=limit)
+        return await app().list_threads(
+            project_id=grant.target_id, query=query, independent_only=independent_only, cursor=cursor, limit=limit
+        )
 
     @guest.post(
         "/threads",
@@ -2852,7 +2971,7 @@ def create_webui(
 
     @guest.get("/threads/{thread_id}", response_model=ThreadDetail)
     async def shared_thread(share_id: str, thread_id: str) -> ThreadDetail:
-        return await app().sharing.thread(share_id, thread_id)
+        return await app().sharing.thread(share_id, thread_id, include_display=True)
 
     @guest.post(
         "/threads/{thread_id}/input-prediction",
@@ -2935,6 +3054,7 @@ def create_webui(
     guest.add_api_route(
         "/threads/{thread_id}/context-usage", context_usage, methods=["GET"], response_model=ContextUsageView
     )
+    guest.add_api_route("/threads/{thread_id}/usage", usage, methods=["GET"], response_model=ThreadUsageView)
     guest.add_api_route("/threads/{thread_id}/work", work, methods=["GET"], response_model=ThreadWork)
     guest.add_api_route("/threads/{thread_id}/attachments/{attachment_id}", download_attachment, methods=["GET"])
     guest.add_api_route(
@@ -2997,6 +3117,7 @@ def create_webui(
             "settings/envd",
             "settings/runtime",
             "settings/connections",
+            "settings/diagnostics",
             "archived",
             "inbox",
             "memory",
@@ -3123,6 +3244,7 @@ async def run(
     port: int = 8765,
     api_key: str | None = None,
     dangerously_bypass_permission: bool = False,
+    no_update_check: bool = False,
 ) -> None:
     """Serve in the foreground; disconnecting browsers never ends this owner."""
     try:
@@ -3157,7 +3279,9 @@ async def run(
             err=True,
         )
     stopping = Event()
-    server = create_webui(app_factory, api_key=selected_key, host=host, stopping=stopping)
+    server = create_webui(
+        app_factory, api_key=selected_key, host=host, stopping=stopping, no_update_check=no_update_check
+    )
     await WebUIServer(
         uvicorn.Config(
             server,

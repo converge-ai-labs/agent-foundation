@@ -153,9 +153,17 @@ class AcpEnvironmentClient:
             return
         self._remember_session_update(update)
         if self.binding is not None and isinstance(update, schema.ToolCallStart | schema.ToolCallProgress):
-            if self.binding.review_permission_command is not None:
-                fields = update.model_dump(include={"tool_call_id", "title", "kind", "raw_input"}, exclude_unset=True)
-                self._tool_calls[update.tool_call_id] = self._tool_call(schema.ToolCallUpdate.model_validate(fields))
+            if self.binding.permission is not None or self.binding.review_permission_command is not None:
+                if update.status in {"completed", "failed"}:
+                    self._tool_calls.pop(update.tool_call_id, None)
+                else:
+                    fields = update.model_dump(
+                        include={"tool_call_id", "title", "kind", "name", "locations", "raw_input"},
+                        exclude_unset=True,
+                    )
+                    self._tool_calls[update.tool_call_id] = self._tool_call(
+                        schema.ToolCallUpdate.model_validate(fields)
+                    )
             if self._bridge is not None:
                 self._bridge._observe(update)
         if self.binding is not None and self.binding.on_update is not None:
@@ -194,6 +202,8 @@ class AcpEnvironmentClient:
             update={
                 "kind": "execute" if "execute" in (call.kind, prior.kind) else call.kind or prior.kind,
                 "title": call.title or prior.title,
+                "name": call.name or prior.name,
+                "locations": call.locations if "locations" in call.model_fields_set else prior.locations,
                 "raw_input": call.raw_input if "raw_input" in call.model_fields_set else prior.raw_input,
             }
         )

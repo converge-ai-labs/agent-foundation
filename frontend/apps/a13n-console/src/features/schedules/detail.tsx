@@ -29,7 +29,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { IconTile } from "../../shared/identity";
+import { AppBadge, IconTile } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
 import { DetailHeader, DetailPage, Section } from "../../shared/page";
 import { JsonView } from "../../shared/forms";
@@ -131,14 +131,17 @@ function ScheduleContent({
           }
           name={schedule.name}
           status={
-            <StatePill
-              state={schedule.state}
-              label={
-                schedule.state === "completed"
-                  ? t("Scheduling finished")
-                  : undefined
-              }
-            />
+            <>
+              <StatePill
+                state={schedule.state}
+                label={
+                  schedule.state === "completed"
+                    ? t("Scheduling finished")
+                    : undefined
+                }
+              />
+              {schedule.app_id && <AppBadge appId={schedule.app_id} />}
+            </>
           }
           resourceKey={schedule.id}
           expandableDescription

@@ -18,7 +18,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../../../shared/feedback";
-import { CopyableId } from "../../../../shared/identity";
+import { AppBadge, CopyableId } from "../../../../shared/identity";
 import { ExecutionFields, JsonView } from "../../../../shared/forms";
 import { UNKNOWN } from "../../../../shared/unknown";
 import { AgentLink } from "../../../agents/link";
@@ -147,6 +147,18 @@ function RunDetails({ selected }: { selected: Run }) {
                 t("Task snapshot")
               )}
             </Fact>
+            {run.app_id && (
+              <Fact term={t("App")}>
+                <AppBadge appId={run.app_id} />
+                <CopyableId value={run.app_id} />
+              </Fact>
+            )}
+            {run.trigger_app_id && (
+              <Fact term={t("Triggered by app")}>
+                <AppBadge appId={run.trigger_app_id} />
+                <CopyableId value={run.trigger_app_id} />
+              </Fact>
+            )}
             {can("read") && (
               <Fact term={t("Traces")}>
                 <Link

@@ -290,6 +290,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/threads/{thread_id}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Thread Inbox Unread */
+        get: operations["thread_inbox_unread_api_inbox_threads__thread_id__unread_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/threads/{thread_id}/mark-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Thread Inbox Mark Read */
+        post: operations["thread_inbox_mark_read_api_inbox_threads__thread_id__mark_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/mark-read": {
         parameters: {
             query?: never;
@@ -488,6 +522,23 @@ export interface paths {
         };
         /** Status */
         get: operations["status_api_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/update-notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Notices */
+        get: operations["update_notices_api_update_notices_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2260,6 +2311,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp-agents/preset-auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acp Preset Auth */
+        post: operations["acp_preset_auth_api_acp_agents_preset_auth_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/preset-auth/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Preset Auth Inputs */
+        get: operations["acp_preset_auth_inputs_api_acp_agents_preset_auth_inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/preset-auth/inputs/{request_id}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond Acp Preset Auth Input */
+        post: operations["respond_acp_preset_auth_input_api_acp_agents_preset_auth_inputs__request_id__response_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/acp-agents/{agent_id}/options": {
         parameters: {
             query?: never;
@@ -2688,6 +2790,23 @@ export interface paths {
         put?: never;
         /** Branch Thread */
         post: operations["branch_thread_api_threads__thread_id__branch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/edit-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Message */
+        post: operations["edit_message_api_threads__thread_id__edit_message_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3412,6 +3531,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shared/{share_id}/threads/{thread_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Usage */
+        get: operations["usage_api_shared__share_id__threads__thread_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shared/{share_id}/threads/{thread_id}/work": {
         parameters: {
             query?: never;
@@ -3582,6 +3718,16 @@ export interface components {
             source: "native" | "copilot_cli_file";
             /** Account Id */
             account_id: string;
+        };
+        /** AcpAgentCandidate */
+        AcpAgentCandidate: {
+            preset: components["schemas"]["AcpAgentPreset"];
+            /** Command */
+            command?: string | null;
+            /** Args */
+            args?: string[] | null;
+            /** Name */
+            name?: string | null;
         };
         /** @enum {string} */
         AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "gemini_cli" | "github_copilot" | "opencode" | "goose" | "kimi_cli" | "custom";
@@ -4415,6 +4561,8 @@ export interface components {
         BranchPoints: {
             /** Source */
             source: string;
+            /** Edit Source */
+            edit_source: string;
             /** Points */
             points: {
                 [key: string]: components["schemas"]["BranchPoint"];
@@ -6681,6 +6829,20 @@ export interface components {
             /** Updates */
             updates: number;
         };
+        /** InboxUnreadPost */
+        InboxUnreadPost: {
+            /** Item Id */
+            item_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Has Transcript */
+            has_transcript: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** InputPredictionResponse */
         InputPredictionResponse: {
             /** Continuation Id */
@@ -6894,6 +7056,12 @@ export interface components {
              * @constant
              */
             kind?: "mcp_elicitation";
+            /**
+             * Source
+             * @default mcp
+             * @enum {string}
+             */
+            source?: "mcp" | "acp";
             /** Request Id */
             request_id: string;
             /** Thread Id */
@@ -6924,7 +7092,7 @@ export interface components {
              * Mode
              * @enum {string}
              */
-            mode: "form" | "url" | "question";
+            mode: "form" | "url" | "question" | "permission";
             /** Message */
             message: string;
             /**
@@ -6932,6 +7100,8 @@ export interface components {
              * @default []
              */
             questions?: components["schemas"]["UserQuestion"][];
+            /** @default null */
+            permission?: components["schemas"]["PermissionRequestDetail"] | null;
             /**
              * Schema
              * @default null
@@ -6997,6 +7167,12 @@ export interface components {
             resource_digest: string;
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
+            /**
+             * Authority
+             * @default operator
+             * @enum {string}
+             */
+            authority?: "operator" | "user" | "none";
             /** Server Id */
             server_id: string;
             /** Name */
@@ -7099,6 +7275,12 @@ export interface components {
              * @default 0
              */
             output_tokens?: number;
+        };
+        /** MessageEditReceipt */
+        MessageEditReceipt: {
+            receipt: components["schemas"]["RootRunReceipt"];
+            /** Continuation Id */
+            continuation_id: string;
         };
         /** MetricsSample */
         MetricsSample: {
@@ -7683,6 +7865,63 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** PermissionOptionView */
+        PermissionOptionView: {
+            /** Option Id */
+            option_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "allow_once" | "allow_always" | "reject_once" | "reject_always";
+        };
+        /** PermissionRequestDetail */
+        PermissionRequestDetail: {
+            /**
+             * Tool Kind
+             * @default null
+             */
+            tool_kind?: string | null;
+            /**
+             * Tool Name
+             * @default null
+             */
+            tool_name?: string | null;
+            /**
+             * Command
+             * @default null
+             */
+            command?: string | null;
+            /**
+             * Cwd
+             * @default null
+             */
+            cwd?: string | null;
+            /**
+             * Environment Keys
+             * @default []
+             */
+            environment_keys?: string[];
+            /**
+             * Locations
+             * @default []
+             */
+            locations?: string[];
+            /**
+             * Arguments
+             * @default null
+             */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Options
+             * @default []
+             */
+            options?: components["schemas"]["PermissionOptionView"][];
+        };
         /** PluginSubscriptionAuthentication */
         PluginSubscriptionAuthentication: {
             /**
@@ -8236,6 +8475,22 @@ export interface components {
             /** Next Offset */
             next_offset?: number | null;
         };
+        /** SecurityAdvisory */
+        SecurityAdvisory: {
+            /** Id */
+            id: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "high" | "critical";
+            /** Url */
+            url: string;
+            /** Updated At */
+            updated_at: string | null;
+        };
         /** SelectableResourceSummary */
         SelectableResourceSummary: {
             /** Resource Id */
@@ -8325,6 +8580,7 @@ export interface components {
             preserved_paths: string[];
             /** Project Paths */
             project_paths: string[];
+            agent_id?: components["schemas"]["ResourceId"] | null;
         };
         /** SetupProvider */
         SetupProvider: {
@@ -8345,6 +8601,7 @@ export interface components {
             completed: boolean;
             /** Published Paths */
             published_paths: string[];
+            agent_id?: components["schemas"]["ResourceId"] | null;
             /** Error Code */
             error_code?: string | null;
             /** Error Message */
@@ -8353,6 +8610,26 @@ export interface components {
         /** SetupSelection */
         SetupSelection: {
             model?: components["schemas"]["ModelRecipe"] | null;
+            primary_acp_agent?: components["schemas"]["AcpAgentCandidate"] | null;
+            /**
+             * Additional Acp Presets
+             * @default []
+             */
+            additional_acp_presets?: components["schemas"]["AcpAgentPreset"][];
+            /**
+             * Set As Default
+             * @default true
+             */
+            set_as_default?: boolean;
+            /**
+             * Configure Workspace
+             * @default true
+             */
+            configure_workspace?: boolean;
+            /** Enable Dictation */
+            enable_dictation?: boolean | null;
+            /** Auto Organize Memory */
+            auto_organize_memory?: boolean | null;
             /**
              * Instructions
              * @default
@@ -8442,8 +8719,17 @@ export interface components {
             suggested_project_path?: string;
             /** Providers */
             providers: components["schemas"]["SetupProvider"][];
+            /**
+             * Detected Env Keys
+             * @default []
+             */
+            detected_env_keys?: string[];
             /** Agents */
             agents: {
+                [key: string]: string;
+            };
+            /** Acp Presets */
+            acp_presets?: {
                 [key: string]: string;
             };
             /** Projects */
@@ -8564,6 +8850,8 @@ export interface components {
             grant: components["schemas"]["ShareGrant"];
             /** Title */
             title: string;
+            /** Target Role */
+            target_role?: ("ordinary" | "coordinator" | "worker") | null;
         };
         /** ShareCreated */
         ShareCreated: {
@@ -8647,6 +8935,15 @@ export interface components {
             used_percent: number;
             /** Reset At */
             reset_at: number;
+        };
+        /** StableRelease */
+        StableRelease: {
+            /** Version */
+            version: string;
+            /** Url */
+            url: string;
+            /** Is Newer */
+            is_newer: boolean;
         };
         /** Status */
         Status: {
@@ -9256,6 +9553,8 @@ export interface components {
              * @default []
              */
             available_actions?: ("run" | "respond" | "wait" | "steer" | "cancel" | "archive" | "clear_context")[];
+            /** @default null */
+            model_display?: components["schemas"]["ThreadModelDisplay"] | null;
         };
         /**
          * ThreadExecution
@@ -9301,6 +9600,34 @@ export interface components {
             error_message?: string | null;
             /** @default null */
             main_account?: components["schemas"]["MainAccountSelection"] | null;
+        };
+        /**
+         * ThreadModelDisplay
+         * @description Read-only display summary of a Thread's effective Agent and Model.
+         */
+        ThreadModelDisplay: {
+            /**
+             * Agent Name
+             * @default null
+             */
+            agent_name?: string | null;
+            /**
+             * Model Name
+             * @default null
+             */
+            model_name?: string | null;
+            /**
+             * Model Identity
+             * @default null
+             */
+            model_identity?: string | null;
+            /**
+             * Thinking Summary
+             * @default null
+             */
+            thinking_summary?: string | null;
+            /** @default default */
+            fast?: components["schemas"]["FastState"];
         };
         /** ThreadPage */
         ThreadPage: {
@@ -9850,6 +10177,19 @@ export interface components {
              * @enum {string}
              */
             kind: "unlimited";
+        };
+        /** UpdateNotices */
+        UpdateNotices: {
+            /** Current Version */
+            current_version: string;
+            latest_stable: components["schemas"]["StableRelease"] | null;
+            /** Advisories */
+            advisories: components["schemas"]["SecurityAdvisory"][];
+            /**
+             * Install Method
+             * @enum {string}
+             */
+            install_method: "uv_tool" | "other";
         };
         /**
          * UrlInputSupport
@@ -11070,6 +11410,11 @@ export interface components {
             /** Paused */
             paused: boolean;
         };
+        /** ThreadInboxMarkReadRequest */
+        ThreadInboxMarkReadRequest: {
+            /** Item Ids */
+            item_ids: string[];
+        };
         /** InboxMarkReadRequest */
         InboxMarkReadRequest: {
             /**
@@ -11513,6 +11858,29 @@ export interface components {
             resource_digest: string;
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
+            /**
+             * Authority
+             * @default operator
+             * @enum {string}
+             */
+            authority?: "operator" | "user" | "none";
+        };
+        /** AcpPresetAuthRequest */
+        AcpPresetAuthRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "probe" | "login" | "logout";
+            /** Method Id */
+            method_id?: string | null;
+            preset: components["schemas"]["AcpAgentPreset"];
+            /** Command */
+            command?: string | null;
+            /** Args */
+            args?: string[] | null;
+            /** Name */
+            name?: string | null;
         };
         /** AcpOptionChange */
         AcpOptionChange: {
@@ -11636,9 +12004,38 @@ export interface components {
             turn_key: string;
             /**
              * Side
-             * @enum {string}
+             * @constant
              */
-            side: "before" | "after";
+            side: "after";
+        };
+        /** MessageEditSelection */
+        MessageEditSelection: {
+            /** Expected Source */
+            expected_source: string;
+            /** Turn Key */
+            turn_key: string;
+        };
+        /** SkillReference */
+        SkillReference: {
+            /** Catalog Id */
+            catalog_id: string;
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+        };
+        /** MessageEditRequest */
+        MessageEditRequest: {
+            /** Parts */
+            parts: (string | components["schemas"]["InputAttachmentReference"])[];
+            /**
+             * Skill References
+             * @default []
+             */
+            skill_references?: components["schemas"]["SkillReference"][];
+            /** Source Id */
+            source_id?: string | null;
+            selection: components["schemas"]["MessageEditSelection"];
         };
         /** ApprovalDecision */
         ApprovalDecision: {
@@ -11768,15 +12165,6 @@ export interface components {
         FastSelection: boolean | "ultrafast";
         /** @enum {string} */
         ReasoningMode: "standard" | "pro";
-        /** SkillReference */
-        SkillReference: {
-            /** Catalog Id */
-            catalog_id: string;
-            /** Item Id */
-            item_id: string;
-            /** Name */
-            name: string;
-        };
         /** SubmitRequest */
         SubmitRequest: {
             thinking?: components["schemas"]["ThinkingSelection"] | null;
@@ -12402,6 +12790,70 @@ export interface operations {
             };
         };
     };
+    thread_inbox_unread_api_inbox_threads__thread_id__unread_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxUnreadPost"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    thread_inbox_mark_read_api_inbox_threads__thread_id__mark_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadInboxMarkReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     inbox_mark_read_api_inbox_mark_read_post: {
         parameters: {
             query?: never;
@@ -12781,6 +13233,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListenerStatus"];
+                };
+            };
+        };
+    };
+    update_notices_api_update_notices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateNotices"];
                 };
             };
         };
@@ -16122,6 +16594,85 @@ export interface operations {
             };
         };
     };
+    acp_preset_auth_api_acp_agents_preset_auth_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpPresetAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpAuthStatus"];
+                };
+            };
+        };
+    };
+    acp_preset_auth_inputs_api_acp_agents_preset_auth_inputs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"][];
+                };
+            };
+        };
+    };
+    respond_acp_preset_auth_input_api_acp_agents_preset_auth_inputs__request_id__response_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpInputResponse"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     acp_agent_options_api_acp_agents__agent_id__options_get: {
         parameters: {
             query?: {
@@ -17232,6 +17783,43 @@ export interface operations {
             };
         };
     };
+    edit_message_api_threads__thread_id__edit_message_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-harness-browser"?: string | null;
+            };
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageEditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageEditReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     fork_thread_api_threads__thread_id__fork_post: {
         parameters: {
             query?: never;
@@ -18297,6 +18885,8 @@ export interface operations {
         parameters: {
             query?: {
                 query?: string | null;
+                coordinator_thread_id?: string | null;
+                independent_only?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -18742,6 +19332,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContextUsageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    usage_api_shared__share_id__threads__thread_id__usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadUsageView"];
                 };
             };
             /** @description Validation Error */

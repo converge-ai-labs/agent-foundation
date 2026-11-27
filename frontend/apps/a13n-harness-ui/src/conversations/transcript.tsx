@@ -866,10 +866,14 @@ function Rows({
       {row.kind === "input" ? (
         <InputContent
           branchKey={
-            messageActions &&
-            !row.subagentRunId &&
-            row.position === turn?.input_position
-              ? (key ?? "")
+            messageActions && !row.subagentRunId
+              ? row.position === undefined
+                ? (row.parts.map(inputSource).find(Boolean) ?? row.turnId)
+                : row.position === turn?.input_position
+                  ? actions?.points?.[key ?? ""]?.edit
+                    ? key
+                    : (row.parts.map(inputSource).find(Boolean) ?? key)
+                  : undefined
               : undefined
           }
           threadId={threadId}
@@ -877,6 +881,7 @@ function Rows({
           timestamp={row.timestamp}
           status={row.status}
           renderText={(text) => <MessageText text={text} />}
+          inputPosition={row.position}
         />
       ) : row.kind === "failure" ? (
         <FailureNotice message={row.text} />

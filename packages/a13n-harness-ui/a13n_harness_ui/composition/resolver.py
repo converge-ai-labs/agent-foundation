@@ -214,6 +214,7 @@ class AgentCompositionResolver:
                 transport=source.mcp_servers[item].transport,
                 expose_roots=source.mcp_servers[item].expose_roots,
                 on_error=source.mcp_servers[item].on_error,
+                authority=source.mcp_servers[item].authority,
                 tools=source.mcp_servers[item].tools,
                 object_ref_tools=source.mcp_servers[item].object_ref_tools,
                 apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,

@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
 
+from a13n_service.app_provenance import AppIdFilter
 from a13n_service.infra.http import IfMatch, PageLimit, etag, tagged
 from a13n_service.providers.environment.kubernetes import LogQuery, Logs
 from a13n_service.providers.metrics import QueryResult
@@ -44,10 +45,13 @@ async def list_environments(
     workspace_id: WorkspaceId,
     actor: Actor,
     status: Annotated[str | None, Query(pattern=f"^({'|'.join(STATUSES)})$")] = None,
+    app_id: AppIdFilter | None = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> EnvironmentPage:
-    return await service.list_environments(runtime, actor, workspace_id, status=status, limit=limit, cursor=cursor)
+    return await service.list_environments(
+        runtime, actor, workspace_id, status=status, limit=limit, cursor=cursor, app_id=app_id
+    )
 
 
 @router.post("/environments", response_model=EnvironmentView, status_code=201, openapi_extra={"x-a13n-mcp": True})

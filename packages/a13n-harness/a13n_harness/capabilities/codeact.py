@@ -112,7 +112,12 @@ class CodeActCapability(AbstractModelContextCapability):
         return self._live_instructions
 
     def render_catalog(self, tools: dict[str, ToolsetTool[AgentContext]], *, ctx: RunContext[AgentContext]) -> str:
-        return render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=self.config.catalog_argument_schemas)
+        return render_codeact_catalog(
+            tools,
+            ctx=ctx,
+            catalog_argument_schemas=self.config.catalog_argument_schemas,
+            allow_final_output=self.config.allow_final_output,
+        )
 
     async def _live_instructions(self, ctx: RunContext[AgentContext]) -> str:
         if not ctx.realtime:

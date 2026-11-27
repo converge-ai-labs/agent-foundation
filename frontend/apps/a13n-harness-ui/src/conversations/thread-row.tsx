@@ -333,6 +333,7 @@ export function ThreadRow({
         </NavLink>
         {showRestore && row.thread.archived && (
           <Button
+            className={styles.threadRestore}
             variant="ghost"
             size={showRestore === "compact" ? "icon-sm" : "sm"}
             title={t("Restore {{title}}", { title })}

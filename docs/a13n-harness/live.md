@@ -82,6 +82,8 @@ For manual turn boundaries where supported, call `commit_audio()`, `clear_audio(
 
 Native tool schemas are advertised when the connection opens. To approve sensitive calls or supply external tool results while keeping the voice socket open, register `HandleDeferredToolCalls` in the Agent's capabilities or `RunBindings` so deferred calls resolve inline on the active connection. Harness projects initial Context into session instructions and appends refreshed Context after tool calls complete.
 
+On Models that support live tool updates, `load_capability` adds deferred tools mid-session and its result still carries refreshed Context. Models with a fixed tool set reject deferred capabilities that contribute tools and have not yet been loaded when the connection opens.
+
 Call `close()` for normal completion (or `cancel()` to abort), finish iterating through `HarnessRunResultEvent` (`result.output` is always `None` because speech lives in messages), and persist `await live.export_state()`. Pass `previous_state=restored` to `agent.live(...)` to continue the Thread over a new connection.
 
 Read `live.usage` or terminal `UsageSnapshot` for attributed accounting (`model_usage_coverage="responses_only"`, excluding session-only transcription or duration fees; inspect `live.native_usage` only for raw diagnostics). Note that `RunBindings.model_call_check` is rejected in Live mode (`live_model_check_unsupported`).

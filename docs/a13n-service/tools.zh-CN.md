@@ -59,6 +59,7 @@ Service 中的智能体通过**内置工具集**、**平台工具**以及**连�
 ```
 
 - **认证方式：** 支持 `none`、`bearer`、`headers` 与 `oauth`（`authorization_code` 浏览器授权或 `client_credentials` 机器授权，自动刷新令牌）。可通过 `POST /api/v1/connections/{id}/test` 测试连通性，通过 `GET /api/v1/connections/{id}/tools` 查看已发现的工具 Schema。
+- **服务器指令：** 可通过 API 设置 `config.authority`，也可在 Console 的 **新建连接** 或 **详情** 中选择 **服务器指令**。`operator`（系统指令，默认）在直连时作为系统指令，`user` 作为用户级上下文，`none` 仅作为参考数据，不具备指令效力。通过 Tool Search 分组延迟发现时，`operator` 的文本会随发现结果返回。更改此设置会保留凭据和工具权限。
 - **绑定到智能体：** 在 `connection_tools` 中引用连接并配置默认 `permission`（`"ask"`、`"allow"`、`"deny"`）及单工具 `permissions` 覆盖；非敏感上下文头可通过会话/线程的 `mcp_headers` 透传。禁用连接会立即阻断后续调用。
 - **大规模工具发现：** 在智能体上配置 `tool_search`（`{"mode": "native", "sources": {}}` 或按业务领域划分的 `groups`），按需动态加载工具定义。交互式工具界面见[嵌入 MCP Apps](mcp-apps.md)。
 

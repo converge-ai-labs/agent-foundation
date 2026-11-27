@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 378" role="img" aria-label="Session DNS maps an allowed hostname to an address inside the session.">
+  <text x="26" y="43" class="pt ink" style="font-size: 25px">How session DNS records the requested name</text>
+  <rect x="29" y="104" width="176" height="152" rx="3" class="pl"/>
+  <path d="M29 132 L205 132" class="pf"/>
+  <circle cx="42" cy="118" r="2.1" class="fi"/>
+  <circle cx="51" cy="118" r="2.1" class="ff"/>
+  <circle cx="60" cy="118" r="2.1" class="ff"/>
+  <text x="48" y="174" class="pt acc" style="font-size: 20px">&gt;_ Python</text>
+  <text x="48" y="215" class="pt" style="font-size: 17px">DNS lookup</text>
+  <text x="343" y="131" text-anchor="middle" class="pt ink" style="font-size: 16px">reports.example.com</text>
+  <path d="M205 150 L480 150" class="pl"/>
+  <path d="M470.0 145.0 L480 150 L470.0 155.0" class="pl"/>
+  <path d="M480 218 L205 218" class="pa"/>
+  <path d="M215.0 223.0 L205 218 L215.0 213.0" class="pa"/>
+  <text x="343" y="247" text-anchor="middle" class="pt acc" style="font-size: 19px">127.64.0.1</text>
+  <rect x="480" y="75" width="409" height="250" rx="3" class="pl"/>
+  <text x="501" y="108" class="pt ink" style="font-size: 20px">envd session DNS</text>
+  <path d="M480 125 L889 125" class="pf"/>
+  <path d="M502 152l5 5 10 -12" class="pa"/>
+  <text x="528" y="159" class="pt ink" style="font-size: 17px">Hostname allowed</text>
+  <text x="500" y="200" class="pt" style="font-size: 15px">Session IP</text>
+  <text x="649" y="200" class="pt" style="font-size: 15px">Hostname</text>
+  <rect x="498" y="211" width="373" height="49" rx="3" class="band"/>
+  <text x="505" y="241" class="pt acc" style="font-size: 17px">127.64.0.1</text>
+  <text x="649" y="241" class="pt ink" style="font-size: 17px">reports.example.com</text>
+  <text x="502" y="296" class="pt" style="font-size: 16px">Mapping scoped to this session</text>
+  <text x="29" y="344" class="pt" style="font-size: 16px">The broker resolves the public IP when it opens the upstream connection.</text>
+</svg>

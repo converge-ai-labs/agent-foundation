@@ -1539,3 +1539,226 @@ async def test_reusing_app_owned_targets_preserves_existing_context(
         assert replayed.id == root.id
         assert replay.entry.id == receipt.entry.id
         assert replay.run is not None and replay.run.id == receipt.run.id
+
+
+async def test_managed_browser_provenance_is_transactional_and_read_only(service, app_runtime, runner, runs_kit):
+    from a13n_service.infra.ids import new_object_id
+    from a13n_service.runs.browsers.tables import BrowserRow
+    from sqlalchemy import update
+    from sqlalchemy.exc import DBAPIError
+
+    from .test_browsers import setup
+
+    supplier, public = await setup(service, runs_kit)
+    runtime = replace(service.runtime, apps=app_runtime.apps)
+    ws = service.tenant.workspace_id
+    path = f"{service.api}/browsers"
+    body = {"provider_id": public["provider_id"], "name": "App project"}
+    provenance = {"app_id": "claw", "app_context": {"project": "private-context"}}
+
+    async def reserve(db, **overrides):
+        return await projects.reserve_browser(
+            db, runtime, ws, **(body | provenance | {"principal_id": runner} | overrides)
+        )
+
+    for suffix, request in [("", body), ("/attach", {"name": "External", "cdp_url": "wss://browser.example/cdp"})]:
+        for key, value in provenance.items():
+            response = await service.client.post(f"{path}{suffix}", json={**request, key: value})
+            assert response.status_code == 400, response.text
+            assert response.json()["error"]["details"]["fields"] == [
+                {"field": f"body.{key}", "reason": "extra_forbidden"}
+            ]
+        response = await service.client.post(f"{path}{suffix}", json=request)
+        assert response.status_code == 201, response.text
+        assert response.json()["app_id"] is None and "app_context" not in response.json()
+
+    with pytest.raises(RuntimeError, match="outer Service transaction"):
+        async with short_session(runtime.storage) as db:
+            await reserve(db)
+    for overrides, code in [
+        (dict(app_id="disabled"), "disabled"),
+        (dict(principal_id=service.tenant.principal_id), "forbidden"),
+    ]:
+        with pytest.raises(ServiceError) as refused:
+            async with transaction(runtime.storage) as db:
+                await reserve(db, **overrides)
+        assert refused.value.code == code
+
+    with pytest.raises(RuntimeError, match="abort project"):
+        async with transaction(runtime.storage) as db:
+            rolled_back = await reserve(db)
+            assert (await db.get_one(BrowserRow, rolled_back)).app_id == "claw"
+            raise RuntimeError("abort project")
+    assert (await service.client.get(f"{path}/{rolled_back}")).status_code == 404
+
+    async with transaction(runtime.storage) as db:
+        browser_id = await reserve(db)
+        row = await db.get_one(BrowserRow, browser_id)
+        assert row.app_id == "claw" and row.app_context == provenance["app_context"]
+        assert row.status == "reserved" and row.created_by_id == runner
+    assert supplier.creates == 0
+    read = await service.client.get(f"{path}/{browser_id}")
+    assert read.status_code == 200 and read.json()["app_id"] == "claw", read.text
+    assert "app_context" not in read.json() and "private-context" not in read.text
+
+    for patch in ({"app_id": "other"}, {"app_id": None}, {"app_context": {"project": "new"}}, {"app_context": None}):
+        with pytest.raises(DBAPIError, match="immutable"):
+            async with transaction(runtime.storage) as db:
+                await db.execute(update(BrowserRow).where(BrowserRow.id == browser_id).values(**patch))
+    with pytest.raises(DBAPIError, match="ck_browsers_app_context_owner"):
+        async with transaction(runtime.storage) as db:
+            db.add(
+                BrowserRow(
+                    id=new_object_id("browser"),
+                    organization_id=service.tenant.organization_id,
+                    workspace_id=ws,
+                    name="No owner",
+                    provider_id=public["provider_id"],
+                    recipe={},
+                    provider_identity={},
+                    app_context={"project": "missing owner"},
+                ),
+            )
+            await db.flush()
+
+
+async def test_app_list_filters_bind_pagination_to_exact_provenance(
+    service, app_runtime, runner, runs_kit, scripted_model
+):
+    from .environments_support import reserve as reserve_environment
+    from .environments_support import with_fake_providers
+    from .test_browsers import setup
+
+    ws, actor = service.tenant.workspace_id, service.tenant.principal_id
+    _, public_browser = await setup(service, runs_kit)
+    browser_runtime = replace(service.runtime, apps=app_runtime.apps)
+    paths = ("sessions", "environments", "browsers", "memory-spaces", "schedules", "egress-credentials")
+    owned: dict[str, dict[str, set[str]]] = {path: {"claw": set(), "other": set()} for path in paths}
+    # Two owned rows per App ensure that both App selections issue a cursor.
+    apps = [(app_id, f"{app_id}-{index}") for app_id in ("claw", "other") for index in range(2)]
+    async with transaction(browser_runtime.storage) as db:
+        for app_id, name in apps:
+            browser_id = await projects.reserve_browser(
+                db,
+                browser_runtime,
+                ws,
+                principal_id=runner,
+                app_id=app_id,
+                provider_id=public_browser["provider_id"],
+                name=name,
+            )
+            owned["browsers"][app_id].add(browser_id)
+
+    env = await with_fake_providers(service)
+    runtime = replace(env.runtime, apps=app_runtime.apps)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    schedule_body = {
+        "schedule": {"type": "once", "run_at": datetime.now(UTC) + timedelta(hours=2)},
+        "invocation": {
+            "agent_id": agent["id"],
+            "agent_revision_id": None,
+            "payload": runs_kit.message(agent, "report")["payload"],
+        },
+    }
+    origin = {"application": "claw", "name": "Imported"}
+    unowned = {"browsers": public_browser["id"]}
+    unowned["environments"] = (await reserve_environment(env, env.template["id"], name="Operator"))["id"]
+    for path, body in [
+        ("sessions", {"title": "Operator", "origin": origin}),
+        ("memory-spaces", {"name": "Operator"}),
+        ("schedules", ScheduleCreate.model_validate({**schedule_body, "name": "Operator"}).model_dump(mode="json")),
+        ("egress-credentials", {"name": "Operator", "allowed_hosts": ["example.com"], "value": "synthetic"}),
+    ]:
+        response = await service.client.post(f"{service.api}/{path}", json=body, headers=runs_kit.fresh_key())
+        assert response.status_code == 201, response.text
+        unowned[path] = response.json()["id"]
+
+    for app_id, name in apps:
+        async with transaction(runtime.storage) as db:
+            session_id = await schedules.ensure_schedule_session(
+                db,
+                runtime,
+                ws,
+                principal_id=runner,
+                app_id=app_id,
+                existing_session_id=None,
+                session_create=SessionCreate.model_validate({"title": name, "origin": origin}),
+            )
+            owned["sessions"][app_id].add(session_id)
+            owned["environments"][app_id].add(
+                await projects.reserve_environment(
+                    db,
+                    runtime,
+                    ws,
+                    principal_id=runner,
+                    app_id=app_id,
+                    template_id=env.template["id"],
+                    name=name,
+                )
+            )
+            owned["memory-spaces"][app_id].add(
+                await projects.create_memory_space(
+                    db,
+                    runtime,
+                    ws,
+                    app_id=app_id,
+                    actor_id=actor,
+                    name=name,
+                )
+            )
+            schedule, _ = await schedules.create_fresh_schedule(
+                db,
+                runtime,
+                ws,
+                app_id=app_id,
+                actor_id=actor,
+                body=ScheduleCreate.model_validate(
+                    {**schedule_body, "name": name, "target": {"mode": "new_thread", "session_id": session_id}}
+                ),
+                request_key=name,
+            )
+            owned["schedules"][app_id].add(schedule.id)
+        credential = await egress.create_app_credential(
+            runtime,
+            ws,
+            app_id=app_id,
+            actor_id=runner,
+            name=name,
+            allowed_hosts=["example.com"],
+            value="synthetic",
+        )
+        owned["egress-credentials"][app_id].add(credential.id)
+
+    for path in paths:
+        url = f"{service.api}/{path}"
+        response = await service.client.get(url)
+        assert response.status_code == 200, (path, response.text)
+        ids = {row["id"]: row["app_id"] for row in response.json()["items"]}
+        assert unowned[path] in ids and ids[unowned[path]] is None, (path, ids)
+        cursors = {}
+        for app_id in (None, "claw", "other"):
+            params = {"app_id": app_id} if app_id is not None else {}
+            first = await service.client.get(url, params={**params, "limit": 1})
+            assert first.status_code == 200, (path, first.text)
+            page = first.json()
+            assert page["next_cursor"], (path, page)
+            cursors[app_id] = page["next_cursor"]
+            second = await service.client.get(url, params={**params, "limit": 1, "cursor": page["next_cursor"]})
+            assert second.status_code == 200, (path, second.text)
+            if app_id is not None:
+                assert second.json()["next_cursor"] is None, path
+                pair = page["items"] + second.json()["items"]
+                assert {item["id"] for item in pair} == owned[path][app_id], (path, pair)
+                assert all(item["app_id"] == app_id and "app_context" not in item for item in pair), (path, pair)
+        for source, target in [(None, "claw"), ("claw", None), ("claw", "other")]:
+            params = {"app_id": target} if target is not None else {}
+            response = await service.client.get(url, params={**params, "cursor": cursors[source]})
+            assert response.json()["error"]["code"] == "invalid_cursor", (path, response.text)
+        unknown = await service.client.get(url, params={"app_id": "cl"})
+        assert unknown.status_code == 200 and not unknown.json()["items"], (path, unknown.text)
+        for invalid in ("", "claw/other", "a" * 129):
+            response = await service.client.get(url, params={"app_id": invalid})
+            assert response.status_code == 400 and response.json()["error"]["code"] == "invalid_argument", (
+                path,
+                response.text,
+            )

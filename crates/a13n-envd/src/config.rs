@@ -1001,11 +1001,22 @@ pub(crate) fn reserved_environment_name(name: &str) -> bool {
     upper.starts_with("A13N_ENVD_") || upper.starts_with("EIP_")
 }
 
+fn valid_inherited_environment_name(name: &str) -> bool {
+    #[cfg(windows)]
+    {
+        !name.is_empty() && !name.contains(['=', '\0'])
+    }
+    #[cfg(not(windows))]
+    {
+        valid_environment_name(name)
+    }
+}
+
 fn inherited_command_environment() -> BTreeMap<String, String> {
     env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
         .filter(|(name, value)| {
-            valid_environment_name(name)
+            valid_inherited_environment_name(name)
                 && !reserved_environment_name(name)
                 && !crate::monitoring::otlp::environment_name(name)
                 && !value.contains('\0')
@@ -1302,13 +1313,21 @@ fn reject_unknown_environment_variables() -> Result<(), ConfigError> {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with("A13N_ENVD_") && !KNOWN_ENVIRONMENT_VARIABLES.contains(&name) {
+        if unknown_environment_variable(name) {
             return Err(ConfigError::new(format!(
                 "unknown a13n-envd environment variable: {name}"
             )));
         }
     }
     Ok(())
+}
+
+fn unknown_environment_variable(name: &str) -> bool {
+    #[cfg(windows)]
+    let normalized = name.to_ascii_uppercase();
+    #[cfg(windows)]
+    let name = normalized.as_str();
+    name.starts_with("A13N_ENVD_") && !KNOWN_ENVIRONMENT_VARIABLES.contains(&name)
 }
 
 fn required_unicode(name: &str) -> Result<String, ConfigError> {
@@ -1351,6 +1370,30 @@ mod tests {
     use std::{fs, time::SystemTime};
 
     use super::parse_reverse_websocket_config;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_inherited_names_and_daemon_overrides_use_windows_rules() {
+        for name in [
+            "ProgramFiles(x86)",
+            "CommonProgramFiles(x86)",
+            "ProgramFiles(Arm)",
+            "Path",
+        ] {
+            assert!(super::valid_inherited_environment_name(name));
+        }
+        for name in ["", "=C:", "invalid=name", "invalid\0name"] {
+            assert!(!super::valid_inherited_environment_name(name));
+        }
+        assert!(!super::unknown_environment_variable("a13n_envd_name"));
+        assert!(super::unknown_environment_variable("a13n_envd_typo"));
+        assert!(crate::monitoring::otlp::environment_name(
+            "otel_exporter_otlp_Headers"
+        ));
+        assert!(!crate::monitoring::otlp::environment_name(
+            "otel_exporter_otlp_unrelated"
+        ));
+    }
 
     #[test]
     fn template_settings_share_defaults_and_validation() {

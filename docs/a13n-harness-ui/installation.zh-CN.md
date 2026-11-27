@@ -64,7 +64,7 @@ a13n-harness-ui webui
 
 启动新版本前，先升级共享同一数据根目录的所有安装。当前检查点使用 payload codec `2`；只支持 codec `1` 的旧版应用无法读取新写入的检查点。升级、混用版本或降级前请核对发行说明中的检查点格式与数据库迁移要求，并在跨越不兼容格式边界前备份数据目录。
 
-启动更新检查只显示提示。用 `--no-update-check` 可关闭本次检查；要影响后续启动，在根 YAML 中设置 `process.terminal_update_check: false`。详见[更新与日志](automation-and-troubleshooting.md#logs-updates-and-exit)。
+终端会提示可用更新，也可以在 WebUI 的**设置 → 诊断 → 关于**中查看。用 `--no-update-check` 跳过本次检查；如需关闭后续检查，在根 YAML 中设置 `process.update_check: false`。详见[更新与日志](automation-and-troubleshooting.md#logs-updates-and-exit)。
 
 ### 依赖兼容性
 

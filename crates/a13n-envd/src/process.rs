@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, Mutex, PoisonError, Weak},
     time::{Duration, Instant},
@@ -246,9 +246,14 @@ impl ExecutionManager {
     {
         let executable = std::env::current_exe().map_err(|_| ProcessError::Internal)?;
         let mut supervisor = tokio::process::Command::new(executable);
-        supervisor.arg("--internal-supervisor");
+        supervisor.arg("--internal-supervisor").env_clear();
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP;
+            supervisor.creation_flags(CREATE_NEW_PROCESS_GROUP);
+            crate::windows_path::inherit_system_directories(&mut supervisor);
+        }
         let mut supervisor = supervisor
-            .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -449,14 +454,23 @@ impl ExecutionManager {
             roots,
             mut environment,
         } = self.resolve_command(filesystem, &request.command)?;
-        validate_arguments(
-            &arguments,
+        let arguments = prepare_arguments(
+            &request.command,
+            &executable,
+            arguments,
             self.inner.command.max_arguments,
             self.inner.command.max_argument_bytes,
         )?;
         if !self.inner.command.full_control && !roots.is_empty() {
-            let path = std::env::join_paths(&roots).map_err(|_| ProcessError::Invalid)?;
-            environment.insert("PATH".to_owned(), path.to_string_lossy().into_owned());
+            let paths = roots.iter().map(PathBuf::as_path);
+            #[cfg(windows)]
+            let paths = paths.map(|root| crate::windows_path::ordinary_path(root).into_owned());
+            let path = std::env::join_paths(paths).map_err(|_| ProcessError::Invalid)?;
+            insert_environment(
+                &mut environment,
+                "PATH".to_owned(),
+                path.to_string_lossy().into_owned(),
+            );
         }
         apply_request_environment(
             &mut environment,
@@ -494,12 +508,15 @@ impl ExecutionManager {
         if initial_stdin.as_ref().map_or(0, Vec::len) as u64 > stdin_limit {
             return Err(ProcessError::Invalid);
         }
+        let cwd = cwd.native_path;
+        #[cfg(windows)]
+        let cwd = crate::windows_path::ordinary_path(&cwd).into_owned();
         Ok(PreparedCommand {
             plan: LaunchPlan {
                 drop_supervisor_capabilities: self.inner.command.drop_supervisor_capabilities,
                 executable,
                 arguments,
-                cwd: cwd.native_path,
+                cwd,
                 environment,
                 initial_stdin: initial_stdin
                     .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes)),
@@ -558,18 +575,11 @@ impl ExecutionManager {
                 if shell.login {
                     arguments.insert(0, "-l".to_owned());
                 }
-                let script = shell.script.clone();
-                #[cfg(windows)]
-                let script = if self.inner.command.full_control {
-                    format!(
-                        "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); {script}"
-                    )
-                } else {
-                    script
-                };
-                arguments.push(script);
+                arguments.push(shell.script.clone());
                 let mut environment = self.inner.command.base_environment.clone();
-                environment.extend(profile.safe_base_environment.clone());
+                for (name, value) in &profile.safe_base_environment {
+                    insert_environment(&mut environment, name.clone(), value.clone());
+                }
                 Ok(ResolvedCommand {
                     executable: profile.native_executable.clone(),
                     arguments,
@@ -1560,6 +1570,19 @@ fn apply_terminal_status(
     }
 }
 
+fn remove_environment(environment: &mut BTreeMap<String, String>, name: &str) {
+    #[cfg(windows)]
+    environment.retain(|existing, _| !existing.eq_ignore_ascii_case(name));
+    #[cfg(not(windows))]
+    environment.remove(name);
+}
+
+fn insert_environment(environment: &mut BTreeMap<String, String>, name: String, value: String) {
+    #[cfg(windows)]
+    remove_environment(environment, &name);
+    environment.insert(name, value);
+}
+
 fn apply_request_environment(
     environment: &mut BTreeMap<String, String>,
     request: &CommandRequest,
@@ -1584,14 +1607,14 @@ fn apply_request_environment(
     }
     for name in &request.environment.unset {
         validate_request_environment_name(name)?;
-        environment.remove(name);
+        remove_environment(environment, name);
     }
     for (name, value) in &request.environment.set {
         validate_request_environment_name(name)?;
         if value.contains('\0') {
             return Err(ProcessError::Invalid);
         }
-        environment.insert(name.clone(), value.clone());
+        insert_environment(environment, name.clone(), value.clone());
     }
     Ok(())
 }
@@ -1634,6 +1657,46 @@ fn validate_arguments(
     Ok(())
 }
 
+fn prepare_arguments(
+    _command: &CommandSpec,
+    _executable: &Path,
+    arguments: Vec<String>,
+    max_arguments: usize,
+    max_bytes: usize,
+) -> Result<Vec<String>, ProcessError> {
+    validate_arguments(&arguments, max_arguments, max_bytes)?;
+    #[cfg(windows)]
+    if matches!(_command, CommandSpec::Shell(_)) {
+        return Ok(powershell_command_arguments(_executable, arguments));
+    }
+    Ok(arguments)
+}
+
+#[cfg(windows)]
+fn powershell_command_arguments(executable: &Path, mut arguments: Vec<String>) -> Vec<String> {
+    let powershell = executable.file_stem().is_some_and(|stem| {
+        stem.eq_ignore_ascii_case("pwsh") || stem.eq_ignore_ascii_case("powershell")
+    });
+    if powershell
+        && let [.., flag, script] = arguments.as_mut_slice()
+        && flag.eq_ignore_ascii_case("-Command")
+    {
+        // Validate the original arguments before adding the ASCII loader.
+        let encoded = base64::engine::general_purpose::STANDARD.encode(script.as_bytes());
+        *script = format!(
+            concat!(
+                "try {{ [Console]::InputEncoding = [Console]::OutputEncoding = ",
+                "[System.Text.UTF8Encoding]::new($false) }} catch {{}}; ",
+                "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); ",
+                ". ([scriptblock]::Create([scriptblock]::Create([Text.Encoding]::UTF8.GetString(",
+                "[Convert]::FromBase64String('{}'))).ToString() + [char]10 + [char]10 + 'if (-not $?) {{ exit 1 }}'))"
+            ),
+            encoded
+        );
+    }
+    arguments
+}
+
 fn valid_bare_executable_name(name: &str) -> bool {
     !name.is_empty()
         && !matches!(name, "." | "..")
@@ -1647,14 +1710,14 @@ fn resolve_bare_executable(
     roots: &[PathBuf],
     full_control: bool,
 ) -> Result<PathBuf, ProcessError> {
-    for root in roots {
-        let candidate = root.join(name);
-        #[cfg(windows)]
-        let candidate = if full_control && candidate.extension().is_none() {
-            candidate.with_extension("exe")
-        } else {
-            candidate
-        };
+    #[cfg(windows)]
+    let names = windows_executable_names(name, full_control);
+    #[cfg(not(windows))]
+    let names = [name];
+    for (root, candidate) in roots
+        .iter()
+        .flat_map(|root| names.iter().map(move |name| (root, root.join(name))))
+    {
         let Ok(canonical) = crate::device_path::canonicalize(&candidate) else {
             continue;
         };
@@ -1677,6 +1740,30 @@ fn resolve_bare_executable(
         return Ok(canonical);
     }
     Err(ProcessError::Denied)
+}
+
+#[cfg(windows)]
+fn windows_executable_names(name: &str, full_control: bool) -> Vec<std::ffi::OsString> {
+    let mut names = vec![std::ffi::OsString::from(name)];
+    let mut append = |extension: &str| {
+        let mut candidate = std::ffi::OsString::from(name);
+        candidate.push(extension);
+        if !names
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&candidate))
+        {
+            names.push(candidate);
+        }
+    };
+    append(".exe");
+    if full_control && let Ok(extensions) = std::env::var("PATHEXT") {
+        for extension in extensions.split(';') {
+            if extension.starts_with('.') && valid_bare_executable_name(extension) {
+                append(extension);
+            }
+        }
+    }
+    names
 }
 
 fn decode_eip_bytes(value: &EncodedBytes) -> Result<Vec<u8>, ProcessError> {
@@ -1714,6 +1801,103 @@ fn map_path_error(error: PathError) -> ProcessError {
 #[cfg(test)]
 mod tests {
     use super::valid_bare_executable_name;
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_wraps_shell_only_after_validating_original_arguments() {
+        use super::*;
+
+        let script = "param(); Write-Output '中文 \"quoted\"'`";
+        let command: CommandSpec = serde_json::from_value(serde_json::json!({
+            "kind": "shell", "profile_id": "test", "script": script
+        }))
+        .unwrap();
+        let args = vec!["-cOmMaNd".into(), script.into()];
+        let max = "-cOmMaNd".len() + script.len();
+        for name in ["PwSh.EXE", "PoWeRsHeLl.exe"] {
+            let executable = Path::new(name);
+            let prepared = prepare_arguments(&command, executable, args.clone(), 2, max).unwrap();
+            let loader = &prepared[1];
+            assert_eq!(prepared[0], "-cOmMaNd");
+            assert!(loader.is_ascii() && !loader.contains('"'));
+            assert!(loader.starts_with("try { [Console]::InputEncoding"));
+            assert!(loader.contains("} catch {}; $OutputEncoding ="));
+            assert!(
+                loader.contains(".ToString() + [char]10 + [char]10 + 'if (-not $?) { exit 1 }'")
+            );
+            let encoded = loader
+                .split_once("FromBase64String('")
+                .unwrap()
+                .1
+                .split_once("')")
+                .unwrap()
+                .0;
+            assert_eq!(
+                base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .unwrap(),
+                script.as_bytes()
+            );
+            assert!(prepare_arguments(&command, executable, args.clone(), 2, max - 1).is_err());
+        }
+        let unchanged = vec!["-File".to_owned(), "file.ps1".to_owned()];
+        assert_eq!(
+            powershell_command_arguments(Path::new("pwsh.exe"), unchanged.clone()),
+            unchanged
+        );
+        assert_eq!(
+            powershell_command_arguments(Path::new("helper.exe"), args.clone()),
+            args
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn environment_overlay_replaces_and_unsets_all_case_variants() {
+        use super::*;
+
+        let mut environment = BTreeMap::from([
+            ("Path".to_owned(), "first".to_owned()),
+            ("PATH".to_owned(), "second".to_owned()),
+            ("UnSeT_Me".to_owned(), "discard".to_owned()),
+        ]);
+        insert_environment(&mut environment, "pAtH".to_owned(), "override".to_owned());
+        let request: CommandRequest = serde_json::from_value(serde_json::json!({
+            "command": { "kind": "shell", "profile_id": "test", "script": "test" },
+            "environment": { "set": { "PaTh": "selected" }, "unset": ["unset_me"] }
+        }))
+        .unwrap();
+        apply_request_environment(&mut environment, &request, 4, 1024).unwrap();
+        assert_eq!(
+            environment,
+            BTreeMap::from([("PaTh".to_owned(), "selected".to_owned())])
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn executable_resolution_probes_exact_name_then_appends_to_dotted_name() {
+        use super::*;
+
+        let root = std::env::temp_dir()
+            .join(crate::operation::random_selector("dotted-executable").unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let suffixed = root.join("python3.13.exe");
+        std::fs::write(&suffixed, b"exe").unwrap();
+        let canonical = std::fs::canonicalize(&root).unwrap();
+        let roots = &[canonical];
+        assert_eq!(
+            resolve_bare_executable("python3.13", roots, false).unwrap(),
+            std::fs::canonicalize(&suffixed).unwrap()
+        );
+        let exact = root.join("python3.13");
+        std::fs::write(&exact, b"exact").unwrap();
+        assert_eq!(
+            resolve_bare_executable("python3.13", roots, true).unwrap(),
+            std::fs::canonicalize(&exact).unwrap()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn executable_names_are_single_portable_path_components() {

@@ -9,7 +9,7 @@ import { capabilityLabel } from "./capability-label";
 import { useContext, useState } from "react";
 import { Link, Outlet, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Skeleton, Switch } from "a13n-ui";
+import { Button, Skeleton, Switch } from "a13n-ui";
 import { debugShortcutLabel, useDebug } from "../shell/debug";
 import {
   useSelectors,
@@ -28,6 +28,7 @@ import {
 import { DraftContext } from "./drafts";
 import { readDocument, type ResourceKind } from "./documents";
 import { InstallSettings } from "../shell/install";
+import { UpdateNotices, type UpdateNoticeState } from "./update-notices";
 import { DevicesSection } from "./devices";
 import { RuntimePage } from "./envd";
 import { NotificationSettings } from "../shell/notifications";
@@ -170,7 +171,17 @@ export function MemorySettings() {
     </>
   );
 }
-export function DiagnosticsPage({ instance }: { instance: React.ReactNode }) {
+export function DiagnosticsPage({
+  instance,
+  notices,
+  installedVersion,
+  disconnected,
+}: {
+  instance: React.ReactNode;
+  notices: UpdateNoticeState;
+  installedVersion: string;
+  disconnected: boolean;
+}) {
   const { t } = useTranslation();
   const status = useStatus();
   return (
@@ -185,11 +196,14 @@ export function DiagnosticsPage({ instance }: { instance: React.ReactNode }) {
         ].map((message) => (
           <p key={message}>{message}</p>
         ))}
-      </SettingsSection>
-      <SettingsSection title={t("About")}>
         {instance}
-        <InstallSettings />
       </SettingsSection>
+      <UpdateNotices
+        notices={notices}
+        installedVersion={installedVersion}
+        disconnected={disconnected}
+      />
+      <InstallSettings />
     </>
   );
 }
@@ -202,6 +216,14 @@ export function AgentsPage() {
         kinds={["agent", "acp_agent"]}
         title={t("Agents")}
         description={t("Configure Harness agents and external ACP agents.")}
+        extraAction={
+          <Button
+            variant="outline"
+            render={<Link to="/setup?wizard=1&from=agents" />}
+          >
+            {t("Guided setup")}
+          </Button>
+        }
       />
       <details className={layout.disclosure}>
         <summary>{t("Installed capabilities")}</summary>

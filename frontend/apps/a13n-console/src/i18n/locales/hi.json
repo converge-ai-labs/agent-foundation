@@ -1,4 +1,12 @@
 {
+  "Server instructions": "सर्वर के निर्देश",
+  "System (default)": "सिस्टम (डिफ़ॉल्ट)",
+  "User context": "उपयोगकर्ता संदर्भ",
+  "Reference data": "संदर्भ डेटा",
+  "Added as system instructions for direct connections. Does not change tool permissions.": "सीधे कनेक्शन में इन्हें सिस्टम निर्देशों के रूप में जोड़ा जाता है। इससे टूल की अनुमतियाँ नहीं बदलतीं।",
+  "Passed as user-level context with lower priority than system instructions. Does not change tool permissions.": "इन्हें उपयोगकर्ता संदर्भ के रूप में भेजा जाता है, जिसकी प्राथमिकता सिस्टम निर्देशों से कम है। इससे टूल की अनुमतियाँ नहीं बदलतीं।",
+  "Passed as passive reference data with no instruction authority. Does not change tool permissions.": "इन्हें केवल संदर्भ डेटा के रूप में भेजा जाता है और इनमें निर्देश देने का अधिकार नहीं होता। इससे टूल की अनुमतियाँ नहीं बदलतीं।",
+  "Save server instructions setting": "सर्वर के निर्देशों की सेटिंग सहेजें",
   "Disk ID": "डिस्क आईडी",
   "boxd disks": "boxd डिस्क",
   "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.": "मौजूदा boxd डिस्क को आईडी से माउंट करें। मशीन हटाने पर भी माउंट की गई डायरेक्टरी की फ़ाइलें बनी रहती हैं।",
@@ -4411,6 +4419,9 @@
   "Manage tokens for authenticated HTTPS requests from agent environments.": "Agent एनवायरनमेंट से भेजे जाने वाले ऑथेंटिकेटेड HTTPS अनुरोधों के टोकन मैनेज करें।",
   "Search credentials": "क्रेडेंशियल खोजें",
   "Credential": "क्रेडेंशियल",
+  "App": "App",
+  "All apps": "सभी App",
+  "Triggered by app": "शुरू करने वाला App",
   "Managed by {{appId}}": "{{appId}} द्वारा प्रबंधित",
   "Credential version": "क्रेडेंशियल वर्शन",
   "{{count}} credentials on this page": "इस पेज पर {{count}} क्रेडेंशियल",
@@ -4685,5 +4696,8 @@
   "This connection uses native tool discovery.": "यह कनेक्शन मूल टूल खोज का उपयोग करता है।",
   "More than {{limit}} tools selected": "{{limit}} से अधिक टूल चुने गए",
   "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "सीधे प्रदान करने में प्रति कनेक्शन अधिकतम {{limit}} टूल समर्थित हैं। इस एजेंट पर टूल खोज सक्षम करें या कम टूल चुनें।",
-  "Enable tool discovery": "टूल खोज सक्षम करें"
+  "Enable tool discovery": "टूल खोज सक्षम करें",
+  "Agent input request": "एजेंट इनपुट अनुरोध",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "आपका जवाब इस एजेंट को जाएगा। पासवर्ड, टोकन या अन्य गोपनीय जानकारी शामिल न करें।",
+  "Select an option": "एक विकल्प चुनें"
 }

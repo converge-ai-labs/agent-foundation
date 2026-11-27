@@ -32,7 +32,7 @@ Runloop and boxd use the same configuration model for execution and management; 
 | -------------------------- | -------- | -------------------------------- | --------------------------------------- |
 | `root`                     | true     | DirectLocalRootConfiguration     | —                                       |
 | `shell_profiles`           | false    | array of DirectLocalShellProfile | default=[]                              |
-| `allowed_executables`      | false    | array of string                  | uniqueItems=true; default=[]            |
+| `allowed_executables`      | false    | array of string or null          | uniqueItems=true; default=[]            |
 | `environment`              | false    | EnvironmentVariables             | —; default from model factory           |
 | `envd`                     | false    | EnvdSettings                     | —; default from model factory           |
 | `inherit_environment`      | false    | boolean                          | default=false                           |

@@ -9,9 +9,14 @@ import { ErrorNotice } from "../shell/ui";
 import { SettingsChoice, SettingsSection } from "../shell/settings";
 import { DraftContext } from "./drafts";
 import { McpAuthorization } from "./mcp-authorization";
+import { McpAuthorityField, type McpAuthority } from "./mcp-authority";
 import styles from "./mcp-tools.module.css";
 
-type ToolDraft = { tools: string[] | null; digest: string };
+type ToolDraft = {
+  tools: string[] | null;
+  authority?: McpAuthority;
+  digest: string;
+};
 
 export function McpTools({ serverId }: { serverId: string }) {
   const { t } = useTranslation();
@@ -57,7 +62,11 @@ export function McpTools({ serverId }: { serverId: string }) {
       result(
         client.PUT("/api/mcp/{server_id}/tools", {
           params: { path: { server_id: serverId } },
-          body: { tools: draft!.tools, resource_digest: draft!.digest },
+          body: {
+            tools: draft!.tools,
+            authority: draft!.authority,
+            resource_digest: draft!.digest,
+          },
         }),
       ),
     onSuccess: async () => {
@@ -71,10 +80,11 @@ export function McpTools({ serverId }: { serverId: string }) {
     },
   });
   const tools = draft ? draft.tools : (settings.data?.tools ?? null);
-  const update = (next: string[] | null) => {
+  const update = (next: string[] | null, authority = draft?.authority) => {
     setSaved(false);
     const value = {
       tools: next,
+      authority,
       digest: draft?.digest ?? settings.data!.resource_digest,
     };
     drafts.set(draftKey, {
@@ -110,6 +120,16 @@ export function McpTools({ serverId }: { serverId: string }) {
       {settings.data?.oauth && (
         <SettingsSection title={t("Authorization")}>
           <McpAuthorization target={{ kind: "mcp", id: serverId }} />
+        </SettingsSection>
+      )}
+      {settings.data && (
+        <SettingsSection title={t("Server instructions")}>
+          <McpAuthorityField
+            label={t("Apply as")}
+            value={draft?.authority ?? settings.data.authority}
+            disabled={save.isPending || discovery.isFetching}
+            onChange={(value) => update(tools, value)}
+          />
         </SettingsSection>
       )}
       <SettingsSection title={t("Tool access")}>

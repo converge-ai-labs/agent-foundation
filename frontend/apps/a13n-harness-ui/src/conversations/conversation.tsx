@@ -23,7 +23,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
-import { flashInboxPost } from "../inbox";
+import { flashInboxPost, UnreadInboxPosts } from "../inbox";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, ModalFrame } from "a13n-ui";
 import { ArrowDown, Sparkle } from "@phosphor-icons/react";
@@ -42,6 +42,7 @@ import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import {
   Composer,
+  ReadOnlyComposer,
   submitContinuation,
   useDraft,
   type ComposerBlock,
@@ -63,7 +64,11 @@ import {
   useAcpOptionChange,
   useAcpOptions,
 } from "./acp-options";
-import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
+import {
+  GuestModelBadge,
+  RunEnvironments,
+  ThreadRunChoices,
+} from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
 import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
 import { ConversationDetails } from "./details";
@@ -74,6 +79,7 @@ import {
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
 import {
+  rewindHistory,
   transcriptHistory,
   useHistory,
   useOperation,
@@ -83,6 +89,7 @@ import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
 import { applyThreadMutation } from "./thread-updates";
 import { showFocusedOutput } from "./stream";
+import type { InlineEdit } from "./message-edit";
 import { useLiveThread } from "./live-threads";
 import { ConnectionNoticeContext } from "../shell/connection";
 import {
@@ -92,7 +99,7 @@ import {
 import { LiveConnectionStatus } from "./live-connection";
 import { ConversationTranscript, type PublishedMessage } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
-import { inputSource, conversationTitle } from "./local-input";
+import { inputSource, conversationTitle, type LocalInput } from "./local-input";
 import { InputNavigation } from "./input-navigation";
 import {
   captureReadingAnchor,
@@ -102,7 +109,8 @@ import {
 import styles from "./conversation.module.css";
 import layout from "../shell/workbench.module.css";
 import { useResults } from "./results";
-import { savedResultVisible } from "./result-visibility";
+import { observeSavedResult } from "./result-visibility";
+import { useThreadInbox } from "./thread-inbox";
 import { ReplyAnnotations } from "./reply-annotations";
 import { ConversationOpening, useInitialReady } from "./opening";
 import { canDeleteThread, DeleteThread } from "./delete-thread";
@@ -183,17 +191,14 @@ function ConversationContent({
     !isBot && !readOnly && (!guest || guest.grant.permission === "prompt");
   const isCoordinator = detail.data?.thread.role === "coordinator";
   const ownerId = detail.data?.thread.coordinator_thread_id;
-  const owner = useQuery({
-    queryKey: ["thread", ownerId, "detail"],
-    enabled: !!ownerId && !guest,
-    queryFn: ({ signal }) =>
-      result(
-        transport.client.GET("/api/threads/{thread_id}", {
-          params: { path: { thread_id: ownerId! } },
-          signal,
-        }),
-      ),
-  });
+  const accessibleOwner =
+    ownerId &&
+    (!guest ||
+      guest.grant.scope === "project" ||
+      ownerId === guest.grant.target_id)
+      ? ownerId
+      : undefined;
+  const owner = useThread(accessibleOwner ?? "");
   const results = useResults();
   const tracker = readOnly ? undefined : results.tracker;
   useEffect(() => {
@@ -233,12 +238,17 @@ function ConversationContent({
     );
   const draft = useDraft(threadId, true);
   const [selectedTurn, setSelectedTurn] = useState<string>();
+  const [historyReset, setHistoryReset] =
+    useState<ReturnType<typeof rewindHistory>>();
+  const [messageEditPending, setMessageEditPending] = useState(false);
+  const [composerPreparing, setComposerPreparing] = useState(false);
   const pendingJump = useRef<string | undefined>(undefined);
   const history = useHistory(
     threadId,
     detail.data?.continuation_id,
     !!detail.data,
     selectedTurn,
+    historyReset,
   );
   const publicationHistory = publication?.history;
   const hasEarlier = history.hasNextPage || publicationHistory?.hasEarlier;
@@ -255,8 +265,13 @@ function ConversationContent({
         : undefined,
     ]);
   }, [history.hasNextPage, history.fetchNextPage, publicationHistory]);
-  const { display, connection, reconnections, revision } =
-    useLiveThread(threadId);
+  const {
+    display,
+    connection,
+    reconnections,
+    revision,
+    reset: resetFocus,
+  } = useLiveThread(threadId);
   const [showAvailable, setShowAvailable] = useState(false);
   const pageReady = useInitialReady(
     publication?.ready ||
@@ -420,7 +435,9 @@ function ConversationContent({
   }, [entries, history.isPreviousHistory, findTurn, landJump]);
   const inboxItem = guest ? null : search.get("inbox");
   const [inboxProblem, setInboxProblem] = useState<unknown>();
+  const [openingInboxItem, setOpeningInboxItem] = useState(false);
   const openInboxItem = useEffectEvent((itemId: string) => {
+    setOpeningInboxItem(true);
     setSearch(
       (current) => {
         current.delete("inbox");
@@ -439,21 +456,23 @@ function ConversationContent({
         }),
       ),
       result(transport.client.GET("/api/inbox/{item_id}/location", path)),
-    ]).then(
-      ([item, location]) => {
-        void queries.invalidateQueries({ queryKey: ["inbox"] });
-        if (!location.continuation_id) return; // This post links to the chat, not its transcript.
-        if (!location.turn_id)
-          return setInboxProblem(
-            new Error(
-              t("This Inbox item is not in the chat's current history."),
-            ),
-          );
-        pendingPost.current = item.tool_call_id;
-        jumpToInput(location.turn_id);
-      },
-      (error: unknown) => setInboxProblem(error),
-    );
+    ])
+      .then(
+        ([item, location]) => {
+          void queries.invalidateQueries({ queryKey: ["inbox"] });
+          if (!location.continuation_id) return; // This post links to the chat, not its transcript.
+          if (!location.turn_id)
+            return setInboxProblem(
+              new Error(
+                t("This Inbox item is not in the chat's current history."),
+              ),
+            );
+          pendingPost.current = item.tool_call_id;
+          jumpToInput(location.turn_id);
+        },
+        (error: unknown) => setInboxProblem(error),
+      )
+      .finally(() => setOpeningInboxItem(false));
   });
   useEffect(() => {
     if (inboxItem) openInboxItem(inboxItem);
@@ -512,35 +531,14 @@ function ConversationContent({
       return;
     const element = reader.current;
     if (!element) return;
-    const check = () => {
-      if (!olderAnchor.current && savedResultVisible(element))
+    return observeSavedResult(element, () => {
+      if (!olderAnchor.current)
         void tracker.acknowledge(
           threadId,
           completionVersion,
           readState.read_state_version ?? 0,
         );
-    };
-    // The effect runs after transcript commit; the frame observes layout and the
-    // actual scroll position, never the optimistic follow/smooth-scroll flag.
-    const frame = requestAnimationFrame(check);
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(check);
-    observer?.observe(element);
-    if (element.firstElementChild) observer?.observe(element.firstElementChild);
-    element.addEventListener("scroll", check);
-    window.addEventListener("focus", check);
-    window.addEventListener("resize", check);
-    document.addEventListener("visibilitychange", check);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer?.disconnect();
-      element.removeEventListener("scroll", check);
-      window.removeEventListener("focus", check);
-      window.removeEventListener("resize", check);
-      document.removeEventListener("visibilitychange", check);
-    };
+    });
   }, [
     pageReady,
     tracker,
@@ -556,6 +554,26 @@ function ConversationContent({
     history.data,
     publication?.revision,
   ]);
+  const inboxReadBlocked = useCallback(
+    () => !!olderAnchor.current || !!pendingJump.current,
+    [],
+  );
+  const unreadInboxPosts = useThreadInbox({
+    threadId,
+    enabled: !!detail.data || !!publication?.threadAvailable,
+    canRead:
+      pageReady &&
+      !hasLater &&
+      !inboxItem &&
+      !openingInboxItem &&
+      (publication
+        ? publication.ready && !publicationHistory?.isError
+        : history.isSuccess && !history.isPreviousHistory),
+    reader,
+    blocked: inboxReadBlocked,
+    savedEntries: entries,
+    publications: publication?.messages,
+  });
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   useEffect(() => {
@@ -573,6 +591,67 @@ function ConversationContent({
     (draft.submission.kind === "accepted"
       ? draft.submission.receipt
       : undefined);
+  const rewindConversation = (
+    replacement: Schema<"MessageEditReceipt">,
+    input: LocalInput,
+    target: InlineEdit,
+  ) => {
+    const receiptId = replacement.receipt.receipt_id;
+    const detailKey = ["thread", threadId, "detail"];
+    void queries.cancelQueries({ queryKey: detailKey, exact: true });
+    for (const section of [
+      "history",
+      "turn-history",
+      "inputs",
+      "branch-points",
+    ]) {
+      queries.removeQueries({ queryKey: ["thread", threadId, section] });
+    }
+    // A live input may have just been included in a saved checkpoint. Match its
+    // turn or authored source before treating the whole saved window as prefix.
+    const key = target.selection.turn_key;
+    const inputPosition =
+      target.inputPosition ??
+      turns.find((turn) => turn.turn_id === key)?.input_position ??
+      entries.find((entry) =>
+        entry.parts.some((part) => part.metadata?.source_id === key),
+      )?.position ??
+      Infinity;
+    setHistoryReset(
+      rewindHistory(replacement.continuation_id, inputPosition, {
+        entries,
+        turns,
+      }),
+    );
+    queries.setQueryData<Schema<"ThreadDetail">>(detailKey, (current) => {
+      if (
+        !current ||
+        current.thread.root_activity.receipt_id === receiptId ||
+        current.thread.last_execution?.execution_id === receiptId
+      )
+        return current;
+      return {
+        ...current,
+        continuation_id: replacement.continuation_id,
+        deferred_requests: [],
+        thread: {
+          ...current.thread,
+          last_execution: null,
+          completion: null,
+          root_activity: { state: "preparing", receipt_id: receiptId },
+        },
+      };
+    });
+    resetFocus();
+    setLastReceipt(receiptId);
+    pendingPost.current = undefined;
+    restoreScroll.current = "";
+    draft.localInputs = [input];
+    draft.submission = { kind: "accepted", action: "send", receipt: receiptId };
+    draft.notify();
+    backToLatest();
+    reconcile();
+  };
   const observedOperation = useOperation(
     threadId,
     operation?.receipt_id ??
@@ -890,6 +969,19 @@ function ConversationContent({
         error={detail.error}
         retry={() => void detail.refetch()}
         retrying={detail.isFetching}
+        back={
+          (guest && {
+            to:
+              guest.grant.scope === "thread"
+                ? `/threads/${encodeURIComponent(guest.grant.target_id)}`
+                : "/",
+            label:
+              guest.grant.scope === "thread"
+                ? t("Back to shared chat")
+                : t("Back to shared project"),
+          }) ||
+          undefined
+        }
         hasDraft={
           !!draft.doc.getText("text").length ||
           !!draft.doc.getMap("attachments").size
@@ -1072,17 +1164,28 @@ function ConversationContent({
         }
       : undefined;
   const showComposer = canCompose && !thread?.archived;
+  const showReadOnlyComposer =
+    !!guest && !canCompose && !thread?.archived && !!detail.data;
+  const hasComposer = showComposer || showReadOnlyComposer;
+  const composerOwner = accessibleOwner
+    ? {
+        title: owner.data
+          ? conversationTitle(owner.data.thread)
+          : accessibleOwner,
+        to: `/threads/${encodeURIComponent(accessibleOwner)}`,
+      }
+    : undefined;
   const renderWorkInspector =
     !readOnly && detail.data
       ? (identity?: ReactNode) => (
           <WorkInspector
             composerIdentity={identity}
-            className={showComposer ? styles.composerWorkInspector : undefined}
+            className={hasComposer ? styles.composerWorkInspector : undefined}
             showDetails={!isBot || debug.enabled}
             threadId={threadId}
             connectionStatus={publication?.status ?? connectionStatus}
             status={
-              !guest && thread && !thread.archived ? (
+              thread && !thread.archived ? (
                 <ComposerStatus
                   threadId={threadId}
                   receipt={receipt}
@@ -1216,14 +1319,24 @@ function ConversationContent({
               <>
                 <PauseConversationFollowing value={interruptScroll}>
                   <MessageBranchProvider
-                    receipt={thread?.root_activity.receipt_id}
+                    receipt={operation?.receipt_id}
+                    runId={operation?.run_id}
                     thread={threadId}
                     draft={draft}
-                    continuation={continuation}
+                    continuation={detail.data?.continuation_id ?? continuation}
+                    acpCommands={acpAgent ? acpCommands.data : undefined}
+                    blocked={
+                      composerPreparing ||
+                      draft.submission.kind === "pending" ||
+                      draft.submission.kind === "unknown"
+                    }
+                    onEditPending={setMessageEditPending}
+                    onRewound={rewindConversation}
                     enabled={
                       !!thread &&
                       !isBot &&
                       !guest &&
+                      !readOnly &&
                       thread.role === "ordinary" &&
                       !thread.parent_thread_id &&
                       !thread.memory_scope &&
@@ -1232,10 +1345,7 @@ function ConversationContent({
                           "acp_agent") &&
                       !thread.archived
                     }
-                    active={
-                      thread?.root_activity.state !== "inactive" ||
-                      draft.submission.kind === "pending"
-                    }
+                    active={!!operation && operation.state !== "inactive"}
                   >
                     <ConversationTranscript
                       publications={publication?.messages}
@@ -1377,11 +1487,11 @@ function ConversationContent({
               : t("New output")}
           </Button>
         )}
-        {!showComposer && renderWorkInspector?.()}
+        {!hasComposer && renderWorkInspector?.()}
         {readOnly && connectionStatus && (
           <div className={styles.conversationFeedback}>{connectionStatus}</div>
         )}
-        {(!canCompose || thread?.archived) && feedback && (
+        {!hasComposer && feedback && (
           <div className={styles.conversationFeedback}>{feedback}</div>
         )}
         {publication?.status && !detail.data && (
@@ -1392,6 +1502,23 @@ function ConversationContent({
         {typeof publication?.composer === "function"
           ? publication.composer(dictation)
           : publication?.composer}
+        {showReadOnlyComposer && (
+          <ReadOnlyComposer
+            renderHeader={renderWorkInspector}
+            feedback={feedback}
+            notice={t("View-only link - Following this chat live.")}
+            owner={composerOwner}
+            coordinatorActive={isCoordinator}
+            controls={
+              <GuestModelBadge
+                model={detail.data?.model_display}
+                external={
+                  thread?.configuration.agent_source.kind === "acp_agent"
+                }
+              />
+            }
+          />
+        )}
         {showComposer && (
           <Composer
             renderHeader={renderWorkInspector}
@@ -1408,32 +1535,30 @@ function ConversationContent({
             externalAgent={
               thread?.configuration.agent_source.kind === "acp_agent"
             }
-            owner={
-              !guest && ownerId
-                ? {
-                    title: owner.data
-                      ? conversationTitle(owner.data.thread)
-                      : ownerId,
-                  }
-                : undefined
-            }
+            owner={composerOwner}
             coordinator={
-              !guest && thread && thread.role !== "worker"
-                ? {
-                    active: thread.role === "coordinator",
-                    available: canPromoteCoordinator(
-                      thread,
-                      !!detail.data?.deferred_requests?.length,
-                    ),
-                    unavailableReason: !thread.configuration.project_id
-                      ? "no_project"
-                      : detail.data?.deferred_requests?.length
-                        ? "pending_requests"
-                        : undefined,
-                  }
+              thread && thread.role !== "worker"
+                ? guest
+                  ? thread.role === "coordinator"
+                    ? { active: true, available: false }
+                    : undefined
+                  : {
+                      active: thread.role === "coordinator",
+                      available: canPromoteCoordinator(
+                        thread,
+                        !!detail.data?.deferred_requests?.length,
+                      ),
+                      unavailableReason: !thread.configuration.project_id
+                        ? "no_project"
+                        : detail.data?.deferred_requests?.length
+                          ? "pending_requests"
+                          : undefined,
+                    }
                 : undefined
             }
             runBlock={runBlock}
+            editingMessage={messageEditPending}
+            onPreparing={setComposerPreparing}
             continuationId={detail.data?.continuation_id}
             predictionEnabled={
               (guest
@@ -1473,82 +1598,98 @@ function ConversationContent({
               )
             }
             controls={() =>
-              guest
-                ? null
-                : thread?.configuration.agent_source.kind === "live"
-                  ? null
-                  : (() => {
-                      const modelOption = acpModelOption(acpOptions.data);
-                      return (
-                        <ThreadRunChoices
-                          catalog={selectors.data}
-                          agentId={thread?.configuration.agent_source.id ?? ""}
-                          defaultModelId={
-                            thread?.configuration.default_model_id
+              guest ? (
+                <GuestModelBadge
+                  model={detail.data?.model_display}
+                  external={
+                    thread?.configuration.agent_source.kind === "acp_agent"
+                  }
+                />
+              ) : thread?.configuration.agent_source.kind === "live" ? null : (
+                (() => {
+                  const modelOption = acpModelOption(acpOptions.data);
+                  return (
+                    <ThreadRunChoices
+                      catalog={selectors.data}
+                      agentId={thread?.configuration.agent_source.id ?? ""}
+                      defaultModelId={thread?.configuration.default_model_id}
+                      modelId={draft.modelId}
+                      controls={draft.controls}
+                      onControlsChange={runChoices.onControlsChange}
+                      disabled={
+                        !thread ||
+                        agentSelection.isPending ||
+                        draft.submission.kind === "pending" ||
+                        draft.submission.kind === "unknown"
+                      }
+                      onExternalOptionsOpen={() => {
+                        if (acpOptionsEnabled && !acpActive)
+                          void acpOptions.refetch({ cancelRefetch: false });
+                      }}
+                      externalLoading={acpBlock?.kind === "loading"}
+                      externalModel={acpOptionLabel(
+                        modelOption,
+                        t("No model selected"),
+                      )}
+                      externalModelId={
+                        modelOption && modelOption.value !== ""
+                          ? String(modelOption.value)
+                          : undefined
+                      }
+                      externalThinking={acpOptionLabel(
+                        acpOptions.data?.find(
+                          (item) =>
+                            item.category === "thought_level" ||
+                            item.id === "thought_level",
+                        ),
+                      )}
+                      externalOptions={
+                        <AcpOptions
+                          threadId={threadId}
+                          active={acpActive}
+                          agentId={acpAgent}
+                          preset={
+                            selectors.data?.agents.find(
+                              (item) => item.agent_id === acpAgent,
+                            )?.preset
                           }
-                          modelId={draft.modelId}
-                          controls={draft.controls}
-                          onControlsChange={runChoices.onControlsChange}
-                          disabled={
-                            !thread ||
-                            agentSelection.isPending ||
-                            draft.submission.kind === "pending" ||
-                            draft.submission.kind === "unknown"
-                          }
-                          onExternalOptionsOpen={() => {
-                            if (acpOptionsEnabled && !acpActive)
-                              void acpOptions.refetch({ cancelRefetch: false });
-                          }}
-                          externalLoading={acpBlock?.kind === "loading"}
-                          externalModel={acpOptionLabel(
-                            modelOption,
-                            t("No model selected"),
-                          )}
-                          externalModelId={
-                            modelOption && modelOption.value !== ""
-                              ? String(modelOption.value)
-                              : undefined
-                          }
-                          externalThinking={acpOptionLabel(
-                            acpOptions.data?.find(
-                              (item) =>
-                                item.category === "thought_level" ||
-                                item.id === "thought_level",
-                            ),
-                          )}
-                          externalOptions={
-                            <AcpOptions
-                              threadId={threadId}
-                              active={acpActive}
-                              agentId={acpAgent}
-                              preset={
-                                selectors.data?.agents.find(
-                                  (item) => item.agent_id === acpAgent,
-                                )?.preset
-                              }
-                              options={acpOptions}
-                              change={acpChange}
-                              continuation={detail.data?.continuation_id}
-                            />
-                          }
-                          onAgentChange={(value) =>
-                            agentSelection.mutate(value)
-                          }
-                          onModelChange={runChoices.onModelChange}
+                          options={acpOptions}
+                          change={acpChange}
+                          continuation={detail.data?.continuation_id}
                         />
-                      );
-                    })()
+                      }
+                      onAgentChange={(value) => agentSelection.mutate(value)}
+                      onModelChange={runChoices.onModelChange}
+                    />
+                  );
+                })()
+              )
             }
             profile={profile}
             unauthorized={unauthorized}
             reconcile={reconcile}
           />
         )}
-        {guest && !canCompose && (
-          <p className={styles.composerConnection}>
-            {t("View-only link - Following this chat live.")}
-          </p>
-        )}
+        {guest &&
+          detail.data &&
+          !hasComposer &&
+          (!canCompose || (accessibleOwner && owner.data)) && (
+            <p className={styles.composerConnection}>
+              {!canCompose && (
+                <span>{t("View-only link - Following this chat live.")}</span>
+              )}
+              {accessibleOwner && owner.data && (
+                <>
+                  {!canCompose && <span aria-hidden="true">{" · "}</span>}
+                  <Link to={`/threads/${encodeURIComponent(accessibleOwner)}`}>
+                    {t("Managed by {{name}}", {
+                      name: conversationTitle(owner.data.thread),
+                    })}
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
         {!guest && !readOnly && !isBot && (
           <SharePanel
             open={dialog === "share"}
@@ -1655,7 +1796,9 @@ function ConversationContent({
         draft={draft}
         enabled={canCompose && !thread?.archived}
       >
-        {content}
+        <UnreadInboxPosts.Provider value={unreadInboxPosts}>
+          {content}
+        </UnreadInboxPosts.Provider>
       </ReplyAnnotations>
     </ConversationOpening>
   );

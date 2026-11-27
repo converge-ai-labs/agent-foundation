@@ -21,6 +21,7 @@ from a13n_service.infra.redis import wait_for_wake
 from a13n_service.infra.telemetry import Gauge, meter
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, renew
 from a13n_service.runs.claim import claim
+from a13n_service.runs.members import FALLBACK_BATCH, Members
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tool_executions.authority import heartbeat
 
@@ -55,6 +56,7 @@ class Worker:
         self.slot_released = asyncio.Event()
         self.running: dict[str, _Running] = {}
         self.stopping = False
+        self.members: Members | None = None
 
     async def run(self) -> None:
         with log_context(worker_id=self.id):
@@ -71,6 +73,15 @@ class Worker:
 
     async def _run(self) -> None:
         settings = self.runtime.settings.worker
+        # Separate deployments/schemas sharing Redis must not count one another.
+        scope = self.runtime.storage.engine.url.set(password=None).render_as_string(hide_password=True)
+        self.members = Members(
+            self.runtime.redis,
+            scope,
+            self.id,
+            ttl=max(settings.lease_seconds, 3 * settings.scan_seconds),
+            timeout=self.runtime.settings.redis.timeout,
+        )
         logger.info("Worker started", extra={"host": socket.gethostname(), "build": self.build})
         self._report_slots()
         async with asyncio.TaskGroup() as group:
@@ -84,18 +95,24 @@ class Worker:
                         await self._drain()
                         logger.error("Tool execution admission closed; forcing process exit after drain")
                         os._exit(1)
+                    members = await self.members.refresh()
                     if self.free == 0 and self.realtime_free == 0:
                         self.slot_released.clear()
                         # Recheck failed tool admission even when every attempt slot remains occupied.
                         try:
-                            await asyncio.wait_for(self.slot_released.wait(), timeout=settings.authority_seconds)
+                            await asyncio.wait_for(
+                                self.slot_released.wait(),
+                                timeout=min(settings.authority_seconds, settings.scan_seconds),
+                            )
                         except TimeoutError:
                             pass
                         continue
-                    saturated = False
+                    saturated = claimed = failed = False
                     for realtime, requested in ((False, self.free), (True, self.realtime_free)):
                         if not requested:
                             continue
+                        if members is None:
+                            requested = min(requested, FALLBACK_BATCH)
                         sent = asyncio.get_running_loop().time()
                         try:
                             leases = await claim(
@@ -103,6 +120,7 @@ class Worker:
                                 worker_id=self.id,
                                 worker_build=self.build,
                                 limit=requested,
+                                members=members if members is not None else 1,
                                 realtime=realtime,
                             )
                         except Exception as error:
@@ -115,7 +133,7 @@ class Worker:
                                     "exception_details": exception_details(error),
                                 },
                             )
-                            await asyncio.sleep(settings.scan_seconds)
+                            failed = True
                             continue
                         CLAIMS.record(
                             asyncio.get_running_loop().time() - sent, {"result": "claimed" if leases else "empty"}
@@ -132,15 +150,33 @@ class Worker:
                             self.running[lease.attempt_id] = _Running(lease, control, task)
                         self._report_slots()
                         saturated |= len(leases) == requested
-                    if not saturated:
+                        if leases:
+                            claimed = True
+                            logger.info(
+                                "Worker claim batch",
+                                extra={
+                                    "members": members,
+                                    "claimed": len(leases),
+                                    "free_slots": self.realtime_free if realtime else self.free,
+                                    "realtime": realtime,
+                                },
+                            )
+                    if failed or (claimed and members != 1):
+                        # Wake markers must not let one worker immediately consume another share.
+                        await asyncio.sleep(settings.scan_seconds)
+                    elif not saturated:
                         await wait_for_wake(self.runtime.redis, timeout=settings.scan_seconds)
             except asyncio.CancelledError:
                 await self._drain()
                 raise
+            finally:
+                await self.members.leave()
 
     async def _drain(self) -> None:
         self.stopping = True
         self.runtime.executions.stop_admission()
+        if self.members is not None:
+            await self.members.leave()
         for running in self.running.values():
             running.control.handoff.set()
         tasks = [running.task for running in self.running.values()]

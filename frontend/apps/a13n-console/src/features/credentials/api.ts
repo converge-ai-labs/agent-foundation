@@ -27,11 +27,16 @@ export function credentialKeys(workspaceId: string) {
 export function credentialQueries(client: Client, workspaceId: string) {
   const http = client.workspace(workspaceId),
     keys = credentialKeys(workspaceId);
-  const read = (signal: AbortSignal, cursor?: string, limit = 30) =>
+  const read = (
+    signal: AbortSignal,
+    cursor?: string,
+    limit = 30,
+    appId?: string,
+  ) =>
     http
       .GET("/api/v1/egress-credentials", {
         signal,
-        params: { query: { cursor, limit } },
+        params: { query: { cursor, limit, app_id: appId } },
       })
       .then(data);
   return {
@@ -41,12 +46,17 @@ export function credentialQueries(client: Client, workspaceId: string) {
         queryFn: ({ signal }) =>
           allPages((cursor) => read(signal, cursor, 100)),
       }),
-    list: (cursor: string | undefined, term: string, state: string) =>
+    list: (
+      cursor: string | undefined,
+      term: string,
+      state: string,
+      appId?: string,
+    ) =>
       queryOptions({
-        queryKey: [...keys.lists, cursor, term, state],
+        queryKey: [...keys.lists, cursor, term, state, appId],
         queryFn: ({ signal }) =>
           matchingPage(
-            (next, limit) => read(signal, next, limit),
+            (next, limit) => read(signal, next, limit, appId),
             cursor,
             term || state !== "all"
               ? (item) =>

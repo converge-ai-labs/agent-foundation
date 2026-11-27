@@ -325,6 +325,9 @@
   color: var(--a13n-secondary);
   background: transparent;
 }
+.threadRestore {
+  flex-shrink: 0;
+}
 .threadStar {
   display: inline-flex;
   align-items: center;
@@ -340,36 +343,39 @@
   .groupActions {
     opacity: 0;
   }
-  /* With a fine pointer the row menu floats over the title end only while
-     the row is hovered or focused, so idle titles use the full row width. */
-  .threadActions {
-    position: absolute;
-    top: 50%;
-    translate: 0 -50%;
-    inset-inline-end: 0;
-  }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
-    padding-inline-end: 32px;
-  }
-  .threadRow:has(
-      .threadStar,
-      .coordinatorActivity,
-      .threadStatus,
-      .draftMarker,
-      .resultDot
-    ):is(:hover, :focus-within, :has([data-popup-open]))
-    .threadLink {
-    padding-inline-end: 8px;
-  }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open]))
-    :is(
-      .threadStar,
-      .coordinatorActivity,
-      .threadStatus,
-      .draftMarker,
-      .resultDot
-    ) {
-    opacity: 0;
+  /* Rows with an inline Restore button reserve a separate menu slot and keep
+     their status visible. Other rows let the menu take the place of the
+     trailing mark. */
+  .threadRow:not(:has(.threadRestore)) {
+    & .threadActions {
+      position: absolute;
+      top: 50%;
+      translate: 0 -50%;
+      inset-inline-end: 0;
+    }
+    &:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
+      padding-inline-end: 32px;
+    }
+    &:has(
+        .threadStar,
+        .coordinatorActivity,
+        .threadStatus,
+        .draftMarker,
+        .resultDot
+      ):is(:hover, :focus-within, :has([data-popup-open]))
+      .threadLink {
+      padding-inline-end: 8px;
+    }
+    &:is(:hover, :focus-within, :has([data-popup-open]))
+      :is(
+        .threadStar,
+        .coordinatorActivity,
+        .threadStatus,
+        .draftMarker,
+        .resultDot
+      ) {
+      opacity: 0;
+    }
   }
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
@@ -598,15 +604,16 @@
 .messageEditor {
   width: min(100%, 640px);
   margin: 8px 0 16px auto;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--a13n-input-border);
   border-radius: var(--harness-radius-panel);
-  background: var(--a13n-elevated);
+  background: var(--card);
+  transition: border-color 120ms ease;
 }
 .messageEditor textarea {
   display: block;
   width: 100%;
-  min-height: 3lh;
+  min-height: 1lh;
   max-height: 36vh;
   field-sizing: content;
   resize: none;
@@ -622,14 +629,69 @@
   outline: none;
   box-shadow: none;
 }
-.messageEditor:has(textarea:focus-visible) {
-  border-color: var(--a13n-secondary);
+.messageEditor:focus-within {
+  border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
 }
-.messageEditor > div {
+.editFooter,
+.editDetails,
+.editActions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+}
+.editFooter {
+  justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
+}
+.editDetails {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.editDetails small {
+  color: var(--a13n-secondary);
+}
+.editActions {
+  flex-shrink: 0;
+}
+.editActions > button {
+  border-radius: 50%;
+  box-shadow: none;
+}
+.editAttachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  height: 26px;
+  padding-inline: 8px 2px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
+}
+.editAttachmentRemove {
+  flex-shrink: 0;
+  color: inherit;
+}
+.editAttachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .messageEditor textarea {
+    font-size: max(16px, var(--harness-prose-size));
+  }
+  .editAttachment {
+    min-height: 46px;
+  }
+  .messageEditor button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 .userMessage {
   width: fit-content;
@@ -1025,6 +1087,15 @@ summary:is(:hover, :focus-visible) > .logCaret {
   border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent);
 }
+.composerInput[data-readonly] {
+  border-color: var(--a13n-border-soft);
+  background: var(--a13n-surface);
+  box-shadow: none;
+}
+.composerInput[data-readonly]:focus-within {
+  border-color: var(--a13n-border-soft);
+  box-shadow: none;
+}
 @media (max-width: 640px) {
   .reading {
     padding: 16px 12px;
@@ -1036,6 +1107,8 @@ summary:is(:hover, :focus-visible) > .logCaret {
 @media (prefers-reduced-motion: reduce) {
   .messageActions,
   .composerInput,
+  a.workerIdentity,
+  .messageEditor,
   .activity > summary,
   .logCaret,
   .executionCaret,
@@ -1047,6 +1120,14 @@ summary:is(:hover, :focus-visible) > .logCaret {
   margin: 4px 4px 0;
   font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
+}
+.composerConnection a {
+  color: var(--a13n-text-supporting);
+  text-underline-offset: 0.15em;
+}
+.composerConnection a:is(:hover, :focus-visible) {
+  color: var(--a13n-text);
+  text-decoration: underline;
 }
 .sendButton {
   grid-area: send;
@@ -1114,6 +1195,20 @@ summary:is(:hover, :focus-visible) > .logCaret {
   color: var(--harness-log-text);
   font-size: var(--a13n-text-body);
 }
+a.workerIdentity {
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+a.workerIdentity:is(:hover, :focus-visible) {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+a.workerIdentity:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
 .coordinatorIdentity > span,
 .workerIdentity > span {
   overflow: hidden;
@@ -1141,6 +1236,17 @@ summary:is(:hover, :focus-visible) > .logCaret {
   grid-area: editor;
   flex: 1;
   min-width: 0;
+}
+.readOnlyInput {
+  grid-area: editor;
+  display: flex;
+  align-items: center;
+  min-height: var(--composer-content-height, 32px);
+  margin: 0;
+  padding: 4px var(--composer-text-inset, 8px);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 24px;
 }
 /* Submitting hands the message to the transcript. The editor keeps its box so
    the composer does not resize, and shows one quiet line instead of the text
@@ -1429,8 +1535,26 @@ dl.detailGrid > .detailLongRow dd {
 .decision {
   margin: 16px 0;
   padding: 16px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 8px;
+  border-radius: var(--harness-radius-panel);
+  background: var(--a13n-surface);
+  font-size: var(--a13n-text-body);
+}
+.decision
+  :is(
+    [data-slot="input-control"],
+    [data-slot="textarea-control"],
+    [data-slot="select-trigger"]
+  ) {
+  background: var(--a13n-elevated);
+}
+:global(.dark)
+  .decision
+  :is(
+    [data-slot="input-control"],
+    [data-slot="textarea-control"],
+    [data-slot="select-trigger"]
+  ) {
+  background: var(--a13n-canvas);
 }
 .decision h2 {
   font-size: calc(var(--a13n-text-body) * 16 / 14);
@@ -1448,7 +1572,7 @@ dl.detailGrid > .detailLongRow dd {
   line-height: 20px;
 }
 .decision > form {
-  margin-top: 24px;
+  margin-top: 20px;
 }
 .decisionActions {
   display: flex;
@@ -1464,24 +1588,34 @@ dl.detailGrid > .detailLongRow dd {
 }
 .question legend {
   color: var(--harness-log-text);
-  font-size: var(--a13n-text-body);
+  font-size: var(--a13n-text-sm);
   margin-bottom: 4px;
 }
 .question > p {
   margin-bottom: 12px;
-  font-size: calc(var(--a13n-text-body) * 16 / 14);
+  font-size: calc(var(--a13n-text-body) * 15 / 14);
   font-weight: 500;
 }
 .answerOption {
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  padding: 12px 12px;
-  margin: 8px 0;
-  border-radius: 6px;
-  background: var(--a13n-surface);
+  padding: 10px 12px;
+  margin: 6px 0;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 10px;
+  background: var(--a13n-elevated);
   font-size: var(--a13n-text-body);
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+:global(.dark) .answerOption {
+  background: var(--a13n-canvas);
+}
+.answerOption:hover {
+  background: var(--a13n-hover);
 }
 .answerOption input {
   margin-top: 4px;
@@ -1490,6 +1624,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .answerOption:has(input:checked) {
   background: var(--a13n-selected);
+  border-color: var(--a13n-input-border);
 }
 .answerOption:has(input:focus-visible) {
   outline: 2px solid var(--ring);

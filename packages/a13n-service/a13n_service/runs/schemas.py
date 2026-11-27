@@ -22,6 +22,7 @@ from pydantic import (
 )
 from pydantic.experimental.missing_sentinel import MISSING
 
+from a13n_service.app_provenance import AppIdFilter
 from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
@@ -520,6 +521,7 @@ class SessionQuery(_Frozen):
         description="Session/thread ID, title, origin, label value or retained conversation text",
     )
     application: str | None = Field(default=None, min_length=1, max_length=128)
+    app_id: AppIdFilter | None = None
     agent_id: str | None = Field(default=None, max_length=72)
     status: tuple[RunStatus, ...] = Field(default=(), max_length=6)
     trigger: tuple[Trigger, ...] = Field(default=(), max_length=5)

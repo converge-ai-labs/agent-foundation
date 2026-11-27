@@ -67,7 +67,14 @@ async def test_bot_deep_link_serves_the_same_shell_without_swallowing_api_errors
     (assets / "index.html").write_text('<!doctype html><div id="root"></div>')
     async with webui(tmp_path, [PUBLIC], static_root=assets) as (server, _):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url=PUBLIC) as client:
-            for path in ("/", "/bot", "/bot?refresh=1", "/threads/thread-example", "/share/share-example"):
+            for path in (
+                "/",
+                "/bot",
+                "/bot?refresh=1",
+                "/settings/diagnostics",
+                "/threads/thread-example",
+                "/share/share-example",
+            ):
                 response = await client.get(path)
                 assert response.status_code == 200, response.text
                 assert response.headers["content-type"].startswith("text/html")
@@ -227,8 +234,9 @@ async def test_browser_lease_routes_parse_and_forward_requests(tmp_path: Path, m
 
 
 @pytest.mark.parametrize("is_folder", [False, True], ids=["file", "folder"])
+@pytest.mark.parametrize("has_system_root", [False, True])
 async def test_reveal_uses_host_manager_only_for_local_shared_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, is_folder: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, is_folder: bool, has_system_root: bool
 ) -> None:
     import a13n_harness_ui.webui as transport
 
@@ -239,7 +247,10 @@ async def test_reveal_uses_host_manager_only_for_local_shared_files(
         target.touch()
     async with webui(tmp_path, [PUBLIC], share_computer=True) as (server, _):
         monkeypatch.setattr(transport, "sys", SimpleNamespace(platform="win32"))
-        monkeypatch.setenv("SystemRoot", str(tmp_path))
+        if has_system_root:
+            monkeypatch.setenv("SystemRoot", str(tmp_path))
+        else:
+            monkeypatch.delenv("SystemRoot", raising=False)
         launch = AsyncMock()
         monkeypatch.setattr(transport.asyncio, "create_subprocess_exec", launch)
         async with httpx.AsyncClient(
@@ -255,7 +266,8 @@ async def test_reveal_uses_host_manager_only_for_local_shared_files(
             launch.assert_not_called()
             assert (await client.get("/api/status")).json()["features"]["file_manager"] == "explorer"
             assert (await client.post("/api/host/files/reveal", params={"path": str(target)})).status_code == 204
-            launch.assert_awaited_once_with(str(tmp_path / "explorer.exe"), "/select,", str(target))
+            system_root = tmp_path if has_system_root else Path("C:/Windows")
+            launch.assert_awaited_once_with(str(system_root / "explorer.exe"), "/select,", str(target))
 
 
 async def test_pick_host_directory_accepts_only_local_shared_requests(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -279,3 +291,19 @@ async def test_pick_host_directory_accepts_only_local_shared_requests(tmp_path: 
             run.assert_not_awaited()
             assert (await client.post(path)).json() == str(Path("/tmp/two words"))
             assert (await client.post(path)).json() is None
+
+
+async def test_windows_folder_picker_has_system_root_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import a13n_harness_ui.webui as transport
+
+    run = AsyncMock(return_value=SimpleNamespace(returncode=0, stdout=b"C:/work"))
+    monkeypatch.setattr(transport, "run_process", run)
+    monkeypatch.setattr(transport, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.delenv("SystemRoot", raising=False)
+    async with webui(tmp_path, [PUBLIC], share_computer=True) as (server, _):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server), base_url="http://localhost", headers=AUTH
+        ) as client:
+            response = await client.post("/api/host/files/pick-directory")
+    assert response.status_code == 200 and response.json() == str(Path("C:/work"))
+    assert run.await_args.args[0][0] == str(Path("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"))

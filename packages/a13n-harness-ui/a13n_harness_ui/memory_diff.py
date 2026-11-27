@@ -48,8 +48,8 @@ def diff_context(previous: dict[str, str], expected: dict[str, str], current: di
     try:
         with tempfile.TemporaryDirectory(prefix="a13n-memory-diff-") as directory:
             root = Path(directory)
-            (root / "previous").write_text(before)
-            (root / "current").write_text(after)
+            (root / "previous").write_text(before, encoding="utf-8", newline="\n")
+            (root / "current").write_text(after, encoding="utf-8", newline="\n")
             result = subprocess.run(
                 [
                     git,

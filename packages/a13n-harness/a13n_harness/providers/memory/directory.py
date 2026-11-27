@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import ntpath
 import os
 import shutil
 import tempfile
@@ -19,13 +20,17 @@ from .files import FileFormat, describe, validate_path
 _BOOKKEEPING = ".a13n-memory"
 
 
+def _is_link(path: Path) -> bool:
+    return path.is_symlink() or path.is_junction()
+
+
 class DirectoryFileStore:
     """The files under `root`, for local Harness use.
 
     Versions are content hashes. Every mutation holds an exclusive lock on a file
     under `root/.a13n-memory/`, so compare-and-swap holds across tasks and
-    processes, and `move` is one rename under that lock. Symbolic links are never
-    followed. The store keeps no change journal: its cursor is a digest of the
+    processes, and `move` is one rename under that lock. Symbolic links and
+    junctions are never followed. The store keeps no change journal: its cursor is a digest of the
     listing, and any change since a cursor answers a full resync. Attribution is
     ignored.
     """
@@ -97,7 +102,9 @@ class DirectoryFileStore:
             for child in self.root.iterdir():
                 if child.name == _BOOKKEEPING:
                     continue
-                if child.is_dir() and not child.is_symlink():
+                if child.is_junction():
+                    child.rmdir()
+                elif not _is_link(child) and child.is_dir():
                     shutil.rmtree(child)
                 else:
                     child.unlink()
@@ -111,8 +118,12 @@ class DirectoryFileStore:
     def _list(self) -> list[FileEntry]:
         entries: list[FileEntry] = []
         for directory, directories, names in os.walk(self.root):
-            if Path(directory) == self.root:
-                directories[:] = [name for name in directories if name != _BOOKKEEPING]
+            parent = Path(directory)
+            directories[:] = [
+                name
+                for name in directories
+                if (parent != self.root or name != _BOOKKEEPING) and not _is_link(parent / name)
+            ]
             for name in names:
                 entry = self._entry(Path(directory, name))
                 if entry is not None:
@@ -121,7 +132,7 @@ class DirectoryFileStore:
 
     def _entry(self, file: Path) -> FileEntry | None:
         """A listed file; files the store could not have written, such as non-UTF-8 ones, are left out."""
-        if file.is_symlink():
+        if _is_link(file):
             return None
         try:
             path = validate_path(file.relative_to(self.root).as_posix(), self.format)
@@ -136,13 +147,14 @@ class DirectoryFileStore:
         return FileEntry(path=path, version=_version(data), size=len(data), description=description)
 
     def _locate(self, path: str) -> Path:
-        """Where a file lives; a path through a symbolic link names no file of this store."""
-        target = self.root / path
-        for part in (target, *target.parents):
-            if part == self.root:
-                break
-            if part.is_symlink():
-                raise MemoryStoreError("invalid_path", f"{path} passes through a symbolic link.")
+        """Resolve a memory-relative path without following links or junctions."""
+        if os.name == "nt" and any(":" in part or ntpath.isreserved(part) for part in path.split("/")):
+            raise MemoryStoreError("invalid_path", "Memory file paths require ordinary Windows file names.")
+        target = self.root
+        for part in path.split("/"):
+            target /= part
+            if _is_link(target):
+                raise MemoryStoreError("invalid_path", f"{path} passes through a link.")
         return target
 
     def _current(self, path: str) -> FileText | None:

@@ -16,7 +16,7 @@ from typing import Annotated, Any, Protocol, Self, cast, runtime_checkable
 from uuid import uuid4
 
 from pydantic import Field, JsonValue, ValidationError
-from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition, ToolReturn
+from pydantic_ai import DeferredToolRequests, FunctionToolset, RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed, ToolRetryError, UserError
 from pydantic_ai.messages import CachePoint, InstructionPart, TextContent, ToolCallPart, UserContent
 from pydantic_ai.tools import ToolDenied
@@ -32,7 +32,7 @@ from pydantic_monty import (
 from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness._review_context import record_approval_denials
 from a13n_harness.codeact.config import CodeActConfig
-from a13n_harness.codeact.executor import is_sandbox_panic
+from a13n_harness.codeact.executor import OutputCall, is_sandbox_panic
 from a13n_harness.codeact.programs import (
     ProgramValidationError,
     load_program_source,
@@ -42,6 +42,7 @@ from a13n_harness.codeact.runtime import CodeActExecution, CodeActRunState, Inli
 from a13n_harness.codeact.values import bounded_json_size
 from a13n_harness.context import AgentContext
 from a13n_harness.environment import EnvironmentError
+from a13n_harness.errors import DefinitionError
 from a13n_harness.events import (
     CodeActExecutionCompletedPayload,
     CodeActExecutionStartedPayload,
@@ -50,6 +51,7 @@ from a13n_harness.events import (
     emit_harness_event,
 )
 from a13n_harness.guidance import guidance_hint, retry_guidance_page
+from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder
 from a13n_harness.tools.tool_search import proxy_control, proxy_membership
 
@@ -185,7 +187,15 @@ class _Catalog:
     definitions: dict[str, ToolDefinition]
     sandbox_to_canonical: dict[str, str]
     prepared_tools: dict[str, ToolsetTool[AgentContext]]
+    output_names: dict[str, str]
     fingerprint: str
+
+
+@dataclass
+class _FinalOutput:
+    tool_name: str
+    arguments: dict[str, Any]
+    supplemental: list[UserContent]
 
 
 @dataclass
@@ -209,6 +219,7 @@ class _ExecutionBudget:
     pending: int = 0
     started: int = 0
     cumulative_bytes: int = 0
+    failed_deferral: bool = False
     records: list[_CallRecord] = field(default_factory=list)
     supplemental: list[tuple[int, list[UserContent]]] = field(default_factory=list)
     nested_errors: list[dict[str, Any]] = field(default_factory=list)
@@ -334,6 +345,8 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             programs=self.config.programs,
         )
 
+        # Native output submission and retry settlement must finish in the original tool batch.
+        handoff_mode = None if _output_tools(ctx, enabled=self.config.allow_final_output) else "owned"
         tools: list[Tool[AgentContext]] = []
         if self.config.inline:
             tools.append(
@@ -346,7 +359,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         "a13n.codeact.runner": True,
                         "code_arg_name": "code",
                         "code_arg_language": "python",
-                        "a13n.tool-execution": "owned",
+                        "a13n.tool-execution": handoff_mode,
                     },
                 )
             )
@@ -360,7 +373,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     metadata={
                         "a13n.codeact.runner": True,
                         "a13n.codeact.program": True,
-                        "a13n.tool-execution": "owned",
+                        "a13n.tool-execution": handoff_mode,
                     },
                 )
             )
@@ -375,10 +388,15 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         tool: ToolsetTool[AgentContext],
     ) -> Any:
         if name == _RUN_CODE:
-            return await self._run_code(ctx, **tool_args)
-        if name == _RUN_PROGRAM:
-            return await self._run_program(ctx, **tool_args)
-        return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+            result = await self._run_code(ctx, **tool_args)
+        elif name == _RUN_PROGRAM:
+            result = await self._run_program(ctx, **tool_args)
+        else:
+            return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+        if isinstance(result, _FinalOutput):
+            await ctx.submit_output(result.tool_name, result.arguments)
+            return ToolReturn(return_value="Final output submitted.", content=result.supplemental or None)
+        return result
 
     async def _run_code(
         self,
@@ -448,7 +466,13 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             for name, tool in manager.tools.items()
             if name not in _RESERVED_TOOL_NAMES
         }
-        catalog = _build_catalog(active_tools, ctx=ctx)
+        # A retained runner from a step without output targets can reach this
+        # point after Pydantic has prepared new targets for a later step.
+        catalog = _build_catalog(
+            active_tools,
+            ctx=ctx,
+            allow_final_output=self.config.allow_final_output and not _OWNED_TOOL_EXECUTION.get(),
+        )
         execution_id = f"codeact-{uuid4().hex}"
         outer_call_id = ctx.tool_call_id or execution_id
         kind = "program" if source_path is not None else "inline"
@@ -535,6 +559,12 @@ class CodeActToolset(WrapperToolset[AgentContext]):
 
             from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
 
+            deferred = False
+
+            async def on_deferred(_requests: DeferredToolRequests) -> None:
+                nonlocal deferred
+                deferred = True
+
             denial: ToolDenied | None = None
             nested_boundary = "tool_execution"
             nested_token = _NESTED_TOOL_EXECUTION.set(True)
@@ -543,6 +573,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     call,
                     wrap_validation_errors=False,
                     on_validate=on_validate,
+                    on_deferred_requests=on_deferred if catalog.output_names else None,
                     on_inline_deferred=partial(record_approval_denials, context=ctx.deps),
                 )
                 if isinstance(result, ToolDenied):
@@ -587,6 +618,8 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 message = f"Nested tool {canonical_name!r} failed with {type(exc).__name__}"
                 raise RuntimeError(message + ("\n" + hint if hint is not None else "")) from None
             finally:
+                if deferred and record.outcome != "completed":
+                    budget.failed_deferral = True
                 _NESTED_TOOL_EXECUTION.reset(nested_token)
                 if nested_started is not None:
                     record.duration_ms = max(0, round((time.monotonic() - nested_started) * 1000))
@@ -644,6 +677,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         release=budget.release,
                         valid_names=set(catalog.definitions),
                         sequential_names=sequential_names,
+                        output_names=catalog.output_names,
                         global_sequential=global_sequential,
                         restart=restart,
                         finish=finish,
@@ -659,11 +693,19 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         release=budget.release,
                         valid_names=set(catalog.definitions),
                         sequential_names=sequential_names,
+                        output_names=catalog.output_names,
                         global_sequential=global_sequential,
                     )
                     result = await finish(execution)
             status = "completed"
             return result
+        except OutputCall as call:
+            if budget.failed_deferral:
+                error = RuntimeError("CodeAct cannot submit final output after a failed deferred call")
+                error_type = type(error).__name__
+                return fail(error, str(error))
+            status = "completed"
+            return _FinalOutput(call.tool_name, call.arguments, budget.ordered_supplemental())
         except asyncio.CancelledError as exc:
             status = "cancelled"
             error_type = type(exc).__name__
@@ -805,8 +847,21 @@ def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool
     )
 
 
+def _output_tools(ctx: RunContext[AgentContext], *, enabled: bool) -> dict[str, ToolDefinition]:
+    if not enabled or ctx.realtime:
+        return {}
+    # Pydantic AI 2.76 also synthesizes a submission tool for plain text. Harness
+    # adds DeferredToolRequests to the Agent's declared business output type.
+    if ctx.agent is not None and (ctx.agent.output_type is str or ctx.agent.output_type == [str, DeferredToolRequests]):
+        return {}
+    return ctx.output_tools
+
+
 def _build_catalog(
-    tools: dict[str, ToolsetTool[AgentContext]], *, ctx: RunContext[AgentContext] | None = None
+    tools: dict[str, ToolsetTool[AgentContext]],
+    *,
+    ctx: RunContext[AgentContext] | None = None,
+    allow_final_output: bool = False,
 ) -> _Catalog:
     # Preparation checks names across all eligible tools. Presentation and execution
     # additionally require current discovery/capability availability, not a cleared
@@ -814,13 +869,17 @@ def _build_catalog(
     definitions: dict[str, ToolDefinition] = {}
     sandbox_to_canonical: dict[str, str] = {}
     prepared_tools: dict[str, ToolsetTool[AgentContext]] = {}
+    output_tools = _output_tools(ctx, enabled=allow_final_output) if ctx is not None else {}
+    eligible_names: set[str] = set()
     for canonical_name, tool in tools.items():
         definition = tool.tool_def
         if not is_codeact_tool_eligible(canonical_name, tool) or proxy_membership(definition) is not None:
             continue
+        sandbox_name = _sanitize_name(canonical_name)
+        if output_tools:
+            eligible_names.add(sandbox_name)
         if ctx is not None and not ctx.is_tool_available(definition):
             continue
-        sandbox_name = _sanitize_name(canonical_name)
         if sandbox_name in _RESERVED_TOOL_NAMES:
             raise UserError(f"Tool {canonical_name!r} maps to reserved CodeAct name {sandbox_name!r}")
         if sandbox_name in definitions:
@@ -830,6 +889,17 @@ def _build_catalog(
         definitions[sandbox_name] = projected
         sandbox_to_canonical[sandbox_name] = canonical_name
         prepared_tools[canonical_name] = tool
+    output_names: dict[str, str] = {}
+    for canonical_name, definition in output_tools.items():
+        sandbox_name = _sanitize_name(canonical_name)
+        if sandbox_name in eligible_names or sandbox_name in output_names or sandbox_name in _RESERVED_TOOL_NAMES:
+            raise DefinitionError(
+                f"CodeAct output tool {canonical_name!r} conflicts with sandbox name {sandbox_name!r}",
+                code="codeact_output_name_collision",
+            )
+        definitions[sandbox_name] = replace(definition, name=sandbox_name)
+        sandbox_to_canonical[sandbox_name] = canonical_name
+        output_names[sandbox_name] = canonical_name
     payload = [
         {
             "contract_version": _CODEACT_CONTRACT_VERSION,
@@ -838,13 +908,14 @@ def _build_catalog(
             "parameters": definition.parameters_json_schema,
             "return": definition.return_schema,
             "sequential": definition.sequential,
+            **({"final_output": True} if name in output_names else {}),
         }
         for name, definition in sorted(definitions.items())
     ]
     fingerprint = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode()
     ).hexdigest()
-    return _Catalog(definitions, sandbox_to_canonical, prepared_tools, fingerprint)
+    return _Catalog(definitions, sandbox_to_canonical, prepared_tools, output_names, fingerprint)
 
 
 def render_codeact_catalog(
@@ -852,8 +923,9 @@ def render_codeact_catalog(
     *,
     ctx: RunContext[AgentContext],
     catalog_argument_schemas: bool,
+    allow_final_output: bool = False,
 ) -> str:
-    catalog = _build_catalog(tools, ctx=ctx)
+    catalog = _build_catalog(tools, ctx=ctx, allow_final_output=allow_final_output)
     if not catalog.definitions:
         return "No host tools are callable from CodeAct in this run step."
 
@@ -863,7 +935,10 @@ def render_codeact_catalog(
         entry = f"`{sandbox_name}`"
         if canonical_name != sandbox_name:
             entry += f" (tool `{canonical_name}`)"
-        if catalog_argument_schemas:
+        is_output = sandbox_name in catalog.output_names
+        if is_output:
+            entry += " (final output)"
+        if catalog_argument_schemas or is_output:
             entry += "\n  Arguments JSON Schema: " + json.dumps(
                 definition.parameters_json_schema,
                 ensure_ascii=False,
@@ -872,10 +947,12 @@ def render_codeact_catalog(
                 default=str,
             )
         entries.append(entry)
-    return (
+    guidance = (
         "CodeAct callable host tools. Call them with the same keyword arguments as the matching tool definitions.\n"
-        + "\n".join(entries)
     )
+    if catalog.output_names:
+        guidance += "A final output function stops the code at the call and submits the run's output.\n"
+    return guidance + "\n".join(entries)
 
 
 def _sanitize_name(name: str) -> str:

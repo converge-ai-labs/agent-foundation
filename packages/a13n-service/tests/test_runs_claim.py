@@ -196,8 +196,9 @@ async def test_mixed_initial_recovery_and_handoff_preserve_numbers_and_cleanup(s
         }
 
 
+@pytest.mark.parametrize("members", [1, 2])
 async def test_concurrent_batches_skip_locked_runs_without_locking_threads(
-    service, scripted_model, runs_kit, monkeypatch
+    service, scripted_model, runs_kit, monkeypatch, members
 ):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     runtime = service.runtime
@@ -230,11 +231,11 @@ async def test_concurrent_batches_skip_locked_runs_without_locking_threads(
     # Thread locks must not prevent claims; only run rows arbitrate ownership.
     async with transaction(runtime.storage) as session:
         await session.scalars(select(ThreadRow).with_for_update())
-        first = asyncio.create_task(claim(runtime, worker_id="first", worker_build="test", limit=2))
+        first = asyncio.create_task(claim(runtime, worker_id="first", worker_build="test", limit=2, members=members))
         try:
             async with asyncio.timeout(5):
                 await entered.wait()
-                second = await claim(runtime, worker_id="second", worker_build="test", limit=2)
+                second = await claim(runtime, worker_id="second", worker_build="test", limit=2, members=members)
             assert [lease.run_id for lease in second] == ordered[2:]
         finally:
             release.set()

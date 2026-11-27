@@ -268,7 +268,7 @@ export function useLiveWorkbench(
         if (stopped) return;
         if (event.code === 4401) {
           unauthorized();
-          return;
+          if (!transport.shareId) return;
         }
         setPresenceState("Reconnecting");
         retry = setTimeout(connect, Math.min(1000 * 2 ** failures++, 15000));

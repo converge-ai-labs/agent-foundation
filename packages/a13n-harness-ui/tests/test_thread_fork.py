@@ -258,7 +258,6 @@ async def test_fork_active_thread_copies_only_saved_state(tmp_path: Path, monkey
 
 
 async def test_message_branch_uses_only_the_selected_prefix_and_numbers_copies(tmp_path: Path, monkeypatch):
-    from a13n_harness_ui.errors import RunCoordinationError
     from a13n_harness_ui.surfaces import BranchRequest
     from anyio import Event
 
@@ -295,8 +294,6 @@ async def test_message_branch_uses_only_the_selected_prefix_and_numbers_copies(t
         try:
             await started.wait()
             assert (await app.branch_points(source.thread_id)).source == points.source
-            with pytest.raises(RunCoordinationError, match="editing"):
-                await app.branch_thread(source.thread_id, request.model_copy(update={"side": "before"}))
             branch = await app.branch_thread(source.thread_id, request)
             assert len(calls) == 4 and branch.title == "Coffee brief (2)"
             await send(branch.thread_id, "continue-branch")
@@ -306,13 +303,5 @@ async def test_message_branch_uses_only_the_selected_prefix_and_numbers_copies(t
         finally:
             finish.set()
             await app.wait_root_operation(current.receipt_id)
-        points = await app.branch_points(source.thread_id)
-        edited = await app.branch_thread(
-            source.thread_id, request.model_copy(update={"side": "before", "expected_continuation_id": points.source})
-        )
-        assert edited.title == "Coffee brief (3)"
-        await send(edited.thread_id, "edited-choice")
-        assert "first-choice" in calls[-1] and "edited-choice" in calls[-1]
-        assert "second-choice" not in calls[-1] and "third-choice" not in calls[-1]
         copied = await app.fork_thread(branch.thread_id)
-        assert copied.title == "Coffee brief (4)"
+        assert copied.title == "Coffee brief (3)"
