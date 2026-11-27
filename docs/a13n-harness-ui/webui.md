@@ -119,6 +119,12 @@ With a Project attached and computer sharing enabled:
 - **Host browser:** Let the Agent browse or annotate screenshots together—see [Host browser](host-browser.md#browse-on-the-host).
 - **Interactive MCP Apps:** Opted-in [MCP Apps](mcp-apps.md) render inline beside tool results; click **Open App** and **Activate interactions** to use them.
 
+### Work in a separate Git worktree
+
+For a Git project in **Full Control** with computer sharing enabled, open the composer's **Chat options**, turn on **Worktree**, and send your task. The Agent uses the project's conventions to create and register an isolated Git worktree. You can also ask it to link a worktree, pull request, issue, or any HTTP(S) URL during an existing chat.
+
+Open **Activity** in the chat header (which displays compact worktree and link icons when references exist) to see **Worktrees** and **Links** alongside **Tasks** and **Notes**, or click **View all** to open a dedicated supporting tab. Use **Changes**, **Files**, or **Terminal** to open a worktree at its path. **Unlink** removes the bookmark and leaves the files on disk. Links follow chat forks and branches; scoped guests don't see worktrees or links.
+
 ## Voice input
 
 1. Open **Settings → Chats → Dictation**, choose **Codex subscription** (or an audio-input Model), and enable **Voice input**.

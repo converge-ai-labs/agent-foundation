@@ -7,7 +7,13 @@ import {
 } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useTransport, useGuestAccess } from "../transport/context";
-import { result } from "../transport/client";
+import { result, type Schema } from "../transport/client";
+import { BOT_THREAD_ID } from "../bot-identity";
+import {
+  threadLinksLists,
+  useThreadLinks,
+  type ThreadLinkActions,
+} from "../native/thread-links";
 import { useLiveThread } from "./live-threads";
 import { useChildExecutions } from "./details";
 import { savedTools, type ToolView } from "./tool-presentation";
@@ -21,6 +27,16 @@ import {
 } from "./background-work";
 import { readPreference, writePreference } from "../shell/preferences";
 import type { FocusDisplay } from "./stream";
+
+type BackgroundThreadLinks = {
+  enabled: boolean;
+  worktrees: Schema<"ThreadLinksView">["worktrees"];
+  urls: Schema<"ThreadLinksView">["urls"];
+  isPending: boolean;
+  error: unknown;
+  refetch: () => void;
+  actions?: ThreadLinkActions;
+};
 
 type BackgroundState = {
   threadId: string;
@@ -36,6 +52,15 @@ type BackgroundState = {
   loading: boolean;
   error: unknown;
   refresh: () => void;
+  threadLinks: BackgroundThreadLinks;
+};
+const EMPTY_THREAD_LINKS: BackgroundThreadLinks = {
+  enabled: false,
+  worktrees: [],
+  urls: [],
+  isPending: false,
+  error: null,
+  refetch: () => {},
 };
 const Context = createContext<BackgroundState>({
   threadId: "",
@@ -50,12 +75,14 @@ const Context = createContext<BackgroundState>({
   loading: false,
   error: null,
   refresh: () => {},
+  threadLinks: EMPTY_THREAD_LINKS,
 });
 export const useBackground = () => useContext(Context);
 type BackgroundScopeProps = {
   threadId: string;
   observe?: boolean;
   closeOnOpen?: boolean;
+  linkActions?: ThreadLinkActions;
   onOpen: BackgroundState["open"];
   children: ReactNode;
 };
@@ -70,13 +97,22 @@ function ThreadBackgroundScope({
   children,
   observe = false,
   closeOnOpen = false,
+  linkActions,
 }: BackgroundScopeProps) {
   const { t } = useTranslation();
-  const { client } = useTransport();
+  const { client, shareId } = useTransport();
   const guest = useGuestAccess();
   const queries = useQueryClient();
   const { display, revision } = useLiveThread(threadId, observe);
   const detail = useThread(threadId);
+  const linksEnabled =
+    !!threadId &&
+    threadId !== BOT_THREAD_ID &&
+    !guest &&
+    !shareId &&
+    !detail.data?.thread.memory_scope;
+  const linksQuery = useThreadLinks(linksEnabled ? threadId : undefined);
+  const { worktrees, urls } = threadLinksLists(linksQuery.data);
   const history = useHistory(
     threadId,
     detail.data?.continuation_id,
@@ -138,6 +174,20 @@ function ThreadBackgroundScope({
     setCardStates((current) => ({ ...current, [threadId]: value }));
     writePreference(`background.${threadId}`, value ? "open" : "closed");
   };
+  const wrapLinkAction = (callback?: (path: string) => void) =>
+    callback
+      ? (path: string) => {
+          callback(path);
+          if (closeOnOpen) setCardOpen(false);
+        }
+      : undefined;
+  const wrappedLinkActions: ThreadLinkActions | undefined = linkActions
+    ? {
+        openChanges: wrapLinkAction(linkActions.openChanges),
+        openFiles: wrapLinkAction(linkActions.openFiles),
+        openTerminal: wrapLinkAction(linkActions.openTerminal),
+      }
+    : undefined;
   const refresh = () => {
     void queries.invalidateQueries({
       queryKey: ["thread", threadId, "children"],
@@ -145,6 +195,10 @@ function ThreadBackgroundScope({
     void queries.invalidateQueries({
       queryKey: ["thread", threadId, "tool-executions"],
     });
+    if (linksEnabled)
+      void queries.invalidateQueries({
+        queryKey: ["thread-links", threadId],
+      });
   };
   return (
     <Context
@@ -187,6 +241,15 @@ function ThreadBackgroundScope({
         loading:
           !!threadId && (childPage.isPending || (!guest && toolPage.isPending)),
         error: childPage.error ?? toolPage.error,
+        threadLinks: {
+          enabled: linksEnabled,
+          worktrees,
+          urls,
+          isPending: linksEnabled && linksQuery.isPending,
+          error: linksEnabled ? linksQuery.error : null,
+          refetch: () => void linksQuery.refetch(),
+          actions: wrappedLinkActions,
+        },
       }}
     >
       {children}

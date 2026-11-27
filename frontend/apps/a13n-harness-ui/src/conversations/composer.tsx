@@ -25,6 +25,7 @@ import {
   Stop,
   X,
   Target,
+  GitBranch,
   CircleNotch,
 } from "@phosphor-icons/react";
 import type { EditorView } from "@codemirror/view";
@@ -560,6 +561,7 @@ export function Composer({
   autoFocus = false,
   local = false,
   externalAgent = false,
+  worktreeAvailable = false,
   acpCommands,
   skillDefaults,
   prepareThread,
@@ -605,6 +607,7 @@ export function Composer({
   autoFocus?: boolean;
   local?: boolean;
   externalAgent?: boolean;
+  worktreeAvailable?: boolean;
   acpCommands?: Schema<"AcpCommand">[];
   skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: (coordinator: boolean) => Promise<void>;
@@ -1612,6 +1615,18 @@ export function Composer({
                     onCheckedChange={setGoalMode}
                   />
                 }
+                worktree={
+                  worktreeAvailable && (
+                    <Switch
+                      aria-label={t("Worktree")}
+                      checked={draft.mode === "worktree"}
+                      disabled={goalDisabled}
+                      onCheckedChange={(enabled) => {
+                        draft.mode = enabled ? "worktree" : "normal";
+                      }}
+                    />
+                  )
+                }
                 coordinator={
                   canChooseCoordinator ? (
                     <Switch
@@ -1688,6 +1703,24 @@ export function Composer({
               >
                 <Target aria-hidden weight="fill" />
                 <span>{t("Goal")}</span>
+              </Button>
+            )}
+            {!transport.shareId && draft.mode === "worktree" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.composerMode}
+                aria-pressed={true}
+                aria-label={t("Turn off worktree mode")}
+                title={t("Turn off worktree mode")}
+                disabled={goalDisabled}
+                onClick={() => {
+                  draft.mode = "normal";
+                  taskOptionsTrigger.current?.focus();
+                }}
+              >
+                <GitBranch aria-hidden />
+                <span>{t("Worktree")}</span>
               </Button>
             )}
             <div className={styles.composerChoices}>{controls?.()}</div>

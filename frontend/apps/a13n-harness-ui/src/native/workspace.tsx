@@ -42,7 +42,9 @@ import {
   FileText,
   Plus,
   Globe,
+  GitBranch,
   GitDiff,
+  LinkSimple,
   X,
   ArrowClockwise,
   TerminalWindow,
@@ -644,7 +646,14 @@ export function NativeWorkspace({
         });
       } else void open(link.path);
     }
-    if (link.background && threadId) {
+    if (
+      link.background &&
+      threadId &&
+      !(
+        botMode &&
+        (link.background === "worktrees" || link.background === "links")
+      )
+    ) {
       setBackgroundAvailable(true);
       revealTab({
         kind: "background",
@@ -1100,11 +1109,16 @@ export function NativeWorkspace({
             ? ListChecks
             : tab.target.kind === "notes"
               ? Notebook
-              : tab.target.kind === "process" || tab.target.icon === "terminal"
-                ? TerminalWindow
-                : tab.target.kind === "tool" || tab.target.kind === "tools"
-                  ? Wrench
-                  : CirclesThree
+              : tab.target.kind === "worktrees"
+                ? GitBranch
+                : tab.target.kind === "links"
+                  ? LinkSimple
+                  : tab.target.kind === "process" ||
+                      tab.target.icon === "terminal"
+                    ? TerminalWindow
+                    : tab.target.kind === "tool" || tab.target.kind === "tools"
+                      ? Wrench
+                      : CirclesThree
           : tab.kind === "new"
             ? Plus
             : tab.kind === "file"
@@ -1145,10 +1159,35 @@ export function NativeWorkspace({
       <SidebarSimple mirrored />
     </Button>
   );
+  const linkActions = {
+    openChanges:
+      status.data?.features?.host_git && status.data?.features?.host_files
+        ? (targetPath: string) => {
+            cancelOpening();
+            revealTab({
+              kind: "changes",
+              root: targetPath,
+              selection: null,
+              choices: [],
+            });
+          }
+        : undefined,
+    openFiles: status.data?.features?.host_files
+      ? (targetPath: string) => {
+          setPane("files");
+          void open(targetPath);
+        }
+      : undefined,
+    openTerminal:
+      status.data?.features?.host_terminal && projectId
+        ? openTerminal
+        : undefined,
+  };
   return (
     <BackgroundScope
       closeOnOpen={showOneView}
       threadId={botMode && !bot.data?.thread ? "" : (threadId ?? "")}
+      linkActions={linkActions}
       onOpen={(target) => {
         setBackgroundAvailable(true);
         revealTab({ kind: "background", target });
@@ -1573,6 +1612,7 @@ export function NativeWorkspace({
                     <BackgroundScope
                       observe
                       threadId={activeTab.target.threadId}
+                      linkActions={linkActions}
                       onOpen={(target) =>
                         revealTab({ kind: "background", target })
                       }

@@ -1,10 +1,13 @@
 import { WorkPreview } from "./work-activity";
+import { ThreadLinksPreview } from "../native/thread-links";
 import { BackgroundStateIcon } from "./background-state-icon";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Button, ScrollArea } from "a13n-ui";
 import {
   CaretRight,
   CirclesThree,
+  GitBranch,
+  LinkSimple,
   TerminalWindow,
   Wrench,
   X,
@@ -119,6 +122,10 @@ export function BackgroundToggle() {
   const { t } = useTranslation();
   const bg = useBackground();
   const count = bg.items.filter((item) => item.running).length;
+  const worktrees = bg.threadLinks.enabled
+    ? bg.threadLinks.worktrees.length
+    : 0;
+  const urls = bg.threadLinks.enabled ? bg.threadLinks.urls.length : 0;
   return (
     <Button
       variant="ghost"
@@ -132,6 +139,22 @@ export function BackgroundToggle() {
     >
       <CirclesThree />
       {count > 0 && <span>{count}</span>}
+      {(worktrees > 0 || urls > 0) && (
+        <span className={styles.toggleLinks} aria-hidden="true">
+          {worktrees > 0 && (
+            <span className={styles.toggleBadge} data-link-kind="worktrees">
+              <GitBranch />
+              <span>{worktrees}</span>
+            </span>
+          )}
+          {urls > 0 && (
+            <span className={styles.toggleBadge} data-link-kind="links">
+              <LinkSimple />
+              <span>{urls}</span>
+            </span>
+          )}
+        </span>
+      )}
     </Button>
   );
 }
@@ -235,7 +258,12 @@ export function BackgroundList({
           )}
         </section>
       ))}
-      {compact && showWork && <WorkPreview />}
+      {compact && showWork && (
+        <>
+          <WorkPreview />
+          <ThreadLinksPreview />
+        </>
+      )}
     </ScrollArea>
   );
 }

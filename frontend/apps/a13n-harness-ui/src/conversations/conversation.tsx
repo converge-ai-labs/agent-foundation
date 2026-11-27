@@ -1,3 +1,8 @@
+import { useThreadLinks, useWorktreeMode } from "../native/thread-links";
+import {
+  localAlias,
+  selectedWorkingDirectory,
+} from "../configuration/environment-selection";
 import { useConnectorOffers } from "../connectors/offers";
 import { MessageBranchProvider } from "./message-branch";
 import { ReaderFades } from "./reader-fades";
@@ -187,6 +192,9 @@ function ConversationContent({
     !guest && !!detail.data && !readOnly,
   );
   const isBot = threadId === BOT_THREAD_ID;
+  const links = useThreadLinks(
+    guest || isBot || !detail.data || readOnly ? undefined : threadId,
+  );
   const canCompose =
     !isBot && !readOnly && (!guest || guest.grant.permission === "prompt");
   const isCoordinator = detail.data?.thread.role === "coordinator";
@@ -908,6 +916,39 @@ function ConversationContent({
         null,
     };
   }, [detail.refetch, selectors.refetch]);
+  const savedEnvironment = thread?.configuration;
+  const isFullControl =
+    (draft.environment?.environment_profile_id ??
+      savedEnvironment?.environment_profile_id) === "environment-native";
+  const effectiveRoots =
+    draft.environment?.local_roots ?? savedEnvironment?.local_roots ?? [];
+  const effectiveDefault = selectedWorkingDirectory({
+    local_roots: effectiveRoots,
+    default_environment:
+      draft.environment?.default_environment !== undefined
+        ? draft.environment.default_environment
+        : savedEnvironment?.default_environment,
+  });
+  const effectiveRoot = effectiveRoots.find(
+    (_, index) => localAlias(index) === effectiveDefault,
+  );
+  const savedDefault = savedEnvironment
+    ? selectedWorkingDirectory(savedEnvironment)
+    : undefined;
+  const savedRoot = savedEnvironment?.local_roots?.find(
+    (_, index) => localAlias(index) === savedDefault,
+  );
+  const useSelectedRoot =
+    savedEnvironment?.environment_profile_id !== "environment-native" ||
+    effectiveRoot !== savedRoot;
+  const selectedRootGit = useWorktreeMode(
+    isFullControl && useSelectedRoot && savedEnvironment?.project_id && !guest
+      ? effectiveRoot
+      : undefined,
+  );
+  const worktreeAvailable =
+    isFullControl &&
+    (useSelectedRoot ? selectedRootGit : !!links.data?.worktree_mode_available);
   const runChoices = useComposerRunChoices(
     draft,
     runAgent,
@@ -1523,6 +1564,7 @@ function ConversationContent({
         {showComposer && (
           <Composer
             renderHeader={renderWorkInspector}
+            worktreeAvailable={worktreeAvailable}
             dictation={dictation}
             feedback={feedback}
             feedbackError={pageError}
