@@ -13,6 +13,7 @@ class CodeActConfig:
     inline: bool = True
     programs: bool = True
     catalog_argument_schemas: bool = False
+    allow_final_output: bool = False
     max_source_bytes: int = 256 * 1024
     max_output_bytes: int = 10 * 1024 * 1024
     max_state_bytes: int = 10 * 1024 * 1024
@@ -28,6 +29,8 @@ class CodeActConfig:
             raise TypeError("CodeAct runner switches must be booleans")
         if not isinstance(self.catalog_argument_schemas, bool):
             raise TypeError("catalog_argument_schemas must be a boolean")
+        if not isinstance(self.allow_final_output, bool):
+            raise TypeError("allow_final_output must be a boolean")
         if not self.inline and not self.programs:
             raise ValueError("CodeActConfig must enable inline execution, programs, or both")
         for field_name in (
