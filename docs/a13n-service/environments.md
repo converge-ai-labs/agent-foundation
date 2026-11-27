@@ -81,7 +81,7 @@ When `recipe.image` is omitted, Service uses its reviewed `ghcr.io/converge-ai-l
 
 | Service build                                         | Default tag |
 | ----------------------------------------------------- | ----------- |
-| Stable or RC                                          | `0.8.3`     |
+| Stable or RC                                          | `0.8.4`     |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`       |
 
 Set an explicit tag or digest to pin another image, and use `pull_policy` (`if_missing` or `never`) to control pulls. Existing instances keep their resolved image until recreated.
