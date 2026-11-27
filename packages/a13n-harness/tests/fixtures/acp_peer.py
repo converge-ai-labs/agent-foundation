@@ -617,10 +617,12 @@ for line in sys.stdin:
             session_call("fs/write_text_file", path=path, content="one\ntwo\nthree\n")
             assert session_call("fs/read_text_file", path=path, line=2, limit=1)["content"] == "two\n"
             assert session_call("fs/read_text_file", path=path)["content"] == "one\ntwo\nthree\n"
+            # The byte-limit check requires UTF-8 and LF regardless of the child's text defaults.
+            terminal_bytes = "012345é界\n".encode()
             terminal = session_call(
                 "terminal/create",
                 command=sys.executable,
-                args=["-c", "print('012345é界')"],
+                args=["-c", f"import sys; sys.stdout.buffer.write({terminal_bytes!r})"],
                 cwd="/workspace",
                 outputByteLimit=5,
             )["terminalId"]

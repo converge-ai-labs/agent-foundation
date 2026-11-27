@@ -47,7 +47,7 @@ async def test_local_discovery_observes_links_errors_and_bounds(tmp_path, symlin
     _skill(tmp_path, "skills/.hidden", "hidden")
     _skill(tmp_path, "skills/z/nested", "nested")
     (tmp_path / "skills/a").mkdir()
-    symlink(tmp_path / "skills/a/SKILL.md", "../z/SKILL.md")
+    symlink(tmp_path / "skills/a/SKILL.md", Path("../z/SKILL.md"))
     (tmp_path / "skills/b").mkdir()
     (tmp_path / "skills/b/SKILL.md").write_bytes(b"\xff")
     symlink(tmp_path / "skills/link", "z", target_is_directory=True)
@@ -84,7 +84,7 @@ async def test_local_discovery_preserves_selected_root_through_directory_links(t
         symlink(tmp_path / "selected", "actual", target_is_directory=True)
         root = "/selected/skills"
     else:
-        symlink(tmp_path / "selected", "actual/skills", target_is_directory=True)
+        symlink(tmp_path / "selected", Path("actual/skills"), target_is_directory=True)
         root = "/selected"
     files = _files(tmp_path)
     documents = [item async for item in files.discover_documents(FileDocumentRequest(root=root, basename="SKILL.md"))]
