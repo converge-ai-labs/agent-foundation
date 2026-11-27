@@ -2088,8 +2088,17 @@ it("enforces blocking precedence across reconnect, runBlock, coordinator reasons
     draft.notify();
   });
 
-  // Busy non-steerable distinctions + queuedInput.locked exclusion.
-  view.rerender(renderComposer({ activity: { state: "preparing" } }));
+  // ACP startup must not turn a non-empty draft into a Stop request.
+  view.rerender(
+    renderComposer({
+      activity: {
+        state: "preparing",
+        receipt_id: "r1",
+        available_actions: ["cancel"],
+      },
+      externalAgent: true,
+    }),
+  );
   expectBlockedWithoutBanner("Steer", "Starting operation…");
 
   view.rerender(

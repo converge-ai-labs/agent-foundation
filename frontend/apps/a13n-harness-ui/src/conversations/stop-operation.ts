@@ -19,16 +19,14 @@ export function useStopOperation(
   draft: ThreadDraft,
   activity: Schema<"RootActivityView">,
   reconcile: () => void,
-  observedReceipt?: string,
 ) {
   const transport = useTransport();
   // Keep the request in the private Thread draft across navigation. A late
   // response belongs to its exact receipt, never to a replacement operation.
   const request =
     draft.stop &&
-    (draft.stop.receipt === observedReceipt ||
-      (activity.state !== "inactive" &&
-        draft.stop.receipt === activity.receipt_id))
+    activity.state !== "inactive" &&
+    draft.stop.receipt === activity.receipt_id
       ? draft.stop
       : undefined;
   const operation = useQuery({

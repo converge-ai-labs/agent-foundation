@@ -76,9 +76,20 @@ class AcpRunStream:
             self._event(f"{kind}_END", messageId=message_id)
             self._message = None
 
+    def split_reply(self) -> None:
+        """Start a new reply after an injection without settling active tools."""
+        self._close_message()
+        self.last_text = ""
+
+    def settle_prompt(self) -> None:
+        """Close the current prompt's display without settling the Run."""
+        self._close_message()
+        for call_id, tool in tuple(self._tools.items()):
+            self._close_tool(call_id, tool, failed=True)
+
     def reset_reply(self) -> None:
         """Keep streamed history while starting a new candidate reply."""
-        self._close_message()
+        self.settle_prompt()
         self.last_text = ""
 
     def _chunk(self, kind: str, text: str) -> None:
@@ -209,9 +220,7 @@ class AcpRunStream:
             return
         self.start()
         self._finished = True
-        self._close_message()
-        for call_id, tool in tuple(self._tools.items()):
-            self._close_tool(call_id, tool, failed=True)
+        self.settle_prompt()
         if error is not None:
             self._event("RUN_ERROR", message=error)
         else:

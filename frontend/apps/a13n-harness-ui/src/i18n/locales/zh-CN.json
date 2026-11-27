@@ -1,9 +1,4 @@
 {
-  "Interrupt & send": "打断并发送",
-  "Interrupt & send - {{shortcut}}": "打断并发送 - {{shortcut}}",
-  "Interrupting to send…": "正在打断，准备发送…",
-  "Cancel send & edit": "取消发送并编辑",
-  "The draft changed while stopping. Review it before sending.": "停止期间草稿已更改，请检查后再发送。",
   "Commands & skills": "命令和技能",
   "Dismiss suggestions": "关闭建议",
   "Dismiss suggestions (Esc)": "关闭建议 (Esc)",

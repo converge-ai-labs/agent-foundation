@@ -15,8 +15,8 @@ pytestmark = pytest.mark.anyio
 
 
 @asynccontextmanager
-async def shared_server(tmp_path, *, skip_auth=False, share_computer=False):
-    configuration = _write_configuration(tmp_path)
+async def shared_server(tmp_path, *, skip_auth=False, share_computer=False, configuration=None):
+    configuration = configuration or _write_configuration(tmp_path)
     owner = None
 
     @asynccontextmanager
@@ -394,6 +394,53 @@ async def test_bot_cannot_be_shared_and_existing_bot_grants_cannot_read_history(
         with pytest.raises(HarnessUiError) as error:
             await app.sharing.thread(project.grant.share_id, BOT_THREAD_ID)
         assert error.value.code == "share_unavailable"
+
+
+@pytest.mark.parametrize("guest", [True, False])
+async def test_acp_fallback_cancels_pending_permission_only_for_owner(tmp_path, guest):
+    import json
+
+    from a13n_harness_ui.errors import HarnessUiError
+    from a13n_harness_ui.mcp_runtime.inputs import McpInputResponse
+    from a13n_harness_ui.share_models import ShareCreate
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from anyio import fail_after, sleep
+
+    from .test_acp_execution import _ui_peer_config
+
+    journal = tmp_path / "wire.jsonl"
+    configuration = _ui_peer_config(tmp_path, "no-steering", f"steer-journal={journal}")
+    async with shared_server(tmp_path, configuration=configuration) as (_, app, client):
+        thread_id = (await app.create_thread()).thread_id
+        share = await app.sharing.create(ShareCreate(scope="thread", target_id=thread_id, permission="prompt"))
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="wait")
+        with fail_after(15):
+            while not (requests := await app.mcp_input_requests(thread_id)):
+                await sleep(0.01)
+            (request,) = requests
+            answer = McpInputResponse(action="accept", content={"option": "allow"})
+            if guest:
+                prefix = f"/api/shared/{share.grant.share_id}"
+                response = await client.post(
+                    f"{prefix}/operations/{receipt.receipt_id}/steer",
+                    json={"parts": ["Steering follow-up"]},
+                    headers={"Authorization": f"Bearer {share.key}"},
+                )
+                assert response.status_code == 200 and response.json()["accepted"], response.text
+                assert (await app.mcp_input_requests(thread_id)) == (request,)
+                await app.respond_mcp_input(thread_id, request.request_id, answer)
+            else:
+                offer = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="Steering follow-up")
+                assert offer.accepted
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed, outcome.failure
+        if not guest:
+            with pytest.raises(HarnessUiError):
+                await app.respond_mcp_input(thread_id, request.request_id, answer)
+        frames = [json.loads(line) for line in journal.read_text().splitlines()]
+        prompts = [frame for frame in frames if frame["kind"] == "session/prompt"]
+        assert len(prompts) == 2 and "Steering follow-up" in str(prompts[-1])
+        assert sum(frame["kind"] == "session/cancel" for frame in frames) == (0 if guest else 1)
 
 
 async def test_prompt_guest_can_read_and_receive_a_prediction_only_in_the_shared_thread(tmp_path, monkeypatch):

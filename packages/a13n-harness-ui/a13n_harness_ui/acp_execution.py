@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from base64 import b64encode
-from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from functools import partial
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -34,14 +36,16 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.model_context import ModelContextBlock, ModelContextHistory
 from a13n_harness.plugins import AbstractHarnessPlugin, PluginRunExchange, PluginRunNext
 from a13n_harness.result import HarnessRunResult
+from a13n_harness.state import HarnessState
 from a13n_harness.tools.identity import TOOL_IDENTITY_KEY, ToolIdentity
 from a13n_harness.tools.permission_gate import check_permission
 from a13n_harness.tools.permissions import ToolPermissionsCapability
 from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuestion
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 from a13n_stream_protocol.acp import AcpRunStream
-from acp import schema
-from anyio import CancelScope, create_task_group, to_thread
+from acp import RequestError, schema
+from anyio import CancelScope, Event, create_task_group, current_time, move_on_after, to_thread
+from anyio.abc import TaskGroup
 from mcp.types import ElicitRequestFormParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
@@ -82,6 +86,8 @@ _NATIVE_AGENTS_MD_PRESETS = frozenset({"antigravity", "codex", "opencode", "gith
 _INJECT_AGENTS_MD_PRESETS = frozenset({"claude_code", "gemini_cli"})
 _MAX_AGENTS_MD_BYTES = 32 * 1024
 _MAX_EMBEDDED_ATTACHMENT_BYTES = 64 * 1024
+_STEER_CANCEL_GRACE_SECONDS = 5.0
+_NATIVE_STEER_SETTLEMENT_SECONDS = 5.0
 _EXCLUDED_ACP_CONTEXT_SOURCES = frozenset({"a13n.environment", "a13n.environment-mounts"})
 _INBOX_REMINDER_SOURCE = "a13n-harness-ui.inbox-reminder"
 _INPUT_SURFACE_SOURCE = "a13n-harness-ui.input-surface"
@@ -344,6 +350,13 @@ class AcpDisplayEvent(CapabilityEvent, namespace="a13n.acp", name="display", dis
     events: tuple[dict[str, Any], ...]
 
 
+@dataclass(frozen=True)
+class _AcpSteer:
+    value: RunInputValue
+    blocks: list[PromptBlock]
+    retained: list[ContentItem]
+
+
 @dataclass
 class AcpTurn(AbstractHarnessPlugin):
     """One admitted Run; the session owner keeps connections separate from Run policy."""
@@ -373,7 +386,14 @@ class AcpTurn(AbstractHarnessPlugin):
     prewarm: bool = False
     restart: GracefulRestart | None = None
     resume_from_restart: bool = False
+    on_ready: Callable[[], Coroutine[Any, Any, None]] | None = None
+    failed_state: HarnessState | None = field(init=False, default=None)
     _stop_requested: bool = False
+    _accepting_steer: bool = False
+    _pending_steers: list[_AcpSteer] = field(default_factory=list)
+    _steer_cancel: Event | None = None
+    _record_steer: Callable[[_AcpSteer], Awaitable[None]] | None = None
+    _native_steers: dict[CancelScope, Event] = field(default_factory=dict)
 
     @property
     def plugin_id(self) -> str:
@@ -539,72 +559,149 @@ class AcpTurn(AbstractHarnessPlugin):
                 raise AcpError("acp_input_unsupported", "The external Agent cannot accept this attachment.")
         return blocks, retained
 
-    def build_steer_blocks(self, value: RunInputValue) -> list[PromptBlock]:
-        if self.runtime is None:
-            return []
-        prompt_capabilities = self.runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
-        blocks, _ = self.build_prompt_blocks(
-            value,
-            prompt_capabilities=prompt_capabilities,
-            text_only=not self.runtime.supports_multimodal_steering,
-        )
-        return blocks
-
-    async def steer(self, content: Sequence[PromptBlock] | str) -> SteeringOutcome:
-        if self.runtime is None:
-            return "not_delivered"
-        return await self.runtime.steer(content)
-
     @property
-    def supports_steering(self) -> bool:
-        return self.runtime is not None and self.runtime.supports_steering and not self._stop_requested
+    def accepting_steer(self) -> bool:
+        return self._accepting_steer
+
+    async def steer_native(self, message: str) -> SteeringOutcome:
+        if self.runtime is None or self._stop_requested:
+            return "not_delivered"
+        return await self.runtime.steer(message)
+
+    async def steer(self, value: RunInputValue, *, immediate: bool = True) -> SteeringOutcome:
+        runtime = self.runtime
+        if runtime is None or not self.accepting_steer:
+            return "not_delivered"
+        capabilities = runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
+        if runtime.supports_steering and self._steer_cancel is not None:
+            try:
+                blocks, retained = self.build_prompt_blocks(
+                    value, prompt_capabilities=capabilities, text_only=not runtime.supports_multimodal_steering
+                )
+            except AcpError as exc:
+                if exc.code != "acp_input_unsupported":
+                    raise
+            else:
+                delivery: SteeringOutcome = "unknown"
+                scope = CancelScope()
+                finished = self._native_steers[scope] = Event()
+                try:
+                    with scope:
+                        delivery = await runtime.steer(blocks)
+                    if delivery == "accepted" and self._record_steer is not None:
+                        await self._record_steer(_AcpSteer(value, blocks, retained))
+                finally:
+                    self._native_steers.pop(scope)
+                    finished.set()
+                if delivery in {"accepted", "unknown"}:
+                    return delivery
+        if not self.accepting_steer:
+            return "not_delivered"
+        blocks, retained = self.build_prompt_blocks(value, prompt_capabilities=capabilities)
+        if not blocks:
+            return "not_delivered"
+        self._pending_steers.append(_AcpSteer(value, blocks, retained))
+        if immediate and self._steer_cancel is not None:
+            self._steer_cancel.set()
+        return "accepted"
+
+    def request_stop(self) -> None:
+        self._stop_requested = True
+        self._accepting_steer = False
+        self._pending_steers.clear()
 
     async def stop(self) -> bool:
-        self._stop_requested = True
+        self.request_stop()
         if self.runtime is None:
             return False
         await self.runtime.cancel()
         return True
 
-    async def _prompt_with_restart(
+    async def _run_prompt(
         self,
         runtime: AcpSessionRuntime,
-        prompt: Sequence[PromptBlock],
+        dispatch: Callable[[TaskGroup], Awaitable[schema.PromptResponse]],
         *,
-        binding: AcpRunBinding,
-        hidden: Sequence[str],
-        restart: GracefulRestart,
+        restart: GracefulRestart | None,
         thread_id: str,
     ) -> tuple[schema.PromptResponse, bool]:
-        restart_cancelled = False
+        steer_cancel = Event()
+        settled = Event()
+        cancel_intent = False
         response: schema.PromptResponse | None = None
-        error: Exception | None = None
+        prompt_error: Exception | None = None
+        cancel_error: Exception | None = None
         async with create_task_group() as group:
 
-            async def watch() -> None:
-                nonlocal restart_cancelled, error
-                await restart.pause_requested.wait()
-                if self._stop_requested or not restart.can_pause(thread_id):
-                    return
-                try:
-                    # The peer can settle before the notification send returns.
-                    restart_cancelled = True
-                    restart_cancelled = await runtime.cancel()
-                except Exception as exc:
-                    error = exc
-                    group.cancel_scope.cancel()
+            async def run() -> schema.PromptResponse:
+                self._steer_cancel = steer_cancel
+                return await dispatch(group)
 
-            group.start_soon(watch)
+            prompt_task = asyncio.create_task(run())
+
+            async def watch(event: Event, *, steering: bool) -> None:
+                nonlocal cancel_intent, cancel_error
+                await event.wait()
+                restarting = restart is not None and restart.requested and restart.can_pause(thread_id)
+                if settled.is_set() or cancel_intent or self._stop_requested or (not steering and not restarting):
+                    return
+                cancel_intent = True
+                try:
+                    # Join the send even if the prompt settles while the notification is in flight.
+                    with move_on_after(_STEER_CANCEL_GRACE_SECONDS, shield=True) as grace:
+                        sent = await runtime.cancel()
+                        grace.shield = False
+                        if steering and sent:
+                            await settled.wait()
+                    if grace.cancel_called:
+                        if steering:
+                            raise AcpError(
+                                "acp_steer_cancel_timeout",
+                                "The external Agent did not finish the interrupted prompt; your instruction was not sent.",
+                            )
+                        raise AcpError(
+                            "acp_restart_cancel_timeout", "Could not interrupt the external Agent for restart."
+                        )
+                except Exception as exc:
+                    cancel_error = exc
+                    # Inject cancellation once so runtime prompt cleanup can await transport shutdown.
+                    prompt_task.cancel()
+
+            group.start_soon(lambda: watch(steer_cancel, steering=True))
+            if restart is not None:
+                group.start_soon(lambda: watch(restart.pause_requested, steering=False))
             try:
-                response = await runtime.prompt(prompt, binding=binding, context=hidden)
+                response = await prompt_task
+            except asyncio.CancelledError:
+                if cancel_error is None:
+                    raise
             except Exception as exc:
-                error = exc
+                prompt_error = exc
             finally:
+                self._steer_cancel = None
+                settled.set()
                 group.cancel_scope.cancel()
-        if error is not None:
-            raise error
+        # A peer can acknowledge an injection after the prompt result. Let that
+        # acknowledgement reach the transcript before this prompt's terminal cut.
+        native_steers = tuple(self._native_steers.items())
+        deadline = current_time() + _NATIVE_STEER_SETTLEMENT_SECONDS
+        for scope, _ in native_steers:
+            scope.deadline = deadline
+        for _, finished in native_steers:
+            await finished.wait()
+        if cancel_error is not None:
+            raise cancel_error
+        if (
+            isinstance(prompt_error, RequestError)
+            and prompt_error.code == RequestError.request_cancelled().code
+            and cancel_intent
+        ):
+            response = schema.PromptResponse(stop_reason="cancelled")
+        elif prompt_error is not None:
+            raise prompt_error
         assert response is not None
-        return response, restart_cancelled
+        restarting = restart is not None and restart.requested and restart.can_pause(thread_id)
+        return response, cancel_intent and restarting and response.stop_reason == "cancelled"
 
     async def _record_usage(
         self, context: AgentContext, runtime: AcpSessionRuntime, response: schema.PromptResponse
@@ -727,7 +824,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 else None
             )
             history = previous.message_history
-            input_history = (*history, user_message) if user_message is not None else history
+            messages = [*history, user_message] if user_message is not None else list(history)
             skill_catalog = self.initial_skill_catalog
             if self.skill_manager is not None and not self.prewarm:
                 skill_catalog = await self.skill_manager.scan_environment(environment=context.environment)
@@ -740,7 +837,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 model=None,  # pyright: ignore[reportArgumentType]
                 usage=RunUsage(),
                 run_id=context.run_id,
-                messages=list(input_history),
+                messages=messages,
             )
             capabilities = self.capabilities
             if self.shell_review is not None and not self.prewarm:
@@ -895,9 +992,15 @@ class AcpTurn(AbstractHarnessPlugin):
                     await restart.checkpoint(context.thread_id, previous)
                 binding.host_tools = scope
                 compacted = False
+                input_display: Event | None = None
+
+                async def wait_for_input_display() -> None:
+                    while input_display is not None and not input_display.is_set():
+                        await input_display.wait()
 
                 async def observe(update: AcpUpdate) -> None:
                     nonlocal compacted, active, persisted_context_window
+                    await wait_for_input_display()
                     if isinstance(update, schema.SessionUpdateCompactionUpdate) and update.status == "completed":
                         compacted = True
                         runtime.client.clear_context_window()
@@ -923,7 +1026,43 @@ class AcpTurn(AbstractHarnessPlugin):
                     for event in input_events(exchange.input.value, source="user", input_id=context.run_id):
                         await context.events.emit(event)
                 transcript.start()
-                self.runtime = runtime
+                await publish()
+                native_accepted = False
+
+                def retain_steer(steer: _AcpSteer) -> None:
+                    if steer.retained:
+                        messages.append(replace(input_request(steer.retained), run_id=context.run_id))
+
+                async def publish_steer(steer: _AcpSteer) -> None:
+                    for event in input_events(steer.value, source="steering", input_id=f"input_{uuid4().hex}"):
+                        await context.events.emit(event)
+
+                async def record_steer(steer: _AcpSteer) -> None:
+                    nonlocal input_display, native_accepted
+                    native_accepted = True
+                    record_reply()
+                    transcript.split_reply()
+                    retain_steer(steer)
+                    await wait_for_input_display()
+                    ready = input_display = Event()
+                    try:
+                        await publish()
+                        await publish_steer(steer)
+                    finally:
+                        ready.set()
+
+                async def publish_batch(steers: list[_AcpSteer], ready: Event) -> None:
+                    try:
+                        for steer in steers:
+                            await publish_steer(steer)
+                    finally:
+                        ready.set()
+
+                def record_reply() -> None:
+                    if transcript.last_text:
+                        messages.append(
+                            ModelResponse(parts=[TextPart(content=transcript.last_text)], run_id=context.run_id)
+                        )
 
                 pending_user_input = restart_state is not None and restart_state.pending_user_input
                 prior_conversation = _prior_conversation(history[:-1] if pending_user_input else history, active)
@@ -935,25 +1074,66 @@ class AcpTurn(AbstractHarnessPlugin):
                 restart_paused = False
                 pending_prompt: tuple[PromptBlock, ...] | None = None
 
-                def pause_before_prompt(prompt: Sequence[PromptBlock]) -> bool:
+                def pause_before_prompt(prompt: Sequence[PromptBlock] | None) -> bool:
                     nonlocal restart_paused, pending_prompt
                     if self._stop_requested or restart is None or not restart.requested:
                         return False
                     if not restart.can_pause(context.thread_id):
                         return False
                     restart_paused = True
-                    pending_prompt = tuple(prompt)
+                    pending_prompt = tuple(prompt) if prompt is not None else None
                     return True
 
                 async def prompt_until_settled() -> schema.PromptResponse:
                     nonlocal active, compacted, persisted_context_window, prior_conversation
-                    nonlocal prompted_this_turn, restart_paused, pending_user_input, first_prompt_pending
+                    nonlocal prompted_this_turn, restart_paused, pending_user_input, first_prompt_pending, input_display
                     prompt: Sequence[PromptBlock] = (
                         restart_state.pending_prompt or () if restart_state is not None else blocks
                     )
-                    while True:
-                        if self._stop_requested or pause_before_prompt(prompt):
+                    self.runtime = runtime
+                    self._record_steer = record_steer
+                    steering_next = dispatched = False
+
+                    async def dispatch(
+                        group: TaskGroup,
+                        *,
+                        prompt: Sequence[PromptBlock],
+                        hidden: tuple[str, ...],
+                        continuing: bool,
+                    ) -> schema.PromptResponse:
+                        nonlocal dispatched, input_display
+                        steers = self._pending_steers if continuing else []
+                        if self._stop_requested or pause_before_prompt(None if steers else prompt):
                             return schema.PromptResponse(stop_reason="cancelled")
+                        blocks = prompt
+                        if continuing:
+                            record_reply()
+                            transcript.reset_reply()
+                        else:
+                            self._accepting_steer = True
+                            if self.on_ready is not None:
+                                group.start_soon(self.on_ready)
+                        if steers:
+                            self._pending_steers = []
+                            blocks = [block for steer in steers for block in steer.blocks]
+                            for steer in steers:
+                                retain_steer(steer)
+                            input_display = Event()
+                            group.start_soon(publish_batch, steers, input_display)
+                        dispatched = True
+                        try:
+                            return await runtime.prompt(blocks, binding=binding, context=hidden)
+                        finally:
+                            await wait_for_input_display()
+                            input_display = None
+
+                    while True:
+                        recovery_prompt = None if steering_next else prompt
+                        if self._stop_requested or pause_before_prompt(recovery_prompt):
+                            self._accepting_steer = False
+                            return schema.PromptResponse(stop_reason="cancelled")
+                        if steering_next and self.goal is not None:
+                            await self.goal.before_reply(run_context)
                         compacted = False
                         guidance = self.goal.get_instructions() if self.goal is not None else None
                         history = ModelContextHistory(active.delivered_context)
@@ -971,7 +1151,8 @@ class AcpTurn(AbstractHarnessPlugin):
                             hidden = (*hidden, guidance)
                         if resuming and not prompted_this_turn:
                             hidden = (*resume_instructions, *hidden, _RESTART_PROMPT)
-                        if self._stop_requested or pause_before_prompt(prompt):
+                        if self._stop_requested or pause_before_prompt(recovery_prompt):
+                            self._accepting_steer = False
                             return schema.PromptResponse(stop_reason="cancelled")
                         first = not active.prompted
                         explicit = active.explicit_options
@@ -981,23 +1162,18 @@ class AcpTurn(AbstractHarnessPlugin):
                             if self.persist is not None:
                                 await self.persist(active)
                                 persisted_context_window = active.context_window
-                        if self._stop_requested or pause_before_prompt(prompt):
-                            return schema.PromptResponse(stop_reason="cancelled")
                         if prompted_this_turn:
-                            transcript.reset_reply()
+                            transcript.settle_prompt()
+                            await publish()
+                        dispatched = False
+
                         try:
-                            if restart is None:
-                                response = await runtime.prompt(prompt, binding=binding, context=hidden)
-                            else:
-                                response, restart_cancelled = await self._prompt_with_restart(
-                                    runtime,
-                                    prompt,
-                                    binding=binding,
-                                    hidden=hidden,
-                                    restart=restart,
-                                    thread_id=context.thread_id,
-                                )
-                                restart_paused = restart_cancelled and response.stop_reason == "cancelled"
+                            response, interrupted_for_restart = await self._run_prompt(
+                                runtime,
+                                partial(dispatch, prompt=prompt, hidden=hidden, continuing=prompted_this_turn),
+                                restart=restart,
+                                thread_id=context.thread_id,
+                            )
                         except Exception:
                             if first and runtime.prompt_rejected_before_progress:
                                 active = active.model_copy(update={"prompted": False, "explicit_options": explicit})
@@ -1005,6 +1181,10 @@ class AcpTurn(AbstractHarnessPlugin):
                                     await self.persist(active)
                                     persisted_context_window = active.context_window
                             raise
+                        if not dispatched:
+                            self._accepting_steer = False
+                            return response
+                        restart_paused = interrupted_for_restart
                         prompted_this_turn = True
                         pending_user_input = False
                         first_prompt_pending = False
@@ -1018,17 +1198,25 @@ class AcpTurn(AbstractHarnessPlugin):
                         )
                         if response.usage is not None:
                             await self._record_usage(context, runtime, response)
-                        if self._stop_requested:
-                            return schema.PromptResponse(stop_reason="cancelled")
                         if compacted and self.goal is not None:
                             await self.goal.observe_restore(run_context, "acp_compaction")
-                        if response.stop_reason == "cancelled" or self.goal is None:
-                            return response
                         continuation: list[str] = []
-                        await self.goal.after_reply(run_context, transcript.last_text, continuation.append)
-                        if self._stop_requested:
+                        if (
+                            not self._stop_requested
+                            and not restart_paused
+                            and not self._pending_steers
+                            and response.stop_reason != "cancelled"
+                            and self.goal is not None
+                        ):
+                            await self.goal.after_reply(run_context, transcript.last_text, continuation.append)
+                        if self._stop_requested or restart_paused:
+                            self._accepting_steer = False
                             return schema.PromptResponse(stop_reason="cancelled")
+                        steering_next = bool(self._pending_steers)
+                        if steering_next:
+                            continue
                         if not continuation:
+                            self._accepting_steer = False
                             return response
                         prompt = [schema.TextContentBlock(text=continuation[0])]
 
@@ -1040,11 +1228,22 @@ class AcpTurn(AbstractHarnessPlugin):
                             if self.goal is None
                             else await self.goal.wrap_run(run_context, handler=prompt_until_settled)
                         )
-                    except BaseException:
+                    except BaseException as exc:
                         transcript.finish(error="External ACP turn did not complete.")
                         await publish()
+                        if isinstance(exc, Exception) and (prompted_this_turn or native_accepted):
+                            # Preserve dispatched input and settled replies even when the
+                            # next prompt fails and the session lease is retired.
+                            record_reply()
+                            try:
+                                self.failed_state = await context.export_state(messages)
+                            except Exception as export_error:
+                                exc.add_note(f"Could not capture the ACP conversation: {type(export_error).__name__}")
                         raise
                     finally:
+                        self._accepting_steer = False
+                        self._record_steer = None
+                        self._pending_steers.clear()
                         self.runtime = None
                     commands = acp_commands(runtime)
                     active = active.model_copy(
@@ -1057,9 +1256,7 @@ class AcpTurn(AbstractHarnessPlugin):
                     await publish()
                     cancelled = response.stop_reason == "cancelled"
                     output = transcript.last_text or None
-                    messages = input_history
-                    if output:
-                        messages = (*messages, ModelResponse(parts=[TextPart(content=output)], run_id=context.run_id))
+                    record_reply()
                     if prompted_this_turn and messages:
                         active = active.model_copy(
                             update={
@@ -1113,6 +1310,6 @@ class AcpTurn(AbstractHarnessPlugin):
                     output=None if cancelled else output,
                     state=state,
                     usage=context.usage_attribution.summary(),
-                    _messages=messages,
+                    _messages=tuple(messages),
                     _new_message_index=len(history),
                 )

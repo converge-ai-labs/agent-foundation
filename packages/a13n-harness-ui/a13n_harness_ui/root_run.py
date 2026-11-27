@@ -627,11 +627,7 @@ class RootRunCoordinator:
                     state=RootActivityState.running,
                     receipt_id=operation.receipt.receipt_id,
                     run_id=operation.run_id,
-                    available_actions=("wait",)
-                    if operation.observation_only
-                    else ("wait", "steer", "cancel")
-                    if operation.acp_turn is None or operation.acp_turn.supports_steering
-                    else ("wait", "cancel"),
+                    available_actions=_running_actions(operation),
                 )
         return result
 
@@ -671,6 +667,7 @@ class RootRunCoordinator:
         receipt_id: str,
         message: RunInputValue,
         immediate: bool = False,
+        allow_acp_interrupt: bool = True,
         touch: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
         before_accept: Callable[[], None] | None = None,
@@ -698,11 +695,8 @@ class RootRunCoordinator:
             if authorize is not None:
                 await authorize()
             if acp_turn is not None:
-                blocks = acp_turn.build_steer_blocks(prepared)
-                if not blocks:
-                    return RootControlResult(receipt_id=receipt_id, accepted=False)
                 check_active()
-                delivery = await acp_turn.steer(blocks)
+                delivery = await acp_turn.steer(prepared, immediate=immediate and allow_acp_interrupt)
                 if delivery != "accepted":
                     return RootControlResult(receipt_id=receipt_id, accepted=False)
                 enqueue_id = None
@@ -747,7 +741,7 @@ class RootRunCoordinator:
         if operation.acp_turn is not None:
             try:
                 check_active()
-                delivery = await operation.acp_turn.steer(message)
+                delivery = await operation.acp_turn.steer_native(message)
                 offer.settle("not_delivered" if delivery == "unsupported" else delivery)
             except Exception:
                 offer.settle("unknown" if offer.offered else "not_delivered")
@@ -774,6 +768,8 @@ class RootRunCoordinator:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
         if operation.settling or operation.status in _TERMINAL:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
+        if operation.acp_turn is not None:
+            operation.acp_turn.request_stop()
         if self._browser_handback is not None:
             self._browser_handback.suppress(operation.receipt.thread_id)
         if self._restart is not None:
@@ -1123,6 +1119,8 @@ class RootRunCoordinator:
             )
         operation.stream = stream
         operation.acp_turn = acp_turn
+        if acp_turn is not None:
+            acp_turn.on_ready = lambda: self._publish_change(operation, ready=True)
         operation.input_files = input_files
         operation.run_id = stream.run_id
         operation.started_at = datetime.now(UTC)
@@ -1185,7 +1183,9 @@ class RootRunCoordinator:
         if saved and operation.run_id is not None and operation.run_recorded is not None:
             operation.run_recorded.set()
 
-    async def _publish_change(self, operation: _RootOperation, *, notice: RootOperationNotice | None = None) -> None:
+    async def _publish_change(
+        self, operation: _RootOperation, *, notice: RootOperationNotice | None = None, ready: bool = False
+    ) -> None:
         if notice is not None and self._notify is not None:
             try:
                 self._notify(operation.receipt.thread_id, notice)
@@ -1195,7 +1195,7 @@ class RootRunCoordinator:
             self._live_hub is not None
             and not operation.observation_only
             and operation.run_id is not None
-            and operation.status not in (RootOperationStatus.preparing, RootOperationStatus.running)
+            and (ready or operation.status not in (RootOperationStatus.preparing, RootOperationStatus.running))
         ):
             try:
                 await self._live_hub.publish(
@@ -1206,7 +1206,7 @@ class RootRunCoordinator:
                     run_id=operation.run_id,
                     events=(
                         CustomEvent(
-                            name="a13n.harness_ui.root_settled",
+                            name="a13n.harness_ui.root_ready" if ready else "a13n.harness_ui.root_settled",
                             value={
                                 "receipt_id": operation.receipt.receipt_id,
                                 "status": operation.status.value,
@@ -1235,11 +1235,19 @@ class RootRunCoordinator:
             return
 
 
+def _running_actions(operation: _RootOperation) -> tuple[Literal["wait", "steer", "cancel"], ...]:
+    if operation.observation_only:
+        return ("wait",)
+    if operation.acp_turn is not None and not operation.acp_turn.accepting_steer:
+        return ("wait", "cancel")
+    return ("wait", "steer", "cancel")
+
+
 def _view(operation: _RootOperation) -> RootOperationView:
     if operation.status is RootOperationStatus.preparing:
         actions: tuple[Literal["wait", "steer", "cancel"], ...] = ("wait", "cancel")
     elif operation.status is RootOperationStatus.running:
-        actions = ("wait", "steer", "cancel")
+        actions = _running_actions(operation)
     else:
         actions = ()
     return RootOperationView(

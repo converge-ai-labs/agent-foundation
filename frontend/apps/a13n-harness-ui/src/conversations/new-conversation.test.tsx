@@ -3092,7 +3092,7 @@ it("prioritizes preview loading over coordinator warnings when coordinatorByDefa
   );
 });
 
-it("blocks saved ACP chat during option loading/updates, keeps active Interrupt & send unblocked, and offers Refresh chat when run action is missing", async () => {
+it("blocks during ACP option updates, steers the active receipt, and refreshes when the run action is missing", async () => {
   const user = userEvent.setup();
   let resolveOptions!: (response: Response) => void;
   let optionReads = 0;
@@ -3125,10 +3125,18 @@ it("blocks saved ACP chat during option loading/updates, keeps active Interrupt 
     cutover_sequence: 0,
     thread: threadState,
   };
+  const actions: string[] = [];
   const originalFetch = vi.mocked(globalThis.fetch).getMockImplementation()!;
   vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     const pathname = new URL(request.url).pathname;
+    if (
+      request.method === "POST" &&
+      /\/(steer|cancel|submit)$/.test(pathname)
+    ) {
+      actions.push(pathname);
+      return json({ receipt_id: "receipt-live", accepted: false });
+    }
     if (pathname === "/api/selectors")
       return json({
         agents: [
@@ -3207,7 +3215,7 @@ it("blocks saved ACP chat during option loading/updates, keeps active Interrupt 
   );
   await waitFor(() => expect(send.disabled).toBe(false));
 
-  // Active ACP run is never blocked by ACP options so Interrupt & send stays enabled.
+  // Until the runtime is ready, a draft cannot interrupt the active receipt.
   threadState = {
     ...threadState,
     thread: {
@@ -3223,11 +3231,40 @@ it("blocks saved ACP chat during option loading/updates, keeps active Interrupt 
   await act(async () => {
     queries.setQueryData(["thread", id, "detail"], threadState);
   });
-  const interruptButton = (await screen.findByRole("button", {
-    name: /Interrupt & send/,
+  const steer = (await screen.findByRole("button", {
+    name: "Steer",
   })) as HTMLButtonElement;
-  expect(interruptButton.disabled).toBe(false);
+  expect(steer.disabled).toBe(true);
+  await user.click(steer);
+  expect(actions).toEqual([]);
 
+  threadState = {
+    ...threadState,
+    thread: {
+      ...threadState.thread,
+      root_activity: {
+        state: "running",
+        receipt_id: "receipt-live",
+        available_actions: ["cancel", "steer"],
+      },
+    },
+  };
+  await act(async () => {
+    queries.setQueryData(["thread", id, "detail"], threadState);
+  });
+  await waitFor(() => expect(steer.disabled).toBe(false));
+  await user.click(steer);
+  await waitFor(() =>
+    expect(actions).toEqual(["/api/operations/receipt-live/steer"]),
+  );
+  expect(drafts.get(id)!.doc.getText("text").toString()).toBe("Continue");
+
+  // Clear the submission feedback before checking the independent idle state.
+  act(() => {
+    const draft = drafts.get(id)!;
+    draft.submission = { kind: "idle" };
+    draft.notify();
+  });
   // Idle thread missing "run" action shows actionable Refresh chat button.
   threadState = {
     ...threadState,

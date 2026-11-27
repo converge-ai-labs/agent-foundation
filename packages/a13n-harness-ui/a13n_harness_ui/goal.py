@@ -136,15 +136,17 @@ class GoalCapability(AbstractCapability[AgentContext]):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
+        await self.before_reply(ctx)
+        return request_context
+
+    async def before_reply(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.run_id == self._active_run_id and self.goal is not None:
-            # Native steering can drain after a final text candidate. A later
-            # request invalidates that candidate without consuming Goal budget.
+            # A later request invalidates a final text candidate without consuming Goal budget.
             if self._completion_candidate:
                 self._completion_candidate = False
                 self.goal = self.goal.model_copy(update={"status": "working"})
                 await self._publish(ctx)
             await self.save_progress(ctx)
-        return request_context
 
     async def save_progress(self, ctx: RunContext[AgentContext]) -> None:
         """Retain active progress and accrued usage at a continuation boundary."""
