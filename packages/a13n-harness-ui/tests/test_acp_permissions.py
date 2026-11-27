@@ -196,6 +196,7 @@ async def test_approval_requested_after_disconnect_is_denied_without_queueing():
     assert not turn.approvals
 
 
+@pytest.mark.xdist_group("harness-ui-acp-approval-and-cancel")
 @pytest.mark.anyio
 async def test_permission_choices_and_cancel_pending_interactive_request(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch, shell_review=True)
@@ -267,6 +268,7 @@ async def test_permission_choices_and_cancel_pending_interactive_request(tmp_pat
                 marker.unlink()
 
 
+@pytest.mark.xdist_group("harness-ui-acp-checkpoint-disconnect")
 @pytest.mark.anyio
 async def test_checkpoint_finishes_when_client_disconnects_after_selection(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -345,7 +347,13 @@ HarnessUiApp._stop = stop
     assert (tmp_path / "settled-status").read_text() == "cancelled"
 
 
-@pytest.mark.parametrize("acp", [False, True])
+@pytest.mark.parametrize(
+    "acp",
+    [
+        pytest.param(False, marks=pytest.mark.xdist_group("harness-ui-acp-unattended-review-oneshot")),
+        pytest.param(True, marks=pytest.mark.xdist_group("harness-ui-acp-unattended-review-acp")),
+    ],
+)
 @pytest.mark.anyio
 async def test_default_unattended_surface_and_shell_review(tmp_path, monkeypatch, acp):
     path = await _seed(tmp_path, monkeypatch, shell_review=True)
@@ -418,6 +426,7 @@ async def _one_shot_shell_check(path, tmp_path):
     assert b"denied automatically" in stdout
 
 
+@pytest.mark.xdist_group("harness-ui-acp-unsupported-input")
 @pytest.mark.anyio
 async def test_unsupported_external_input_fails_tool(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -444,6 +453,7 @@ codex.CodexRequestModel = lambda *a, **kw: FunctionModel(stream_function=ask)
         assert not any(frame.get("method") == "session/request_permission" for frame in frames)
 
 
+@pytest.mark.xdist_group("harness-ui-acp-ephemeral-mcp")
 @pytest.mark.anyio
 async def test_unattended_session_mcp_is_explicit_ephemeral_and_reported(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)

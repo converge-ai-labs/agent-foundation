@@ -71,6 +71,7 @@ async def test_acp_rejects_nonordinary_resume_and_dangling_model(tmp_path):
     assert model_option.current_value in {option.value for option in model_option.options}
 
 
+@pytest.mark.xdist_group("harness-ui-acp-usage-window")
 @pytest.mark.anyio
 async def test_unknown_usage_window_reports_in_extension_notification(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -102,6 +103,7 @@ HarnessUiApp.context_usage = context_usage
             assert report["version"] == 1 and report["sessionId"] == session_id and report["usageReport"]["records"]
 
 
+@pytest.mark.xdist_group("harness-ui-acp-sessions")
 @pytest.mark.anyio
 async def test_new_prompt_acceptance_stream_and_resume(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -173,6 +175,7 @@ async def test_new_prompt_acceptance_stream_and_resume(tmp_path, monkeypatch):
     assert model_source == model_path.read_text()
 
 
+@pytest.mark.xdist_group("harness-ui-acp-client")
 @pytest.mark.anyio
 async def test_harness_acp_client_interoperates_with_ui_agent(tmp_path, monkeypatch):
     from a13n_harness.acp import AcpRunBinding, AcpSessionRuntime, AcpSessionSetup, LocalStdioTransport

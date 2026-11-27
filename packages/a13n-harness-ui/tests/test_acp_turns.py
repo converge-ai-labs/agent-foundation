@@ -10,6 +10,7 @@ from .acp_test_support import PROFILE, _agent, _wait_for_marker
 from .test_interactive import _seed
 
 
+@pytest.mark.xdist_group("harness-ui-acp-cancel-registration")
 @pytest.mark.anyio
 async def test_session_cancel_fences_registration_after_capture(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -63,6 +64,7 @@ AcpAgent.cancel = cancel
         assert not (tmp_path / "registered").exists(), "A cancelled prompt registered a Run"
 
 
+@pytest.mark.xdist_group("harness-ui-acp-eof-joins-run")
 @pytest.mark.anyio
 async def test_eof_releases_handlers_but_app_joins_stubborn_run(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -118,6 +120,7 @@ codex.CodexRequestModel = lambda *a, **kw: FunctionModel(stream_function=stubbor
         assert rpc.process.returncode == 0
 
 
+@pytest.mark.xdist_group("harness-ui-acp-rpc-cancel")
 @pytest.mark.anyio
 async def test_rpc_cancellation_after_registration_joins_run_before_releasing_turn(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -152,6 +155,7 @@ RootRunCoordinator._publish_change = publish
         assert reply["result"]["stopReason"] == "end_turn", reply
 
 
+@pytest.mark.xdist_group("harness-ui-acp-resume-admission")
 @pytest.mark.anyio
 async def test_resume_and_prompt_cannot_overlap_session_admission(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -211,6 +215,7 @@ HarnessUiApp.watch_thread = watch
         assert reply["result"]["_meta"][PROFILE]["finalOutput"] == "gpt-5.6-sol low", reply
 
 
+@pytest.mark.xdist_group("harness-ui-acp-steer-and-cancel")
 @pytest.mark.anyio
 async def test_steer_and_cancel_exact_open_turn(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)

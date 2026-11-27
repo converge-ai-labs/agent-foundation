@@ -169,7 +169,7 @@ def test_linux_python_matrix_runs_every_duration_balanced_shard() -> None:
     assert test["run"].endswith("packages/a13n-harness-ui/tests")
 
 
-def test_webui_matrix_requires_both_unit_shards_and_the_protocol_project() -> None:
+def test_webui_matrix_requires_all_unit_shards_and_the_protocol_project() -> None:
     jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
     webui = jobs["webui"]
     assert "webui" in jobs["linux"]["needs"]
@@ -177,8 +177,9 @@ def test_webui_matrix_requires_both_unit_shards_and_the_protocol_project() -> No
     assert webui["if"] == jobs["distribution"]["if"]
     assert webui["strategy"]["fail-fast"] is False
     assert webui["strategy"]["matrix"]["include"] == [
-        {"project": "unit", "shard": "1/2"},
-        {"project": "unit", "shard": "2/2"},
+        {"project": "unit", "shard": "1/3"},
+        {"project": "unit", "shard": "2/3"},
+        {"project": "unit", "shard": "3/3"},
         {"project": "protocol"},
     ]
     steps = {step["name"]: step for step in webui["steps"]}
@@ -192,3 +193,35 @@ def test_webui_matrix_requires_both_unit_shards_and_the_protocol_project() -> No
     assert "--project=${{ matrix.project }}" in steps["Test WebUI"]["run"]
     assert "matrix.shard && format('--shard={0}', matrix.shard)" in steps["Test WebUI"]["run"]
     assert "strategy.job-index" in steps["Retain WebUI test reports"]["with"]["name"]
+
+
+def test_frontend_matrix_shards_console_and_tests_shared_packages_once() -> None:
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    frontend = jobs["frontend"]
+    assert "frontend" in jobs["linux"]["needs"]
+    assert frontend["needs"] == "changes"
+    assert frontend["strategy"]["fail-fast"] is False
+    assert frontend["strategy"]["matrix"]["include"] == [
+        {"phase": "checks"},
+        {"phase": "tests", "shard": "1/3"},
+        {"phase": "tests", "shard": "2/3"},
+        {"phase": "tests", "shard": "3/3"},
+    ]
+    steps = {step["name"]: step for step in frontend["steps"]}
+    for name in ("Check frontend workspace", "Build frontend workspace"):
+        assert steps[name]["if"] == "matrix.phase == 'checks'"
+    shared = steps["Test shared frontend"]
+    assert shared["if"] == "matrix.phase == 'tests' && matrix.shard == '1/3'"
+    assert [part for part in shlex.split(shared["run"]) if part.startswith("!")] == [
+        "!a13n-console",
+        "!a13n-harness-ui-webui",
+        "!a13n-docs",
+        "!a13n-site",
+    ]
+    assert "-r run test" in shared["run"]
+    console = steps["Test Console"]
+    assert console["if"] == "matrix.phase == 'tests'"
+    assert "--filter a13n-console run test --shard=${{ matrix.shard }}" in console["run"]
+    reports = steps["Retain frontend test reports"]
+    assert reports["if"] == "always() && matrix.phase == 'tests'"
+    assert "strategy.job-index" in reports["with"]["name"]

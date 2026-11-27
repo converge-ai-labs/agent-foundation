@@ -20,6 +20,7 @@ from .acp_test_support import PROFILE, _agent, _wait_for_marker
 from .test_interactive import _seed
 
 
+@pytest.mark.xdist_group("harness-ui-acp-large-initialize")
 @pytest.mark.anyio
 async def test_large_initialize_during_app_startup_keeps_connection(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -51,6 +52,7 @@ RootRunCoordinator.start = start
         assert reply["result"]["sessionId"]
 
 
+@pytest.mark.xdist_group("harness-ui-acp-input-burst")
 @pytest.mark.anyio
 async def test_valid_input_burst_keeps_connection_while_handler_waits(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -132,7 +134,15 @@ _StdinReader.feed_data = feed_data
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Exercises POSIX stdio backpressure")
-@pytest.mark.parametrize("use_socket", [False, True], ids=["pipe", "unix-socket-half-close"])
+@pytest.mark.parametrize(
+    "use_socket",
+    [
+        pytest.param(False, id="pipe", marks=pytest.mark.xdist_group("harness-ui-acp-eof-backpressure-pipe")),
+        pytest.param(
+            True, id="unix-socket-half-close", marks=pytest.mark.xdist_group("harness-ui-acp-eof-backpressure-socket")
+        ),
+    ],
+)
 @pytest.mark.anyio
 async def test_eof_aborts_backpressured_stdout(tmp_path, monkeypatch, use_socket):
     path = await _seed(tmp_path, monkeypatch)
@@ -206,7 +216,13 @@ HarnessUiApp._stop = stop
             assert rpc.process.returncode == 0
 
 
-@pytest.mark.parametrize("backpressure", [False, True])
+@pytest.mark.parametrize(
+    "backpressure",
+    [
+        pytest.param(False, marks=pytest.mark.xdist_group("harness-ui-acp-summary-backpressure-unblocked")),
+        pytest.param(True, marks=pytest.mark.xdist_group("harness-ui-acp-summary-backpressure-blocked")),
+    ],
+)
 @pytest.mark.anyio
 async def test_wrapped_summary_and_run_progress_under_backpressure(tmp_path, monkeypatch, backpressure):
     path = await _seed(tmp_path, monkeypatch)
