@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 from dataclasses import dataclass
 from typing import Literal
@@ -135,21 +136,42 @@ def provider_path_from_suffix(suffix: tuple[str, ...], provider_root: str = "/")
 def mount_path_from_provider_path(root: str, provider_path: str, provider_root: str = "/") -> str:
     """Render one canonical provider-local path below its aggregate mount root."""
 
-    if not provider_path.startswith("/") or "\x00" in provider_path:
-        raise ValueError("provider path must be absolute")
-    if provider_root != "/":
-        if provider_path == provider_root:
-            return root
-        if not provider_path.startswith(provider_root.rstrip("/") + "/"):
-            raise ValueError("provider path is outside the mapped root")
-        provider_path = provider_path[len(provider_root.rstrip("/")) :]
-    if provider_path == "/":
+    suffix = provider_path_suffix(provider_path, provider_root)
+    if not suffix:
         return root
-    if provider_path.endswith("/"):
-        raise ValueError("provider path must not have a trailing separator")
-    suffix = _parse_segments(provider_path[1:], allow_empty=False)
     separator = "" if root.endswith("/") else "/"
     return f"{root}{separator}{'/'.join(suffix)}"
+
+
+def parse_provider_path(path: str) -> ParsedMountPath:
+    """Parse a provider-local path, including EIP's slash-rooted Windows paths."""
+    if not path.startswith("/") or path.startswith("//"):
+        raise ValueError("provider path must be absolute")
+    if _DRIVE_PATH.fullmatch(path[1:]):
+        return parse_mount_path(path[1:])
+    if path[:5].upper() == "/UNC/" and len(path.rstrip("/").split("/")) >= 4:
+        return parse_mount_path(f"//{path[5:]}")
+    return parse_mount_path(path)
+
+
+def provider_path_suffix(path: str, root: str) -> tuple[str, ...]:
+    parsed_root = parse_provider_path(root)
+    # POSIX provider roots may contain descendants named C: or UNC.
+    parse = parse_provider_path if parsed_root.flavor == "windows" else parse_mount_path
+    suffix = parse(path).suffix_below(parsed_root)
+    if suffix is None:
+        raise ValueError("provider path is outside the mapped root")
+    return suffix
+
+
+def operation_path_parent(path: str) -> str:
+    """Keep the anchor separator when taking the parent of a Windows path."""
+    drive = re.match(r"^/?[A-Za-z]:/", path)
+    unc = re.match(r"^(?://|/UNC/)[^/]+/[^/]+(?:/|$)", path, re.IGNORECASE)
+    anchor = drive or unc
+    if anchor is not None and "/" not in path[anchor.end() :]:
+        return anchor.group().rstrip("/") + "/"
+    return posixpath.dirname(path)
 
 
 def _parse_segments(value: str, *, allow_empty: bool) -> tuple[str, ...]:

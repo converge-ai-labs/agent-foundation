@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import posixpath
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
 from a13n_harness.context import AgentContext
+from a13n_harness.environment._mount_path import normalize_operation_path, operation_path_parent, parse_mount_path
 from a13n_harness.environment._resources import selection_resource
 from a13n_harness.environment.files import FileCopyResult, FileMutationResult, FileOperator
 from a13n_harness.environment.models import EnvironmentError
@@ -52,7 +52,7 @@ class ScopedFileAccess:
             selection = await scopes.resolve_files(path)
             resources = [selection_resource(selection)]
             if include_parent:
-                parent = scopes.select_files(posixpath.dirname(path) or ".")
+                parent = scopes.select_files(operation_path_parent(normalize_operation_path(path)) or ".")
                 if (
                     parent.resolved_path.mount_id != selection.resolved_path.mount_id
                     or parent.observed_generation != selection.observed_generation
@@ -143,11 +143,19 @@ class ScopedFileAccess:
     def has_mount_root_parent(self, path: str) -> bool:
         """Use the selected provider path, independent of aggregate root flavor or spelling."""
         selection = self._selection.get()
-        return (
-            selection is not None
-            and selection.logical_path == path
-            and posixpath.dirname(selection.resolved_path.path) == "/"
-        )
+        if selection is None or selection.logical_path != path:
+            return False
+        resolved = selection.resolved_path.path
+        parent = operation_path_parent(resolved)
+        if parent == "/":
+            return True
+        if selection.mount_path is None:
+            return parent != resolved and operation_path_parent(parent) == parent
+        logical_parent = operation_path_parent(normalize_operation_path(path))
+        try:
+            return parse_mount_path(logical_parent).suffix_below(parse_mount_path(selection.mount_path)) == ()
+        except ValueError:
+            return False
 
     @asynccontextmanager
     async def scope(self, path: str) -> AsyncGenerator[FileOperator]:

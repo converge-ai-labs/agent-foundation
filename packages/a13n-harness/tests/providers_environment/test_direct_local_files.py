@@ -557,3 +557,62 @@ async def test_windows_replacement_failure_after_removal_leaves_candidate(tmp_pa
     assert calls == 2
     assert not (tmp_path / "destination").exists()
     assert (tmp_path / "source" / "SKILL.md").read_text() == "source"
+
+
+@pytest.mark.parametrize("path", [r"/folder\name", "/folder/C:other", "//server/share", "/folder/.. "])
+def test_windows_provider_paths_reject_ambiguous_native_components(tmp_path, monkeypatch, path):
+    files = _files(tmp_path)
+    monkeypatch.setattr(local_files, "os", SimpleNamespace(name="nt"))
+    for resolve in (files._lexical, files._resolve):
+        with pytest.raises(EnvironmentError) as failure:
+            resolve(path)
+        assert failure.value.code == "environment_request_invalid"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows filesystem rename semantics")
+@pytest.mark.parametrize("replace", [False, True])
+async def test_windows_move_changes_only_the_case(tmp_path, replace):
+    (tmp_path / "Mixed").mkdir()
+    (tmp_path / "Mixed" / "content.txt").write_bytes(b"preserved")
+    await _files(tmp_path).move("/Mixed", "/mixed", replace=replace)
+    assert [entry.name for entry in tmp_path.iterdir()] == ["mixed"]
+    assert (tmp_path / "mixed" / "content.txt").read_bytes() == b"preserved"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows NTFS junctions")
+async def test_windows_junction_is_a_link_and_remove_preserves_target(tmp_path):
+    root, outside = tmp_path / "environment", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "data.txt").write_bytes(b"preserved")
+    subprocess.run(
+        [os.environ.get("COMSPEC", "cmd.exe"), "/c", "mklink", "/J", str(root / "junction"), str(outside)], check=True
+    )
+    files = _files(root)
+    assert (await files.stat("/junction")).kind == "symlink"
+    with pytest.raises(EnvironmentError) as failure:
+        await files.stat("/junction/data.txt")
+    assert failure.value.code == "environment_denied"
+    await files.remove("/junction", recursive=True)
+    assert not (root / "junction").exists()
+    assert (outside / "data.txt").read_bytes() == b"preserved"
+
+
+async def test_windows_directory_replacement_does_not_remove_source_ancestor(tmp_path, monkeypatch):
+    parent = tmp_path / "parent"
+    source = parent / "source"
+    source.mkdir(parents=True)
+    payload = source / "data.txt"
+    payload.write_bytes(b"preserved")
+    files = _files(tmp_path)
+
+    def cannot_replace(_source, _destination):
+        raise PermissionError(errno.EACCES, "destination directory is not empty")
+
+    # Exercise the Windows fallback on Linux without modifying the real platform.
+    monkeypatch.setattr(local_files, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(local_files.os, "replace", cannot_replace)
+    with pytest.raises(EnvironmentError) as failure:
+        await files.move("/parent/source", "/parent", replace=True)
+    assert failure.value.code == "environment_request_invalid"
+    assert payload.read_bytes() == b"preserved"
