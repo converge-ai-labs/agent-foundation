@@ -90,7 +90,10 @@ async def test_child_question_competing_response_history_and_restart(
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread_id}"
+            unread = f"/api/inbox/threads/{thread_id}/unread"
+            await app.inbox().post_from_mcp(thread_id=thread_id, kind="result", title="Earlier", message="Ready")
             first = (await api.post(prefix + "/submit", json={"parts": ["Delegate then ask"]})).json()["receipt_id"]
+            assert (await api.get(unread)).json() == []
             assert (await settled(api, first))["status"] == "suspended"
             children = (await api.get(prefix + "/children")).json()
             assert children["total"] == 1
@@ -116,10 +119,15 @@ async def test_child_question_competing_response_history_and_restart(
                     }
                 ],
             }
+            pending = await app.inbox().post_from_mcp(
+                thread_id=thread_id, kind="needs_human", title="Decision", message="Choose an option"
+            )
             duplicate = await api.post(prefix + "/decisions", json={**body, "responses": body["responses"] * 2})
             assert duplicate.status_code == 400 and duplicate.json()["error"]["code"] == "request_invalid"
+            assert [post["item_id"] for post in (await api.get(unread)).json()] == [pending.item_id]
             resumed = await api.post(prefix + "/decisions", json=body)
             assert resumed.status_code == 200, resumed.text
+            assert (await api.get(unread)).json() == []
             second = resumed.json()["receipt_id"]
             with fail_after(10):
                 await resumed_started.wait()

@@ -76,7 +76,7 @@ export function ShellReviewModel({
       {options.isError && (
         <p role="status">
           {t(
-            "Suggestions are unavailable. Enter a model ID or skip this step.",
+            "Suggestions are unavailable. Enter a model ID or turn off shell review.",
           )}
         </p>
       )}

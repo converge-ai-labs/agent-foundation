@@ -1090,6 +1090,30 @@ class AcpAgentResource(ConfigurationModel):
         return (self.command or command, *(args if self.args is None else self.args))
 
 
+class AcpAgentCandidate(StrictModel):
+    preset: AcpAgentPreset
+    command: str | None = Field(default=None, min_length=1, max_length=4096)
+    args: tuple[str, ...] | None = Field(default=None, max_length=128)
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def _validate_command(self) -> Self:
+        self.resource("acp-setup-preview", "ACP Agent")
+        return self
+
+    def resource(self, id: str, default_name: str, *, instructions: str = "") -> AcpAgentResource:
+        return AcpAgentResource(
+            schema_version="1",
+            kind="acp_agent",
+            id=id,
+            name=self.name or default_name,
+            preset=self.preset,
+            command=self.command,
+            args=self.args,
+            instructions=instructions,
+        )
+
+
 class AgentResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["agent"]

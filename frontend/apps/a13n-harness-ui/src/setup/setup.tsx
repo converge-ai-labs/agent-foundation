@@ -1,7 +1,7 @@
 import { useTranslation } from "../i18n";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useSetup, useTransport } from "../transport/context";
@@ -61,6 +61,8 @@ export function Preflight({
 export function SetupPage() {
   const { t } = useTranslation();
   const setup = useSetup();
+  const [search] = useSearchParams();
+  const guided = search.get("wizard") === "1";
   if (setup.isPending)
     return <p role="status">{t("Discovering configuration…")}</p>;
   if (setup.error)
@@ -70,9 +72,23 @@ export function SetupPage() {
   if (
     setup.data?.defaults &&
     setup.data.draft_scope &&
-    (setup.data.fresh || readWizardDraft(setup.data.draft_scope))
+    (setup.data.fresh ||
+      guided ||
+      readWizardDraft(setup.data.draft_scope)?.pending)
   )
-    return <SetupWizard key={setup.data.draft_scope} status={setup.data} />;
+    return (
+      <SetupWizard
+        key={setup.data.draft_scope}
+        status={setup.data}
+        returnTo={
+          guided && !setup.data.fresh
+            ? search.get("from") === "agents"
+              ? "/settings/agents"
+              : "/setup"
+            : undefined
+        }
+      />
+    );
   const status = setup.data;
   const defaultAgent =
     status?.agents[status.default_agent ?? ""] || status?.default_agent;
@@ -103,6 +119,18 @@ export function SetupPage() {
         >
           <Button variant="outline" size="sm" render={<Link to="/settings" />}>
             {t("Review defaults")}
+          </Button>
+        </SettingsRow>
+        <SettingsRow
+          label={t("Guided setup")}
+          description={t("Add a subscription, API key, or local CLI agent.")}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            render={<Link to="/setup?wizard=1" />}
+          >
+            {t("Add connection")}
           </Button>
         </SettingsRow>
         <SettingsRow

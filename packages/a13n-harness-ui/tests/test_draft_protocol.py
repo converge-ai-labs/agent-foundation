@@ -103,16 +103,23 @@ async def test_bot_shared_composer_capture_steer_rejection_and_peer_edits(tmp_pa
                     "update_base64": captured["update_base64"],
                 },
             }
+            unread = "/api/inbox/threads/thread_bot/unread"
+            await app.inbox().post_from_mcp(thread_id="thread_bot", kind="result", title="Earlier", message="Ready")
             response = await api.post("/api/bot/inputs", json=command)
             assert response.status_code == 200, response.text
+            assert (await api.get(unread)).json() == []
             receipt = response.json()["receipt_id"]
             with fail_after(5):
                 await started.wait()
             cleared = await frame_until(
                 first, lambda f: f.get("kind") == "draft" and str(document(f)["text"]) == "NEXT "
             )
-            # Exact retry consumes the same old identities, never the peer's next input.
+            # Exact retry consumes the same old identities, never the peer's next input or later Inbox items.
+            later = await app.inbox().post_from_mcp(
+                thread_id="thread_bot", kind="result", title="Later", message="New update"
+            )
             assert (await api.post("/api/bot/inputs", json=command)).status_code == 200
+            assert [post["item_id"] for post in (await api.get(unread)).json()] == [later.item_id]
             steered = await api.post(
                 "/api/bot/inputs",
                 json={
@@ -123,6 +130,7 @@ async def test_bot_shared_composer_capture_steer_rejection_and_peer_edits(tmp_pa
             )
             assert steered.status_code == 200, steered.text
             assert steered.json()["receipt_id"] == receipt
+            assert (await api.get(unread)).json() == []
             empty = await frame_until(second, lambda f: f.get("kind") == "draft" and not str(document(f)["text"]))
             rejected_doc = document(empty)
             rejected_doc.get("text", type=Text).insert(0, "Retain rejected input")
@@ -199,7 +207,7 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
     (checkout / "selected").write_text("reviewed patch bytes\n")
     git(checkout, "add", "selected")
     headers = {"Authorization": "Bearer test-only-key"}
-    async with listener(tmp_path, configuration_path=root) as (http, ws):
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, ws, app):
         async with httpx.AsyncClient(base_url=http, headers=headers, trust_env=False) as api:
             created = await api.post("/api/threads", json={})
             assert created.status_code == 200, created.text
@@ -271,14 +279,21 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 next_input.get("text", type=Text).insert(0, "NEXT")
                 await send(second, draft_id, next_input)
                 await containing(first, "NEXT")
+                pending = await app.inbox().post_from_mcp(
+                    thread_id=thread_id, kind="result", title="Earlier", message="Waiting"
+                )
+                inbox_unread = f"/api/inbox/threads/{thread_id}/unread"
                 rejected = await api.post(prefix + "/submit", json={"parts": ["busy"]})
                 assert rejected.status_code == 409, rejected.text
+                assert [post["item_id"] for post in (await api.get(inbox_unread)).json()] == [pending.item_id]
                 # Steering translates captured context, not current Host bytes.
                 steer = await api.post(
                     f"/api/operations/{receipt}/steer",
                     json={"parts": ["use captured", *({"attachment_id": id} for id in ids)]},
                 )
                 assert steer.status_code == 200, steer.text
+                assert steer.json()["accepted"]
+                assert (await api.get(inbox_unread)).json() == []
                 upload = (
                     await api.post(prefix + "/attachments", params={"name": "binary.bin"}, content=b"\x00\xff")
                 ).json()

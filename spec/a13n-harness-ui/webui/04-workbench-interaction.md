@@ -57,6 +57,8 @@ The page shows estimated USD spend, total tokens (with input/output subtotals), 
 
 Each Open Inbox section has two icon actions with accessible names and tooltips. **Mark all as read** clears unread marks; **Mark all as done** moves the section's Open items to Done, including items that were already read. Both actions cover all pages of the selected section and preserve the other section.
 
+In an owner chat, **Sent to Inbox** cards show a quiet dot while their item is unread. The chat marks its observed Inbox items read when the latest saved output is at the bottom of the visible, focused transcript. A transcript post becomes eligible once its saved result or later saved output is in view; MCP posts can be read without a transcript result. Historical positions and background or unfocused views retain unread items. An accepted owner prompt, steer, or decision response also reads prior items in that chat. This applies to ordinary chats, Coordinators, and Bot, including MCP posts without a transcript card. Reading leaves items Open. Inbox updates refresh the card dots and sidebar count across tabs; shared views neither look up Inbox state nor show its indicators or actions.
+
 ### Shared Conversation Stars
 
 Independent roots and Coordinators offer **Star/Unstar conversation** in their row menu (starred rows show a quiet filled mark noting stars are shared). Activation never navigates or confirms; errors stay inline without silent retry. Within read history, all starred rows load and precede unstarred rows in touch-time order. Application confirmations use styled dialogs rather than native browser dialogs.

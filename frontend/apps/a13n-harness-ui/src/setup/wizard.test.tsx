@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTransport, type Schema } from "../transport/client";
 import { TransportContext } from "../transport/context";
@@ -16,6 +16,7 @@ import { LanguageProvider } from "../i18n/language";
 import { i18n } from "../i18n";
 import { ConnectionNoticeContext } from "../shell/connection";
 import { SetupWizard } from "./wizard";
+import { SetupPage } from "./setup";
 import {
   readWizardDraft,
   saveWizardDraft,
@@ -62,6 +63,7 @@ async function fetcher(request: Request): Promise<Response> {
   calls.push({ path, method: request.method, body });
   const response = await override?.(request);
   if (response) return response;
+  if (path === "/api/acp-agents/presets") return json([]);
   if (path === "/api/auth/logins") return json(null);
   if (
     path.startsWith("/api/auth/accounts/") ||
@@ -105,12 +107,26 @@ async function fetcher(request: Request): Promise<Response> {
           default_model: "gpt-5.6-sol",
         },
         {
+          id: "chatgpt-subscription",
+          label: "ChatGPT subscription",
+          provider: "chatgpt",
+          authentication: "chatgpt_subscription",
+          account: {
+            provider: "chatgpt",
+            label: "ChatGPT",
+            login_methods: ["manual_callback"],
+          },
+          models: [{ value: "fixture", label: "Fixture" }],
+          default_model: "fixture",
+        },
+        {
           id: "openai-responses",
           label: "OpenAI API",
           provider: "openai-responses",
           authentication: "api_key",
           base_url: "https://api.openai.com/v1",
           supports_base_url: true,
+          credential_env: "OPENAI_API_KEY",
           supports_session_affinity: true,
           models: [{ value: "gpt-5.4", label: "GPT-5.4" }],
           default_model: "gpt-5.4",
@@ -202,7 +218,7 @@ async function fetcher(request: Request): Promise<Response> {
         );
   throw new Error(`Unexpected request: ${request.method} ${path}`);
 }
-function mount(selected = status, disconnected = false) {
+function mount(selected = status, disconnected = false, page = false) {
   const queries = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -219,10 +235,20 @@ function mount(selected = status, disconnected = false) {
               <Routes>
                 <Route
                   path="/setup"
-                  element={<SetupWizard status={selected} />}
+                  element={
+                    page ? <SetupPage /> : <SetupWizard status={selected} />
+                  }
                 />
                 <Route path="/threads/:threadId" element={<p>First chat</p>} />
                 <Route path="/" element={<p>Workbench</p>} />
+                <Route
+                  path="/settings/agents"
+                  element={
+                    <Link to="/setup?wizard=1&from=agents">
+                      Guided setup from Agents
+                    </Link>
+                  }
+                />
               </Routes>
             </BrowserRouter>
           </ConnectionNoticeContext.Provider>
@@ -278,15 +304,12 @@ async function reviewConfiguration() {
 
 it("keeps a connected account ready when reselecting the current connection", async () => {
   mount();
-  await screen.findByText(/Account: account-test/);
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Model connection" }));
-  await user.click(
-    await screen.findByRole("option", { name: "Codex subscription" }),
-  );
   await chooseModel();
+  fireEvent.click(screen.getByRole("button", { name: /Codex subscription/ }));
   await continueStep();
-  expect(await screen.findByText("Decide where your agent works")).toBeTruthy();
+  expect(
+    await screen.findByRole("heading", { name: "Capabilities and workspace" }),
+  ).toBeTruthy();
 });
 
 it("uses server model choices, saves, reconciles and creates exactly one chat without sending input", async () => {
@@ -321,6 +344,8 @@ it.each(["_", "-"])(
     saveWizardDraft(status.draft_scope!, {
       version: 2,
       step: 0,
+      track: "subscription",
+      engine: "codex",
       selection: { ...status.defaults!, default_agent: "agent-primary" },
       threadId: identity,
     });
@@ -466,6 +491,12 @@ it.each(["codex", "example-cloud"])(
         });
     };
     mount();
+    await selectTrack("Subscription");
+    if (provider !== "codex") {
+      fireEvent.click(
+        await screen.findByRole("button", { name: /Example Cloud/ }),
+      );
+    }
     await screen.findByText("ABCD-1234");
     expect(
       screen.getByRole("link", { name: /Open provider sign-in/ }),
@@ -479,6 +510,7 @@ it.each(["codex", "example-cloud"])(
 
 it("does not complete recovery into an existing chat with different execution authority", async () => {
   const first = mount();
+  await chooseModel();
   await waitFor(() =>
     expect(readWizardDraft(status.draft_scope!)).toBeTruthy(),
   );
@@ -522,6 +554,7 @@ it("never persists credentials embedded in an endpoint, even before backend vali
     target: { value: "fake-test-key" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save API key" }));
+  fireEvent.click(await screen.findByText("Base URL", { selector: "summary" }));
   const input = await screen.findByLabelText("Base URL");
   for (const url of [
     "https://user:embedded-secret@example.com/v1",
@@ -550,7 +583,9 @@ it("offers affinity presets and captures a custom replacement alongside the endp
       ).disabled,
     ).toBe(false),
   );
-  await user.click(await screen.findByRole("tab", { name: "Model defaults" }));
+  await user.click(
+    await screen.findByText("Model defaults", { selector: "summary" }),
+  );
   const affinity = screen.getByRole("combobox", {
     name: "Gateway session affinity",
   });
@@ -598,6 +633,7 @@ it("keeps a newly selected API connection when an initial prepare resolves mid-s
     return undefined;
   };
   mount();
+  await selectTrack("Subscription");
   await prepareStarted;
   resolvePrepare!(
     json({
@@ -611,97 +647,58 @@ it("keeps a newly selected API connection when an initial prepare resolves mid-s
   await selectApi();
   expect(await screen.findByLabelText("Provider API key")).toBeTruthy();
   expect(
-    screen.getByRole("combobox", { name: "Model connection" }).textContent,
+    screen.getByRole("combobox", { name: "All API providers" }).textContent,
   ).toContain("OpenAI API");
 });
 
-it.each([null, "custom/reviewer"])(
-  "explicitly chooses or skips the API reviewer (%s) and retains the choice on refresh",
-  async (reviewer) => {
-    saveWizardDraft(status.draft_scope!, {
-      version: 2,
-      step: 1,
-      threadId: `thread_${"a".repeat(32)}`,
-      selection: {
-        environment_profile: "environment-native",
-        default_agent: "agent-primary",
-        shell_review: false,
-        model: {
-          route: "openai-responses:gpt-5.4",
-          authentication: { kind: "api_key", env: "TEST_KEY" },
-          model_configuration: { base_url: "https://gateway.example/v1" },
-        },
-      },
-    });
-    const first = mount();
-    const input = await screen.findByLabelText("Review model ID (optional)");
-    expect((input as HTMLInputElement).value).toBe("");
-    expect(screen.getByText(/No model selected/)).toBeTruthy();
-    const user = userEvent.setup();
-    await user.click(
-      screen.getByRole("combobox", { name: "Shell review model" }),
-    );
-    await user.click(
-      await screen.findByRole("option", { name: /GPT-5.4 mini/ }),
-    );
-    expect((input as HTMLInputElement).value).toBe("gpt-5.4-mini");
-    fireEvent.change(input, { target: { value: reviewer ?? "" } });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: reviewer ? "Continue" : "Skip shell review",
-      }),
-    );
-    await screen.findByText("Decide where your agent works");
+it("uses a detected server key and configures shell review on the workspace step", async () => {
+  const first = mount({ ...status, detected_env_keys: ["OPENAI_API_KEY"] });
+  await selectApi();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Use server key" }),
+  );
+  await continueStep();
+  const review = screen.getByRole("switch", { name: "Shell review" });
+  expect(review.getAttribute("aria-checked")).toBe("false");
+  expect(
+    screen.queryByRole("switch", { name: "Set as default agent" }),
+  ).toBeNull();
+  fireEvent.click(review);
+  fireEvent.change(await screen.findByLabelText("Review model ID (optional)"), {
+    target: { value: "custom/reviewer" },
+  });
+  await waitFor(() =>
     expect(
-      readWizardDraft(status.draft_scope!)?.selection.shell_review_model,
-    ).toBe(reviewer);
-    first.unmount();
-    mount();
-    await screen.findByText("Decide where your agent works");
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(
-      (
-        (await screen.findByLabelText(
-          "Review model ID (optional)",
-        )) as HTMLInputElement
-      ).value,
-    ).toBe(reviewer ?? "");
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: reviewer ? "Continue" : "Skip shell review",
-      }),
-    );
-    await waitFor(() =>
-      expect(calls.some((call) => call.path === "/api/setup/preview")).toBe(
-        true,
-      ),
-    );
-    const body = calls.findLast(
-      (call) => call.path === "/api/setup/preview",
-    )!.body!;
-    expect(body.shell_review_model).toBe(reviewer);
-    expect(body.shell_review).toBe(!!reviewer);
-  },
-);
+      calls.findLast((call) => call.path === "/api/setup/preview")?.body,
+    ).toMatchObject({
+      shell_review: true,
+      shell_review_model: "custom/reviewer",
+      model: { authentication: { kind: "api_key", env: "OPENAI_API_KEY" } },
+    }),
+  );
+  first.unmount();
+  mount();
+  expect(
+    await screen.findByLabelText("Review model ID (optional)"),
+  ).toHaveProperty("value", "custom/reviewer");
+});
+
+async function selectTrack(track: "Subscription" | "API Key") {
+  fireEvent.click(
+    await screen.findByRole("button", { name: new RegExp(`^${track}`) }),
+  );
+  await continueStep();
+}
 
 async function selectApi() {
-  const user = userEvent.setup();
-  await user.click(
-    await screen.findByRole("combobox", { name: "Model connection" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "OpenAI API" }));
+  if (screen.queryByRole("button", { name: "Back" })) {
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  }
+  await selectTrack("API Key");
 }
 
 async function chooseModel() {
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Continue",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
+  await selectTrack("Subscription");
   expect(await screen.findByText(/Account: account-test/)).toBeTruthy();
 }
 
@@ -887,8 +884,8 @@ it("shows configuration validation failures and recovers after correcting the Pr
 
 it("switches onboarding languages without losing choices, focus selection, or replaying preparation", async () => {
   mount();
-  await chooseModel();
-  fireEvent.click(screen.getByText("Agent options"));
+  await reviewConfiguration();
+  fireEvent.click(screen.getByText("Advanced"));
   const instructions = screen.getByLabelText(
     "Additional agent instructions",
   ) as HTMLTextAreaElement;
@@ -912,9 +909,8 @@ it("switches onboarding languages without losing choices, focus selection, or re
     preparations,
   );
   expect(document.documentElement.lang).toBe("zh-CN");
-  await user.click(screen.getByRole("button", { name: "继续" }));
   await screen.findByText("生成的文件（2）");
-  expect(screen.getByText("第 2 步，共 2 步")).toBeTruthy();
+  expect(screen.getByText("第 3 步，共 3 步")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "保存并开始" }));
   await screen.findByText("First chat");
   expect(creationId).toBe(identity);
@@ -928,7 +924,9 @@ it("switches onboarding languages without losing choices, focus selection, or re
 it("keeps an unsaved provider key in memory when switching language without saving or persisting it", async () => {
   saveWizardDraft(status.draft_scope!, {
     version: 2,
-    step: 0,
+    step: 1,
+    track: "api",
+    engine: "openai-responses",
     threadId: `thread_${"a".repeat(32)}`,
     selection: { ...status.defaults!, default_agent: "agent-primary" },
     modelDraft: {
@@ -991,3 +989,294 @@ it.each([
     expect(calls.filter((c) => c.path === "/api/setup/apply")).toHaveLength(1);
   },
 );
+
+const detectedAcp = [
+  { id: "codex", name: "Codex", detected_path: "/bin/codex" },
+  { id: "claude_code", name: "Claude Code", detected_path: "/bin/claude" },
+  { id: "gemini_cli", name: "Gemini CLI", detected_path: "/bin/gemini" },
+  { id: "antigravity", name: "Antigravity", detected_path: "/bin/agy" },
+];
+
+it("keeps discovery inert and offers only non-redundant CLI imports for Codex", async () => {
+  override = async (request) => {
+    if (new URL(request.url).pathname === "/api/acp-agents/presets")
+      return json(detectedAcp);
+  };
+  mount({ ...status, acp_presets: { "acp-claude-code": "claude_code" } });
+  await screen.findByText(/Local CLIs found:/);
+  expect(
+    calls.some(
+      ({ path }) =>
+        path.endsWith("preset-auth") || path === "/api/models/prepare",
+    ),
+  ).toBe(false);
+  await chooseModel();
+  expect(
+    screen.getByRole("button", { name: /Codex subscription/ }),
+  ).toBeTruthy();
+  const more = screen.getByText("More options", { selector: "summary" });
+  expect(more.parentElement?.hasAttribute("open")).toBe(false);
+  fireEvent.click(more);
+  fireEvent.click(screen.getByRole("button", { name: /Sign in with ChatGPT/ }));
+  expect(screen.getByText(/choose the native Codex subscription/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Codex CLI \(ACP\)/ }));
+  expect(screen.getByText(/choose the native Codex subscription/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Codex subscription/ }));
+  await continueStep();
+  const gemini = screen.getByRole("switch", { name: "Gemini CLI" });
+  expect(screen.queryByRole("switch", { name: "Codex" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Claude Code" })).toBeNull();
+  fireEvent.click(gemini);
+  await waitFor(() =>
+    expect(
+      calls.findLast(({ path }) => path === "/api/setup/preview")?.body,
+    ).toMatchObject({
+      additional_acp_presets: ["gemini_cli"],
+      enable_live: true,
+      enable_dictation: true,
+      shell_review: true,
+    }),
+  );
+});
+
+it("signs into a detected ACP CLI before saving, then opens the published ACP agent", async () => {
+  let finishLogin: (response: Response) => void;
+  let signedIn = false;
+  override = async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/acp-agents/presets") return json(detectedAcp);
+    if (path === "/api/acp-agents/preset-auth") {
+      const { preset, action } = await request.clone().json();
+      if (preset !== "antigravity") return json({ state: "ready" });
+      if (action === "login")
+        return new Promise((resolve) => {
+          finishLogin = resolve;
+        });
+      return json(
+        signedIn
+          ? { state: "ready" }
+          : {
+              state: "auth_required",
+              methods: [{ id: "agy-browser", name: "Google", kind: "browser" }],
+            },
+      );
+    }
+    if (path === "/api/acp-agents/preset-auth/inputs")
+      return json([
+        {
+          kind: "mcp_elicitation",
+          request_id: "setup-input",
+          thread_id: "acp-setup-preview",
+          server_id: "acp",
+          mode: "form",
+          message: "Fixture sign-in",
+          private_form: true,
+          state: "pending",
+          url: "https://example.test/sign-in",
+          schema: {
+            type: "object",
+            properties: { callback: { type: "string" } },
+            required: ["callback"],
+          },
+        },
+      ]);
+    if (path === "/api/acp-agents/preset-auth/inputs/setup-input/response") {
+      signedIn = true;
+      finishLogin(json({ state: "login_completed" }));
+      return json({ state: "accepted" });
+    }
+    if (path === "/api/setup" && published)
+      return json({
+        ...status,
+        fresh: false,
+        needed: false,
+        default_agent: "acp-antigravity",
+      });
+    if (path === "/api/setup/preview")
+      return json({
+        files,
+        agent_id: "acp-antigravity",
+        project_paths: ["/tmp/staging"],
+      });
+    if (path.startsWith("/api/threads/") && created)
+      return json({
+        thread: {
+          configuration: {
+            agent_source: { kind: "acp_agent", id: "acp-antigravity" },
+            environment_profile_id: "environment-native",
+            project_id: null,
+          },
+        },
+      });
+  };
+  mount();
+  await selectTrack("Subscription");
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Antigravity.*Installed/ }),
+  );
+  await screen.findByRole("button", { name: "Continue without signing in" });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Sign in with Google" }),
+  );
+  const callback = await screen.findByLabelText(
+    "Callback URL or authorization code",
+  );
+  expect(callback.getAttribute("type")).toBe("password");
+  expect(
+    screen.queryByRole("button", { name: "Continue without signing in" }),
+  ).toBeNull();
+  fireEvent.change(callback, { target: { value: "fixture-private-callback" } });
+  expect(JSON.stringify(localStorage)).not.toContain(
+    "fixture-private-callback",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  await screen.findByText("Ready · Signed in");
+  expect(calls.some(({ path }) => path === "/api/setup/apply")).toBe(false);
+  await continueStep();
+  expect(
+    (screen.getByRole("button", { name: "Sandbox" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save and start",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
+  await screen.findByText("First chat");
+  expect(
+    calls.find(
+      ({ path, method }) => path === "/api/threads" && method === "POST",
+    )?.body,
+  ).toMatchObject({
+    defaults: {
+      agent_id: "acp-antigravity",
+      environment_profile_id: "environment-native",
+    },
+  });
+});
+
+it.each([false, true])(
+  "re-enters setup and returns from Settings Agents=%s without replacing defaults",
+  async (settings) => {
+    const configured = {
+      ...status,
+      fresh: false,
+      needed: false,
+      default_agent: "agent-original",
+      default_project: "project-original",
+      agents: { "agent-original": "Original agent" },
+    };
+    override = async (request) => {
+      if (new URL(request.url).pathname === "/api/setup")
+        return json({
+          ...configured,
+          agents: {
+            ...configured.agents,
+            ...(published ? { "agent-primary": "New connection" } : {}),
+          },
+        });
+    };
+    if (settings) window.history.replaceState(null, "", "/settings/agents");
+    mount(status, false, true);
+    const entry = settings ? "Guided setup from Agents" : "Add connection";
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("link", { name: entry }));
+    await chooseModel();
+    await continueStep();
+    expect(screen.getByText("Current default: Original agent")).toBeTruthy();
+    const toggle = screen.getByRole("switch", { name: "Set as default agent" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByText("Project directory (optional)")).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Save connection",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save connection" }));
+    await screen.findByRole("link", { name: entry });
+    expect(
+      calls.find(({ path }) => path === "/api/setup/apply")?.body,
+    ).toMatchObject({
+      selection: { set_as_default: false, configure_workspace: false },
+    });
+    expect(calls.some(({ path }) => path === "/api/threads")).toBe(false);
+  },
+);
+
+it("preserves Sandbox when switching an ACP default choice back to a native engine", async () => {
+  override = async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/acp-agents/presets") return json(detectedAcp);
+    if (path === "/api/acp-agents/preset-auth")
+      return json({ state: "auth_required" });
+  };
+  mount({
+    ...status,
+    fresh: false,
+    default_agent: "agent-original",
+    environment_profile: "environment-sandbox",
+  });
+  await selectTrack("Subscription");
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Antigravity.*Installed/ }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Continue without signing in" }),
+  );
+  expect(
+    screen.queryByRole("switch", {
+      name: "Recommended tools & built-in subagents",
+    }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("switch", { name: "Set as default agent" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: /Codex subscription/ }));
+  expect(
+    screen.queryByRole("button", { name: "Continue without signing in" }),
+  ).toBeNull();
+  await continueStep();
+  await waitFor(() =>
+    expect(
+      calls.findLast(({ path }) => path === "/api/setup/preview")?.body,
+    ).toMatchObject({
+      set_as_default: true,
+      configure_workspace: false,
+      environment_profile: "environment-sandbox",
+    }),
+  );
+  expect(screen.queryByRole("button", { name: "Full Control" })).toBeNull();
+  fireEvent.click(screen.getByRole("switch", { name: "Set as default agent" }));
+  expect(
+    screen.getByRole("switch", { name: "Recommended model tools" }),
+  ).toBeTruthy();
+});
+
+it("asks for an explicit first check of a custom ACP executable", async () => {
+  override = async (request) => {
+    if (new URL(request.url).pathname === "/api/acp-agents/preset-auth")
+      return json({ state: "ready" });
+  };
+  mount();
+  await selectTrack("Subscription");
+  fireEvent.click(screen.getByText("More options", { selector: "summary" }));
+  fireEvent.click(screen.getByRole("button", { name: /Custom ACP/ }));
+  fireEvent.change(screen.getByLabelText("Executable"), {
+    target: { value: "fixture-acp" },
+  });
+  await screen.findByText("Check the executable before continuing.");
+  expect(calls.some(({ path }) => path.endsWith("preset-auth"))).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+  await screen.findByText("Ready · Signed in");
+});

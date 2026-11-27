@@ -1,10 +1,22 @@
 """Inbox delivery: intentional items from ordinary roots, read in one human place."""
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-from a13n_harness_ui.inbox_models import InboxGroup, InboxItem, InboxItemMutation, InboxKind, InboxLocation, InboxPage
+from a13n_logging import get_logger
+from sqlalchemy.exc import SQLAlchemyError
+
+from a13n_harness_ui.inbox_models import (
+    InboxGroup,
+    InboxItem,
+    InboxItemMutation,
+    InboxKind,
+    InboxLocation,
+    InboxPage,
+    InboxUnreadPost,
+)
 from a13n_harness_ui.live import HarnessUiSummaryHub, InboxNotice, RootOperationNotice
 from a13n_harness_ui.notification_origin import origin_browser
 from a13n_harness_ui.notifications import reply_brief
@@ -66,6 +78,29 @@ class InboxController:
     async def mark_group_read(self, group: InboxGroup) -> None:
         await self._store.inbox.mark_group_read(group)
         await self._summaries.publish(kind="inbox")
+
+    async def thread_unread(self, thread_id: str) -> tuple[InboxUnreadPost, ...]:
+        return tuple(
+            InboxUnreadPost(
+                item_id=item_id,
+                tool_call_id=call_id,
+                has_transcript=not call_id.startswith(_MCP_CALL_PREFIX),
+                created_at=created_at,
+            )
+            for item_id, call_id, created_at in await self._store.inbox.thread_unread(thread_id)
+        )
+
+    async def mark_thread_read(self, thread_id: str, *, item_ids: tuple[str, ...]) -> None:
+        if await self._store.inbox.mark_thread_read(thread_id, item_ids=item_ids):
+            await self._summaries.publish(kind="inbox", root_thread_id=thread_id, thread_id=thread_id)
+
+    async def acknowledge_owner_input(self, thread_id: str, *, through: datetime) -> None:
+        # The input is already accepted. An Inbox write must not turn its receipt into a rejection.
+        try:
+            if await self._store.inbox.mark_thread_read_through(thread_id, through=through):
+                await self._summaries.publish(kind="inbox", root_thread_id=thread_id, thread_id=thread_id)
+        except SQLAlchemyError:
+            get_logger(__name__).exception("Could not mark Thread Inbox items read", extra={"thread_id": thread_id})
 
     async def mark_group_done(self, group: InboxGroup) -> None:
         await self._store.inbox.mark_group_done(group)

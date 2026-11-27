@@ -128,7 +128,7 @@ The cross-group requirement policy is:
 
 Current concrete specifiers live in `release-dependencies.toml` rather than being duplicated here.
 
-Harness constrains Pydantic AI to one reviewed minor line, currently `==2.74.*`. Direct Pydantic AI dependencies in its consumers and examples use the same line, while lock files select the tested patch release. A new minor line requires an explicit compatibility update and validation across consumers.
+Harness constrains Pydantic AI to one reviewed minor line, currently `==2.76.*`. Direct Pydantic AI dependencies in its consumers and examples use the same line, while lock files select the tested patch release. A new minor line requires an explicit compatibility update and validation across consumers.
 
 Harness UI and Service dependency updates explicitly select an exact Harness-group release and validate it before publication. Other independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 
