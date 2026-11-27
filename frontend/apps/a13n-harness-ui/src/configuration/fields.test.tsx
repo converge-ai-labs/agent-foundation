@@ -180,6 +180,34 @@ it("edits the instance send shortcut without changing other WebUI settings", asy
   ).toBe("enter");
 });
 
+it("writes only non-default workbench shortcuts and removes an empty shortcuts map", async () => {
+  renderFields(
+    'schema_version: "1"\nwebui: {send_shortcut: mod-enter}\n',
+    "chats",
+  );
+  const user = userEvent.setup();
+  const source = () => parse(screen.getByTestId("source").textContent!);
+  const search = screen.getByRole("combobox", { name: "Search chats" });
+  const terminal = screen.getByRole("combobox", { name: "Terminal" });
+  expect(search.textContent).toContain("Ctrl+F");
+  expect(terminal.textContent).toContain("Ctrl+`");
+  const choose = async (control: HTMLElement, name: string) => {
+    await user.click(control);
+    await user.click(await screen.findByRole("option", { name }));
+  };
+  await choose(search, "Ctrl+F / Ctrl+K");
+  await choose(terminal, "Off");
+  expect(screen.getByTestId("source").textContent).toContain('terminal: "off"');
+  expect(source().webui).toEqual({
+    send_shortcut: "mod-enter",
+    shortcuts: { search_chats: "both", terminal: "off" },
+  });
+  await choose(search, "Ctrl+F");
+  expect(source().webui.shortcuts).toEqual({ terminal: "off" });
+  await choose(terminal, "Ctrl+` / Ctrl+Shift+`");
+  expect(source().webui).toEqual({ send_shortcut: "mod-enter" });
+});
+
 it("edits the Coordinator default without changing other WebUI settings", async () => {
   renderFields('schema_version: "1"\nwebui: {send_shortcut: mod-enter}\n');
   const toggle = screen.getByRole("switch", {

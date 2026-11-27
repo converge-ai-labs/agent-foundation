@@ -74,6 +74,10 @@ Editing replaces the selected message and everything after it. Keep or remove it
 
 To require `Ctrl+Enter` (`⌘+Enter` on Apple devices), go to **Settings → Chats → Chat input**, change **Send messages with**, and save changes. The setting is stored as `webui.send_shortcut` in the instance configuration and applies across browsers. In that mode, `Enter` and `Shift+Enter` both insert a new line. On touch-first devices, the on-screen Enter key inserts a new line in either mode.
 
+To customize workbench keys, open **Settings → Chats → Keyboard shortcuts**, choose a binding for each action, and save changes. By default, `Ctrl+F` (`⌘F` on Apple devices) opens chat search, and the terminal uses `` Ctrl+` `` to open or close and `` Ctrl+Shift+` `` to create a session. The other actions start off. Choose **Off** to disable a shortcut without hiding its control. The owner workbench reads these choices from `webui.shortcuts` in the instance configuration. If you edit the YAML directly, quote the value `"off"`.
+
+New chat offers `Ctrl+Shift+O` (`⌘⇧O`) for browser tabs. Browsers normally reserve `Ctrl+N` (`⌘N`) for a new window; choose it for an installed app window or desktop shell. Similarly, use an installed app window or desktop shell for `⌘,` on macOS, where browsers use the chord for their own settings. Editors keep local find, and the Host Browser and terminal retain their own keyboard input.
+
 Messages and Markdown previews render LaTeX math (`$inline$` and `$$display$$`). Shared drafts persist across reloads and show a pencil indicator on the sidebar row until sent or cleared.
 
 ## Agent and Model settings

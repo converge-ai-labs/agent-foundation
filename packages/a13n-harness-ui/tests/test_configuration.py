@@ -6,7 +6,9 @@ from pathlib import Path
 import a13n_harness_ui.configuration.loader as configuration_loader
 import pytest
 from a13n_harness_ui.configuration import load_harness_ui_configuration
+from a13n_harness_ui.configuration.models import WebUiConfiguration, WebUiShortcutsConfiguration
 from a13n_harness_ui.errors import ConfigurationError
+from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
 
@@ -24,6 +26,35 @@ def _write_source_tree(
         target.parent.mkdir(exist_ok=True)
         target.write_text(content.lstrip())
     return config
+
+
+def test_webui_shortcut_defaults_are_omitted_from_configuration():
+    expected = {
+        "new_chat": "off",
+        "search_chats": "mod-f",
+        "toggle_sidebar": "off",
+        "toggle_supporting_panel": "off",
+        "open_files": "off",
+        "open_changes": "off",
+        "terminal": "ctrl-backtick",
+        "open_settings": "off",
+    }
+    defaults = WebUiShortcutsConfiguration()
+    assert {field: getattr(defaults, field) for field in expected} == expected
+    assert defaults.model_dump(mode="json") == {}
+    assert "shortcuts" not in WebUiConfiguration(shortcuts=defaults).model_dump(mode="json")
+
+
+def test_webui_shortcuts_accept_only_choices_for_each_action():
+    settings = WebUiConfiguration.model_validate(
+        {"send_shortcut": "mod-enter", "shortcuts": {"search_chats": "both", "new_chat": "off", "terminal": "off"}}
+    )
+    dumped = settings.model_dump(mode="json")
+    assert dumped["shortcuts"] == {"search_chats": "both", "terminal": "off"}
+    assert dumped["send_shortcut"] == "mod-enter"
+    with pytest.raises(ValidationError, match="search_chats"):
+        WebUiShortcutsConfiguration.model_validate({"search_chats": "mod-n"})
+    assert WebUiShortcutsConfiguration.model_validate({"future_action": "off"}).model_dump() == {"future_action": "off"}
 
 
 @pytest.mark.parametrize(
