@@ -100,6 +100,14 @@ import { OpenHostFile } from "../conversations/tool-call";
 import { DebugOnly, useDebug } from "../shell/debug";
 import { CoordinatorMark } from "../conversations/coordinator-icon";
 import { readPreference, writePreference } from "../shell/preferences";
+import {
+  ignoreShortcut,
+  isNativeInputTarget,
+  matchesShortcut,
+  shortcutAttributes,
+  useWorkbenchKeydown,
+  useWorkbenchShortcut,
+} from "../shell/workbench-shortcuts";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "New chat",
@@ -143,6 +151,13 @@ export function NativeWorkspace({
   const { client } = useTransport();
   const projects = useProjects();
   const status = useStatus();
+  const newChatShortcut = useWorkbenchShortcut("new_chat");
+  const terminalBinding = useWorkbenchShortcut("terminal");
+  const supportingPanelShortcut = useWorkbenchShortcut(
+    "toggle_supporting_panel",
+  );
+  const filesShortcut = useWorkbenchShortcut("open_files");
+  const changesShortcut = useWorkbenchShortcut("open_changes");
   const queries = useQueryClient();
   const buffers = useContext(FileBuffers);
   const location = useLocation();
@@ -715,6 +730,15 @@ export function NativeWorkspace({
     setFocusedArea("page");
     requestAnimationFrame(() => pageElement.current?.focus());
   };
+  const returnToChat = () => {
+    setNativeActive(false);
+    setFocusedArea("page");
+    requestAnimationFrame(() =>
+      pageElement.current
+        ?.querySelector<HTMLElement>("[data-composer-editor]")
+        ?.focus(),
+    );
+  };
   const openTerminal = (cwd: string) => {
     if (!projectId) return;
     setTerminalRequest({ cwd, projectId });
@@ -728,26 +752,26 @@ export function NativeWorkspace({
     } else revealTab({ kind: "terminal" });
     refresh();
   };
-  useEffect(() => {
-    if (!isWorkspace || projectLoading || !status.data?.features?.host_terminal)
+  // Capture only the dedicated Terminal binding before xterm or Browser input.
+  useWorkbenchKeydown((event) => {
+    if (
+      terminalBinding !== "ctrl-backtick" ||
+      !isWorkspace ||
+      projectLoading ||
+      !status.data?.features?.host_terminal ||
+      ignoreShortcut(event) ||
+      document.querySelector('[role="dialog"]')
+    )
       return;
-    const keydown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || document.querySelector('[role="dialog"]'))
-        return;
-      const action = terminalShortcut(event);
-      if (action !== "toggle" && action !== "create") return;
-      const cwd = localRoots.includes(root) ? root : projectRoot;
-      if (action === "create" && (!projectId || !cwd)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.repeat) return;
-      if (action === "create") openTerminal(cwd);
-      else toggleTerminal();
-    };
-    // Capture before xterm or an editor can translate this into input.
-    window.addEventListener("keydown", keydown, true);
-    return () => window.removeEventListener("keydown", keydown, true);
-  });
+    const action = terminalShortcut(event);
+    if (action !== "toggle" && action !== "create") return;
+    const cwd = localRoots.includes(root) ? root : projectRoot;
+    if (action === "create" && (!projectId || !cwd)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (action === "create") openTerminal(cwd);
+    else toggleTerminal();
+  }, true);
   const unavailableThread = isUnavailableChat(thread.error);
   const title = botMode
     ? t("Bot")
@@ -819,6 +843,33 @@ export function NativeWorkspace({
     );
     refresh();
   };
+  useWorkbenchKeydown((event) => {
+    if (
+      isNativeInputTarget(event.target) ||
+      document.querySelector('[role="dialog"]')
+    )
+      return;
+    if (matchesShortcut(event, newChatShortcut)) {
+      event.preventDefault();
+      if (isNew) returnToChat();
+      else void navigate("/");
+      return;
+    }
+    if (!isWorkspace) return;
+    const features = status.data?.features;
+    if (hasSupportingViews && matchesShortcut(event, supportingPanelShortcut)) {
+      event.preventDefault();
+      toggleSupportingPanel();
+    } else if (!projectLoading && features?.host_files) {
+      if (matchesShortcut(event, filesShortcut)) {
+        event.preventDefault();
+        show("files");
+      } else if (features.host_git && matchesShortcut(event, changesShortcut)) {
+        event.preventDefault();
+        show("changes");
+      }
+    }
+  });
   const resizePanel = (
     nextWidth: number,
     available: number,
@@ -1082,11 +1133,12 @@ export function NativeWorkspace({
           ? t("Close supporting panel")
           : t("Open supporting panel")
       }
-      title={
+      {...shortcutAttributes(
         supportingExpanded
           ? t("Close supporting panel")
-          : t("Open supporting panel")
-      }
+          : t("Open supporting panel"),
+        supportingPanelShortcut,
+      )}
       aria-expanded={supportingExpanded}
       onClick={toggleSupportingPanel}
     >
@@ -1102,17 +1154,7 @@ export function NativeWorkspace({
         revealTab({ kind: "background", target });
       }}
     >
-      <ReturnToChat
-        value={() => {
-          setNativeActive(false);
-          setFocusedArea("page");
-          requestAnimationFrame(() =>
-            document
-              .querySelector<HTMLElement>("[data-composer-editor]")
-              ?.focus(),
-          );
-        }}
-      >
+      <ReturnToChat value={returnToChat}>
         <div
           className={`${styles.workarea} ${singleView ? styles.tabLayout : ""}`}
         >
@@ -1812,6 +1854,7 @@ export function NativeWorkspace({
                 }
                 aria-label={t("Terminal")}
                 data-native-find=""
+                data-terminal-input=""
                 hidden={!terminalVisible}
                 onFocusCapture={() => setFocusedArea("terminal")}
                 onPointerDown={() => setFocusedArea("terminal")}

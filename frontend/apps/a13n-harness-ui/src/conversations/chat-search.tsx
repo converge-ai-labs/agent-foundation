@@ -27,8 +27,13 @@ import {
 import { MagnifyingGlass, Funnel, X } from "@phosphor-icons/react";
 import { useProjects } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
-import { isFindShortcut } from "../platform/find-shortcut";
-import { modifierLabel, usesCommandKey } from "../platform";
+import {
+  isNativeInputTarget,
+  matchesShortcut,
+  shortcutAttributes,
+  useWorkbenchKeydown,
+  useWorkbenchShortcut,
+} from "../shell/workbench-shortcuts";
 import { useThreads } from "./queries";
 import { conversationTitle } from "./local-input";
 import navigation from "./conversation.module.css";
@@ -42,6 +47,7 @@ const ChatSearchContext = createContext<{
 export function ChatSearch({ onOpen }: { onOpen: () => void }) {
   const { t } = useTranslation();
   const search = useContext(ChatSearchContext)!;
+  const shortcut = useWorkbenchShortcut("search_chats");
   const opened = useEffectEvent(onOpen);
   useEffect(() => {
     if (search.open) opened();
@@ -51,8 +57,7 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
       type="button"
       className={navigation.homeLink}
       aria-label={t("Search chats")}
-      aria-keyshortcuts={usesCommandKey() ? "Meta+F" : "Control+F"}
-      title={`${t("Search chats")} (${modifierLabel()}+F)`}
+      {...shortcutAttributes(t("Search chats"), shortcut)}
       onClick={(event) => search.show(event.currentTarget)}
     >
       <MagnifyingGlass size={18} aria-hidden="true" />
@@ -64,6 +69,7 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
 export function ChatSearchProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const projects = useProjects();
+  const shortcut = useWorkbenchShortcut("search_chats");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -82,29 +88,26 @@ export function ChatSearchProvider({ children }: { children: ReactNode }) {
     returnFocus.current = from;
     setOpen(true);
   };
-  useEffect(() => {
-    const find = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || !isFindShortcut(event)) return;
-      if (open) {
-        event.preventDefault();
-        setFilterOpen(false);
-        input.current?.focus();
-        input.current?.select();
-        return;
-      }
-      if (
-        document.querySelector('[role="dialog"]') ||
-        (event.target instanceof Element &&
-          event.target.closest("[data-native-find]"))
-      )
-        return;
+  // Local editors and terminals handle Find before this bubbling fallback.
+  useWorkbenchKeydown((event) => {
+    if (!matchesShortcut(event, shortcut) || isNativeInputTarget(event.target))
+      return;
+    if (open) {
       event.preventDefault();
-      show(document.activeElement as HTMLElement);
-    };
-    // Local editors and terminals handle Find before this bubbling fallback.
-    window.addEventListener("keydown", find);
-    return () => window.removeEventListener("keydown", find);
-  }, [open]);
+      setFilterOpen(false);
+      input.current?.focus();
+      input.current?.select();
+      return;
+    }
+    if (
+      document.querySelector('[role="dialog"]') ||
+      (event.target instanceof Element &&
+        event.target.closest("[data-native-find]"))
+    )
+      return;
+    event.preventDefault();
+    show(document.activeElement as HTMLElement);
+  });
   const close = () => {
     setOpen(false);
     setFilterOpen(false);
