@@ -43,6 +43,8 @@ Source loading expands home paths and canonicalizes absolute roots without requi
 
 Project roots initialize a new Thread's `local_roots` as ordered path references. No directories, files, or worktrees are copied. Changing Project roots does not change existing Threads or admitted Runs. Changing a Thread's Project association alone preserves all environment selections. Removing a Project file removes it from the next accepted generation. Existing Threads retain the unresolved ID and reject later Runs until explicitly reassigned; no global fallback silently changes their local authority.
 
+For a Thread using Direct Local with a local root as its default working directory, the sidebar shows “Using a Git worktree” when Host Git discovery identifies a linked worktree at that path. The indicator is independent of branch and worktree ownership. Unavailable Host Git or an unsuccessful lookup leaves the indicator absent.
+
 ### Project Creation Configuration
 
 A Project combines working roots with resource selections for creating conversations: Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. These selections refer to the existing resource catalog; they are not embedded copies of Provider implementations, credentials, or runtime objects. Agent-owned Model and Capability choices retain their own composition authority.

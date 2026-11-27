@@ -51,6 +51,8 @@ flowchart TB
 
 通过侧边栏菜单可在 **Projects**（按项目分组）与 **Conversations**（跨项目 **Recent** 列表）之间切换。
 
+在 Native 模式下，会话右侧的分支图标表示其默认工作目录位于 Git 链接工作树内。悬停可查看「正在使用 Git 工作树」。此标记使用现有的主机 Git 能力。
+
 1. 点击 **Add project** 为项目命名并关联一个或多个服务器目录。
 2. 点击 **Home** 或项目旁的 **+** 创建新对话（也支持无项目对话）。
 3. 确认 **Agent & Model settings**，输入任务并点击 **Send**。

@@ -1027,6 +1027,7 @@
   "Failed": "失败",
   "Outcome unknown": "结果未知",
   "Archived": "已归档",
+  "Using a Git worktree": "正在使用 Git 工作树",
   "Unstar chat": "取消星标",
   "Star chat": "标为星标",
   "Coordinator": "协调者",

@@ -149,6 +149,47 @@ function mount({
       rendered.rerender(view(current, workers)),
   };
 }
+it("discovers only the selected native root and marks linked worktrees", async () => {
+  const paths: string[] = [];
+  vi.stubGlobal("fetch", async (request: Request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/status")
+      return Response.json({ features: { host_git: true } });
+    expect(url.pathname).toBe("/api/host/git/repository");
+    const path = url.searchParams.get("path")!;
+    paths.push(path);
+    return Response.json({
+      state: "repository",
+      repository: {
+        root: path,
+        git_dir: path === "/main" ? "/main/.git" : "/main/.git/worktrees/task",
+        common_dir: "/main/.git",
+      },
+    });
+  });
+  const { row, rerender } = mount();
+  const configuration = row.thread.configuration;
+  configuration.local_roots = ["/main", "/linked"];
+  configuration.environment_profile_id = "environment-native";
+  configuration.default_environment = "workspace-2";
+  rerender(row);
+  const name = "Using a Git worktree";
+  expect((await screen.findByRole("img", { name })).title).toBe(name);
+  configuration.default_environment = null;
+  rerender(row);
+  await waitFor(() => expect(paths).toEqual(["/linked", "/main"]));
+  await waitFor(() => expect(queries.isFetching()).toBe(0));
+  expect(screen.queryByRole("img", { name })).toBeNull();
+
+  configuration.default_environment = "thread-files";
+  rerender(row);
+  expect(screen.queryByRole("img", { name })).toBeNull();
+  configuration.default_environment = "workspace-2";
+  configuration.environment_profile_id = "environment-sandbox";
+  rerender(row);
+  expect(screen.queryByRole("img", { name })).toBeNull();
+  expect(paths).toEqual(["/linked", "/main"]);
+});
 it("archives directly from the menu with its observed version and opens the New draft", async () => {
   mount();
   await userEvent.click(

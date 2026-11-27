@@ -1030,6 +1030,7 @@
   "Failed": "Failed",
   "Outcome unknown": "Outcome unknown",
   "Archived": "Archived",
+  "Using a Git worktree": "Using a Git worktree",
   "Unstar chat": "Unstar chat",
   "Star chat": "Star chat",
   "Coordinator": "Coordinator",

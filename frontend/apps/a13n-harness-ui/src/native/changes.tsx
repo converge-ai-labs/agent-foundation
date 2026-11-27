@@ -21,10 +21,11 @@ import {
   ArrowRight,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
-import { useStatus, useTransport } from "../transport/context";
+import { useTransport } from "../transport/context";
 import { ErrorNotice, SearchField } from "../shell/ui";
 import { DebugOnly } from "../shell/debug";
 import { PatchEditor } from "./patch-editor";
+import { useGitRepository } from "./repository";
 import { gitPath } from "./buffer";
 import styles from "./native.module.css";
 
@@ -53,19 +54,7 @@ export function gitChangeLabel(change: Schema<"GitChange">, t: TFunction) {
 }
 export function useGitStatus(path: string, includeIgnored: boolean) {
   const { client } = useTransport();
-  const feature = useStatus().data?.features?.host_git;
-  const discovery = useQuery({
-    queryKey: ["native", "repository", path],
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/host/git/repository", {
-          params: { query: { path } },
-          signal,
-        }),
-      ),
-    enabled: !!path && !!feature,
-    refetchOnMount: "always",
-  });
+  const { feature, discovery } = useGitRepository(path, "always");
   const root = discovery.data?.repository?.root;
   const status = useInfiniteQuery({
     queryKey: ["native", "git-status", root, includeIgnored],

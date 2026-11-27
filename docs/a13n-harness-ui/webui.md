@@ -51,6 +51,8 @@ The instance login key grants full workbench and Host access. Give guests a [sha
 
 Use the sidebar menu to switch between **Projects** (grouped by directory) and **Conversations** (**Recent** flat list across Projects).
 
+In Native mode, a branch icon beside a conversation means its default working directory is in a linked Git worktree. Hover over the icon to see **Using a Git worktree**. This indicator uses the existing Host Git capability.
+
 1. Click **Add project** to name a Project and attach one or more server directories.
 2. Click **Home** or a Project's **+** button to start a new chat (projectless chats are also supported).
 3. Check **Agent & Model settings**, write your prompt, and press **Send**.

@@ -16,6 +16,7 @@ import {
   ArrowDown,
   ArrowCounterClockwise,
   DotsThree,
+  GitBranch,
   GitFork,
   PencilSimple,
   ShareNetwork,
@@ -44,6 +45,11 @@ import {
   useCoordinatorMutation,
 } from "./coordinator-settings";
 
+import {
+  localAlias,
+  selectedWorkingDirectory,
+} from "../configuration/environment-selection";
+import { isLinkedWorktree, useGitRepository } from "../native/repository";
 import { NavigationDragContext } from "./navigation-drag";
 
 function threadState(row: ActivityRow, t: TFunction) {
@@ -70,6 +76,30 @@ function ThreadStateIcon({ row }: { row: ActivityRow }) {
     <Archive aria-hidden="true" />
   ) : (
     <ChatCircle aria-hidden="true" />
+  );
+}
+
+function WorktreeIndicator({ path }: { path: string }) {
+  const { t } = useTranslation();
+  const { feature, discovery } = useGitRepository(path);
+  const repository = discovery.data?.repository;
+  if (
+    !feature ||
+    !discovery.isSuccess ||
+    !repository ||
+    !isLinkedWorktree(repository)
+  )
+    return null;
+  const label = t("Using a Git worktree");
+  return (
+    <span
+      className={styles.threadMarker}
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <GitBranch size={14} aria-hidden="true" />
+    </span>
   );
 }
 
@@ -126,6 +156,13 @@ export function ThreadRow({
     composers.get(row.thread.thread_id)?.localInputs,
     t("Untitled chat"),
   );
+  const configuration = row.thread.configuration;
+  const defaultDirectory = selectedWorkingDirectory(configuration);
+  const nativeDirectory =
+    configuration.environment_profile_id === "environment-native" &&
+    configuration.local_roots?.find(
+      (_, index) => localAlias(index) === defaultDirectory,
+    );
   const isCoordinator = row.thread.role === "coordinator";
   const state = threadState(row, t);
   const workerActivity =
@@ -306,9 +343,10 @@ export function ThreadRow({
               {t("{{count, number}}", { count: activeWorkerCount })}
             </small>
           )}
+          {nativeDirectory && <WorktreeIndicator path={nativeDirectory} />}
           {unsent && (
             <span
-              className={styles.draftMarker}
+              className={styles.threadMarker}
               role="img"
               aria-label={t("Draft - Unsent input")}
               title={t("Unsent input")}

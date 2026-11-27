@@ -360,7 +360,7 @@
         .threadStar,
         .coordinatorActivity,
         .threadStatus,
-        .draftMarker,
+        .threadMarker,
         .resultDot
       ):is(:hover, :focus-within, :has([data-popup-open]))
       .threadLink {
@@ -371,7 +371,7 @@
         .threadStar,
         .coordinatorActivity,
         .threadStatus,
-        .draftMarker,
+        .threadMarker,
         .resultDot
       ) {
       opacity: 0;
@@ -417,7 +417,7 @@
   outline-offset: -2px;
 }
 .threadStatus,
-.draftMarker {
+.threadMarker {
   display: inline-flex;
   align-items: center;
   justify-content: center;

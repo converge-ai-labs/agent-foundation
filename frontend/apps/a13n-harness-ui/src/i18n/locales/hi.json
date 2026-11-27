@@ -1030,6 +1030,7 @@
   "Failed": "विफल",
   "Outcome unknown": "परिणाम अज्ञात",
   "Archived": "आर्काइव किया गया",
+  "Using a Git worktree": "Git वर्कट्री का उपयोग हो रहा है",
   "Unstar chat": "चैट से स्टार हटाएँ",
   "Star chat": "चैट को स्टार करें",
   "Coordinator": "कोऑर्डिनेटर",
