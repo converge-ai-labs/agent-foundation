@@ -46,7 +46,6 @@ from a13n_stream_protocol.acp import AcpRunStream
 from acp import RequestError, schema
 from anyio import CancelScope, Event, create_task_group, current_time, move_on_after, to_thread
 from anyio.abc import TaskGroup
-from mcp.types import ElicitRequestFormParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
 from pydantic_ai.capabilities import AbstractCapability
@@ -308,20 +307,31 @@ def _bind_shell_review(
     async def terminal(request: CommandRequest) -> bool:
         assert isinstance(request.command, ArgvCommand)
         environment = dict(request.environment.set)
-        decision = await review(f"call-{uuid4().hex}", request.command, request.cwd, environment)
+        tool_call_id = f"call-{uuid4().hex}"
+        decision = await review(tool_call_id, request.command, request.cwd, environment)
         if decision is not None:
             return decision
         message = summary(request.command, request.cwd, environment)
         if interactions is None or len(message) > 8192:
             return False
-        result = await interactions.request(
-            ElicitRequestFormParams(
-                message=message,
-                requested_schema={"type": "object", "properties": {}},
+        selected = await interactions.permission(
+            schema.ToolCallUpdate(
+                tool_call_id=tool_call_id,
+                kind="execute",
+                name="shell_exec",
+                raw_input={
+                    "command": request.command.executable,
+                    "args": list(request.command.arguments),
+                    "cwd": request.cwd,
+                    "env": environment,
+                },
             ),
-            None,
+            (
+                schema.PermissionOption(option_id="allow", name="Allow once", kind="allow_once"),
+                schema.PermissionOption(option_id="reject", name="Reject", kind="reject_once"),
+            ),
         )
-        return result.action == "accept"
+        return selected == "allow"
 
     async def permission(call: schema.ToolCallUpdate, options: tuple[schema.PermissionOption, ...]) -> str | None:
         try:
@@ -339,7 +349,18 @@ def _bind_shell_review(
             for option in options
             if option.kind in {"allow_once", "reject_once"}
         )
-        return await interactions.permission(call.model_copy(update={"title": message}), options)
+        reviewed_call = call.model_copy(
+            update={
+                "kind": "execute",
+                "raw_input": {
+                    "command": raw.command,
+                    "args": raw.args,
+                    "cwd": raw.cwd,
+                    "env": raw.env,
+                },
+            }
+        )
+        return await interactions.permission(reviewed_call, options)
 
     binding.review_command = terminal
     binding.review_permission_command = permission
@@ -857,6 +878,7 @@ class AcpTurn(AbstractHarnessPlugin):
                     self.resource.id,
                     require_active,
                     context.run_id,
+                    server_name=self.resource.name,
                     timeout_seconds=self.interaction_timeout_seconds,
                 )
                 binding.permission = interactions.permission

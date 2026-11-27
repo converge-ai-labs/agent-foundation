@@ -32,6 +32,23 @@ class McpInteraction:
         return tuple(item for item in required if isinstance(item, str)) if isinstance(required, list) else ()
 
     def prompt(self) -> str:
+        if self.request.mode == "permission" and self.request.permission is not None:
+            detail = self.request.permission
+            source = self.request.server_name or self.request.server_id
+            lines = [f"Permission requested ({source})"]
+            if self.request.message:
+                lines.append(self.request.message)
+            if detail.command:
+                lines.append(f"Command: {detail.command}")
+            if detail.cwd:
+                lines.append(f"Working directory: {detail.cwd}")
+            if detail.locations:
+                lines.append("Locations: " + ", ".join(detail.locations))
+            if detail.environment_keys:
+                lines.append("Environment variables: " + ", ".join(detail.environment_keys))
+            lines.append("\n".join(f"{index}. {option.name}" for index, option in enumerate(detail.options, 1)))
+            lines.append("Choose a number or option name; or decline / cancel.")
+            return "\n".join(lines)
         if self.request.mode == "question":
             question = self.request.questions[self.position]
             options = "\n".join(
@@ -57,6 +74,16 @@ class McpInteraction:
     def answer(self, text: str) -> McpInputResponse | None:
         if text.strip() in ("decline", "cancel"):
             return McpInputResponse(action="decline" if text.strip() == "decline" else "cancel")
+        if self.request.mode == "permission" and self.request.permission is not None:
+            options = self.request.permission.options
+            stripped = text.strip()
+            for option in options:
+                if stripped == option.option_id:
+                    return McpInputResponse(action="accept", content={"option": option.option_id})
+            chosen = resolve_choice(stripped, tuple(option.name for option in options), multiple=False)
+            assert isinstance(chosen, str)
+            matched = next(option for option in options if option.name == chosen)
+            return McpInputResponse(action="accept", content={"option": matched.option_id})
         if self.request.mode == "question":
             question = self.request.questions[self.position]
             answer = resolve_choice(

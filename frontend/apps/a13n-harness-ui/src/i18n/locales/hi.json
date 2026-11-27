@@ -3782,5 +3782,19 @@
   "With no agents selected, all configured agents are allowed for new chats and workers.": "कोई एजेंट न चुनने पर, नई चैट और वर्कर के लिए सभी कॉन्फ़िगर किए गए एजेंट अनुमत होते हैं।",
   "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.": "कॉन्फ़िगरेशन में allowed_agents खाली होने के कारण एजेंट बनाना बंद है। उन्हें अनुमति देने के लिए एजेंट चुनें।",
   "Same as current agent": "वर्तमान एजेंट जैसा ही",
-  "Used when creating a new chat or worker without specifying an agent.": "बिना एजेंट बताए नई चैट या वर्कर बनाते समय उपयोग होता है।"
+  "Used when creating a new chat or worker without specifying an agent.": "बिना एजेंट बताए नई चैट या वर्कर बनाते समय उपयोग होता है।",
+  "Agent input request": "एजेंट इनपुट अनुरोध",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "आपका जवाब इस एजेंट को जाता है। पासवर्ड, टोकन या अन्य गोपनीय जानकारी शामिल न करें।",
+  "Select an option": "एक विकल्प चुनें",
+  "Permission requested": "अनुमति का अनुरोध",
+  "Command permission": "कमांड अनुमति",
+  "File edit permission": "फ़ाइल संपादन अनुमति",
+  "Delete permission": "हटाने की अनुमति",
+  "Move permission": "स्थानांतरित करने की अनुमति",
+  "File read permission": "फ़ाइल पढ़ने की अनुमति",
+  "Search permission": "खोज अनुमति",
+  "Network permission": "नेटवर्क अनुमति",
+  "Mode change permission": "मोड बदलने की अनुमति",
+  "Locations": "स्थान",
+  "Questions": "प्रश्न"
 }

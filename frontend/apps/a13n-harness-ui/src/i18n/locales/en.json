@@ -3782,5 +3782,19 @@
   "With no agents selected, all configured agents are allowed for new chats and workers.": "With no agents selected, all configured agents are allowed for new chats and workers.",
   "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.": "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.",
   "Same as current agent": "Same as current agent",
-  "Used when creating a new chat or worker without specifying an agent.": "Used when creating a new chat or worker without specifying an agent."
+  "Used when creating a new chat or worker without specifying an agent.": "Used when creating a new chat or worker without specifying an agent.",
+  "Agent input request": "Agent input request",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "Your response goes to this Agent. Don't include passwords, tokens or other secrets.",
+  "Select an option": "Select an option",
+  "Permission requested": "Permission requested",
+  "Command permission": "Command permission",
+  "File edit permission": "File edit permission",
+  "Delete permission": "Delete permission",
+  "Move permission": "Move permission",
+  "File read permission": "File read permission",
+  "Search permission": "Search permission",
+  "Network permission": "Network permission",
+  "Mode change permission": "Mode change permission",
+  "Locations": "Locations",
+  "Questions": "Questions"
 }

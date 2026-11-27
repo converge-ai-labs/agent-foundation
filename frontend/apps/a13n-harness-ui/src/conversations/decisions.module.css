@@ -33,6 +33,26 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.commandBlock {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.commandLabel {
+  font-size: var(--a13n-text-body);
+  color: var(--a13n-secondary);
+}
+.locations {
+  display: grid;
+  gap: 2px;
+  font-family: var(--a13n-mono);
+  font-size: var(--harness-code-size);
+}
+.link {
+  color: var(--a13n-signal);
+  text-decoration: underline;
+  width: fit-content;
+}
 .code,
 .editor {
   font-family: var(--a13n-mono);

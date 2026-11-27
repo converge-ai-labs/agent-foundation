@@ -163,6 +163,11 @@ async def test_acp_turn_runs_in_harness_and_reuses_session(tmp_path: Path) -> No
             (request,) = inputs.requests({first.thread_id})
             assert request.run_id is not None and request.run_id != first.run_id
             assert request.tool_call_id == "permission"
+            assert request.mode == "permission"
+            assert request.source == "acp"
+            assert request.server_name == "Fixture"
+            assert request.permission is not None
+            assert [option.option_id for option in request.permission.options] == ["allow"]
             assert request.state == "pending"
             assert await plugin.steer("Keep going") == "accepted"
             await inputs.respond(
@@ -1751,3 +1756,90 @@ async def test_acp_steering_during_goal_decision_supersedes_the_generated_prompt
     prompts = [frame for frame in frames if frame["kind"] == "session/prompt"]
     assert len(prompts) == 2 and "finish-steering-goal" in str(prompts[-1])
     assert not any(frame["kind"] == "session/cancel" for frame in frames)
+
+
+async def test_acp_permission_projection_redacts_env_validates_options_and_supports_tui() -> None:
+    from a13n_harness_ui.acp_inputs import AcpInputs
+    from a13n_harness_ui.interactive.mcp_inputs import McpInteraction
+    from acp import schema
+
+    changed = asyncio.Event()
+
+    async def notify(_: str) -> None:
+        changed.set()
+
+    inputs = Inputs(notify)
+    interaction = AcpInputs(
+        inputs,
+        "thread-perm",
+        "acp-antigravity",
+        lambda: None,
+        run_id="run-1",
+        server_name="Antigravity",
+        timeout_seconds=10,
+    )
+    try:
+        async with asyncio.TaskGroup() as group:
+            pending = group.create_task(
+                interaction.permission(
+                    schema.ToolCallUpdate(
+                        tool_call_id="call-exec",
+                        kind="execute",
+                        name="run_command",
+                        title="ps aux | grep a13n",
+                        locations=[schema.ToolCallLocation(path="/workspace/app.py", line=10)],
+                        raw_input={
+                            "CommandLine": "ps aux | grep a13n",
+                            "Cwd": "/workspace",
+                            "env": {"API_SECRET": "top-secret-value", "PATH": "/usr/bin"},
+                            "SafeToAutoRun": False,
+                        },
+                    ),
+                    (
+                        schema.PermissionOption(option_id="allow_once", name="Allow once", kind="allow_once"),
+                        schema.PermissionOption(option_id="allow_always", name="Allow always", kind="allow_always"),
+                        schema.PermissionOption(option_id="reject_once", name="Reject", kind="reject_once"),
+                    ),
+                )
+            )
+            async with asyncio.timeout(5):
+                await changed.wait()
+            (view,) = inputs.requests({"thread-perm"})
+            assert view.mode == "permission"
+            assert view.source == "acp"
+            assert view.server_name == "Antigravity"
+            assert view.message == ""
+            assert view.permission is not None
+            assert view.permission.tool_kind == "execute"
+            assert view.permission.tool_name == "run_command"
+            assert view.permission.command == "ps aux | grep a13n"
+            assert view.permission.cwd == "/workspace"
+            assert view.permission.locations == ("/workspace/app.py:10",)
+            assert view.permission.environment_keys == ("API_SECRET", "PATH")
+            assert view.permission.arguments == {"SafeToAutoRun": False}
+            assert "top-secret-value" not in view.model_dump_json()
+
+            tui = McpInteraction(view)
+            prompt = tui.prompt()
+            assert "Permission requested (Antigravity)" in prompt
+            assert "Command: ps aux | grep a13n" in prompt
+            assert "1. Allow once" in prompt
+            assert tui.answer("2") == McpInputResponse(action="accept", content={"option": "allow_always"})
+            assert tui.answer("reject_once") == McpInputResponse(action="accept", content={"option": "reject_once"})
+
+            with pytest.raises(HarnessUiError) as invalid:
+                await inputs.respond(
+                    {"thread-perm"},
+                    view.request_id,
+                    McpInputResponse(action="accept", content={"option": "unknown"}),
+                )
+            assert invalid.value.code == "mcp_input_invalid"
+
+            await inputs.respond(
+                {"thread-perm"},
+                view.request_id,
+                McpInputResponse(action="accept", content={"option": "allow_once"}),
+            )
+        assert pending.result() == "allow_once"
+    finally:
+        await inputs.close()

@@ -3750,5 +3750,19 @@
   "With no agents selected, all configured agents are allowed for new chats and workers.": "未选择智能体时，允许使用所有已配置的智能体创建新对话和 Worker。",
   "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.": "配置中 allowed_agents 为空，已禁用智能体创建。请选择要允许的智能体。",
   "Same as current agent": "与当前智能体相同",
-  "Used when creating a new chat or worker without specifying an agent.": "创建新对话或 Worker 时未指定智能体时使用。"
+  "Used when creating a new chat or worker without specifying an agent.": "创建新对话或 Worker 时未指定智能体时使用。",
+  "Agent input request": "智能体输入请求",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "你的回复将发送给此智能体。请勿包含密码、令牌或其他机密。",
+  "Select an option": "请选择一项",
+  "Permission requested": "权限请求",
+  "Command permission": "命令执行权限",
+  "File edit permission": "文件编辑权限",
+  "Delete permission": "删除权限",
+  "Move permission": "移动权限",
+  "File read permission": "文件读取权限",
+  "Search permission": "搜索权限",
+  "Network permission": "网络访问权限",
+  "Mode change permission": "模式切换权限",
+  "Locations": "位置",
+  "Questions": "问题"
 }

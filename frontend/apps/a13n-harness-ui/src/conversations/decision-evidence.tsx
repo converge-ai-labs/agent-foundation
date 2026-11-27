@@ -173,7 +173,7 @@ export function DecisionEvidence({ request }: { request: Request }) {
   );
 }
 
-function CopyCommand({ command }: { command: string }) {
+export function CopyCommand({ command }: { command: string }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<"copied" | "failed" | "">("");
   return (
