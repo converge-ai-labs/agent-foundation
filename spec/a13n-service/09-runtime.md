@@ -210,15 +210,16 @@ Every HTTP response, a 500 or an ingress refusal included, carries exactly one S
 
 Redis accelerates work and coordinates ephemeral observations; it grants no domain authority. PostgreSQL decides durable work ownership and state. Redis loss affects each use as listed below, including skipped rate limits and lost hints; every call is bounded by `redis.timeout`. Each deployment uses its own Redis logical database. Deployments sharing a Redis server select different databases; where only database 0 is supported, each deployment uses a dedicated instance.
 
-| Use                                                                                         | When Redis fails                                                                                                         |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| the claim wake marker `a13n:wake`                                                           | workers find due runs by the periodic scan ([Worker claim wakeups](#worker-claim-wakeups))                               |
-| App Run seal hints ([15](15-app-plugins.md#dispatch-boundary))                              | hints may be lost; each App reconciles durable state with its own organization sweep                                     |
-| rate-limit counters (fixed windows per hashed identity)                                     | the limit is not enforced and each skipped check is logged                                                               |
-| session streams ([07](07-facts-and-delivery.md#the-session-stream))                         | provisional output is lost and readers are told; committed display and run state are unaffected                          |
-| connection tool and connector catalog caches (`providers.discovery_ttl`)                    | results are fetched again from the provider ([04](04-resources.md))                                                      |
-| retained Shell live output cache (`a13n:tool-output:*`, bounded snapshots with a short TTL) | reads fall back to the original owner; cache loss does not imply termination or erase durable results                    |
-| retained shell owner request/reply                                                          | control is unavailable or its outcome unknown; durable results remain readable; mutations are never automatically resent |
+| Use                                                                                         | When Redis fails                                                                                                                 |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| the claim wake marker `a13n:wake`                                                           | workers find due runs by the periodic scan ([Worker claim wakeups](#worker-claim-wakeups))                                       |
+| worker membership (`a13n:workers:<scope hash>`, expiring sorted set)                        | claim batches fall back to at most eight; PostgreSQL leases remain authoritative ([Worker claim wakeups](#worker-claim-wakeups)) |
+| App Run seal hints ([15](15-app-plugins.md#dispatch-boundary))                              | hints may be lost; each App reconciles durable state with its own organization sweep                                             |
+| rate-limit counters (fixed windows per hashed identity)                                     | the limit is not enforced and each skipped check is logged                                                                       |
+| session streams ([07](07-facts-and-delivery.md#the-session-stream))                         | provisional output is lost and readers are told; committed display and run state are unaffected                                  |
+| connection tool and connector catalog caches (`providers.discovery_ttl`)                    | results are fetched again from the provider ([04](04-resources.md))                                                              |
+| retained Shell live output cache (`a13n:tool-output:*`, bounded snapshots with a short TTL) | reads fall back to the original owner; cache loss does not imply termination or erase durable results                            |
+| retained shell owner request/reply                                                          | control is unavailable or its outcome unknown; durable results remain readable; mutations are never automatically resent         |
 
 [Environment monitoring](13-environment-monitoring.md#proxy-collection-and-temporary-history) also uses Redis for temporary collection-owner tokens and bounded cross-replica request/reply routing. Coordination loss discards or interrupts temporary observations without affecting Runs, lifecycle operations, native export or external history queries. Its bounded collector, ownership renewal, query router and export worker are control-role lifespan services; their history remains process-local.
 
@@ -270,21 +271,11 @@ The periodic claim scan is the mechanism; a Redis marker only makes it run soone
 3. A worker takes a marker only when it has a free slot; a full worker leaves it for another worker.
 4. The marker wait is the periodic timer: `BLPOP` with a timeout of `worker.scan_seconds`. A Redis error sleeps for the same interval.
 
-```python
-async def claim_loop(worker, redis, scan_seconds: float) -> None:     # illustrative
-    while not worker.stopping:
-        free = worker.free_slots
-        if free == 0:
-            await worker.slot_released.wait()          # full: leave markers; rescan when a slot frees
-            continue
-        try:
-            claimed = await claim_due_runs(limit=free) # SKIP LOCKED; PostgreSQL decides ownership
-        except Exception:
-            await sleep(scan_seconds)                  # logged; running attempts are unaffected
-            continue
-        if claimed < free:
-            await wait_for_wake(redis, timeout=scan_seconds)
-```
+Workers publish expiring membership in Redis before each scan, including while all slots are occupied. The sorted set `a13n:workers:<sha256(database URL without password)>` contains incarnation IDs and Redis-clock expiry timestamps. URL query options, including an explicit schema search path, are part of the scope; workers using different connection identities or aliases are separate groups. Refresh atomically prunes expired members, updates this worker and counts the survivors. Its lifetime is the greater of `worker.lease_seconds` and three scan intervals. Graceful shutdown removes membership before draining; a crashed worker disappears on expiry. Membership never grants or revokes a PostgreSQL lease.
+
+With `N > 1` observed members and `F` free local slots, a worker counts at most `F * N` due, eligible accepted runs (`Q`) and claims at most `min(F, ceil(Q / N))`. The count is an unlocked snapshot; the existing `FOR UPDATE SKIP LOCKED` claim still decides ownership. A successful multi-member batch waits one scan interval before another claim, even if a wake marker is available. This discourages one worker from consuming a whole burst, without promising equal counts, rebalancing running work, or accounting for different worker speeds. Busy members are counted too. A lone observed worker retains the original claim limit.
+
+Redis membership calls are bounded by `redis.timeout`. If refresh fails, the worker claims at most eight tasks per scan until Redis recovers; it does not assume it is alone. A stale or incomplete membership view can affect fairness and queue latency, but cannot duplicate ownership. Mixed-version workers do not participate equally: this policy is intended for workers running the same version. Membership transitions and nonempty batch counts are logged; no database session survives a Redis call or wait.
 
 Exactly two places register `wake()` as an after-commit callback: `start_run`, which every run-creation path uses, and the transition that returns a run to accepted when it is immediately due (a handoff; recovery always waits out a backoff). A run whose backoff is pending is found by the scan once due. After-commit callbacks run only after a successful commit, and their failures are logged without affecting the committed state. A crash between commit and callback delays the run by at most one scan interval. A burst of wakes coalesces into one marker; workers not woken find the remaining runs within one interval. One loop per worker means scans never overlap within a worker, startup begins with a scan and shutdown cancels the wait. No database session survives a Redis call or wait.
 

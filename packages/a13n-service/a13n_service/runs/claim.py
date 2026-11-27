@@ -39,23 +39,34 @@ QUEUE_WAIT = meter.create_histogram(
 )
 
 
-async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: int) -> list[Lease]:
+async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: int, members: int = 1) -> list[Lease]:
     """Lease up to `limit` due accepted runs, skipping rows other workers hold."""
+    if limit < 1 or members < 1:
+        raise ValueError("Claim capacity and member count must be positive")
     leases: list[Lease] = []
     waits: list[float] = []
     async with transaction(runtime.storage) as session:
         current = await now(session)
+        eligible = (
+            RunRow.status == "accepted",
+            RunRow.available_at <= current,
+            checkpoints.claimable(),
+            contexts.claimable(RunRow.thread_id, worker_id),
+        )
+        if members > 1:
+            # Counts above limit * members cannot change this worker's allowance.
+            # Do not lock the counted candidates: peers must be able to claim them.
+            pending = select(RunRow.id).where(*eligible).limit(limit * members).subquery()
+            count = await session.scalar(select(func.count()).select_from(pending))
+            if not count:
+                return []
+            limit = min(limit, (count + members - 1) // members)
         candidates = (
             await session.execute(
                 select(RunRow, OccurrenceRow.schedule_id, OccurrenceRow.id)
                 .outerjoin(InboxEntryRow, InboxEntryRow.id == RunRow.occurrence_trigger_entry_id)
                 .outerjoin(OccurrenceRow, OccurrenceRow.id == InboxEntryRow.schedule_occurrence_id)
-                .where(
-                    RunRow.status == "accepted",
-                    RunRow.available_at <= current,
-                    checkpoints.claimable(),
-                    contexts.claimable(RunRow.thread_id, worker_id),
-                )
+                .where(*eligible)
                 .order_by(RunRow.available_at, RunRow.id)
                 .limit(limit)
                 .with_for_update(of=RunRow, skip_locked=True)
