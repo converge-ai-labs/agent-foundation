@@ -105,7 +105,7 @@ jobs:
           cache-suffix: py${{ matrix.python-version }}-harness
 
       - name: Synchronize Harness and workspace development tools
-        run: uv sync --locked --package a13n-harness --package a13n-workspace
+        run: uv sync --locked --package a13n-harness --package a13n-workspace --extra kubernetes
 
       - name: Type-check a13n Harness
         if: matrix.name == 'checks'
