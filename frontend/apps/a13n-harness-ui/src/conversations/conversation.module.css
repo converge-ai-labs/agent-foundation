@@ -340,36 +340,38 @@
   .groupActions {
     opacity: 0;
   }
-  /* With a fine pointer the row menu floats over the title end only while
-     the row is hovered or focused, so idle titles use the full row width. */
-  .threadActions {
-    position: absolute;
-    top: 50%;
-    translate: 0 -50%;
-    inset-inline-end: 0;
-  }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
-    padding-inline-end: 32px;
-  }
-  .threadRow:has(
-      .threadStar,
-      .coordinatorActivity,
-      .threadStatus,
-      .draftMarker,
-      .resultDot
-    ):is(:hover, :focus-within, :has([data-popup-open]))
-    .threadLink {
-    padding-inline-end: 8px;
-  }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open]))
-    :is(
-      .threadStar,
-      .coordinatorActivity,
-      .threadStatus,
-      .draftMarker,
-      .resultDot
-    ) {
-    opacity: 0;
+  /* A labeled Restore button needs a separate menu slot and keeps its status
+     visible. Other rows let the menu take the place of the trailing mark. */
+  .threadRow:not([data-labeled-restore]) {
+    & .threadActions {
+      position: absolute;
+      top: 50%;
+      translate: 0 -50%;
+      inset-inline-end: 0;
+    }
+    &:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
+      padding-inline-end: 32px;
+    }
+    &:has(
+        .threadStar,
+        .coordinatorActivity,
+        .threadStatus,
+        .draftMarker,
+        .resultDot
+      ):is(:hover, :focus-within, :has([data-popup-open]))
+      .threadLink {
+      padding-inline-end: 8px;
+    }
+    &:is(:hover, :focus-within, :has([data-popup-open]))
+      :is(
+        .threadStar,
+        .coordinatorActivity,
+        .threadStatus,
+        .draftMarker,
+        .resultDot
+      ) {
+      opacity: 0;
+    }
   }
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,

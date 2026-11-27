@@ -127,6 +127,7 @@ export function ThreadRow({
     t("Untitled chat"),
   );
   const isCoordinator = row.thread.role === "coordinator";
+  const inlineRestore = showRestore && row.thread.archived;
   const state = threadState(row, t);
   const workerActivity =
     activeWorkerCount > 0
@@ -218,6 +219,9 @@ export function ThreadRow({
         ref={rowElement}
         key={row.thread.thread_id}
         className={styles.threadRow}
+        data-labeled-restore={
+          inlineRestore && showRestore === true ? "" : undefined
+        }
         data-nav-thread={sortable ? row.thread.thread_id : undefined}
         data-nav-source={drag?.moving === row.thread.thread_id || undefined}
       >
@@ -331,7 +335,7 @@ export function ThreadRow({
             />
           )}
         </NavLink>
-        {showRestore && row.thread.archived && (
+        {inlineRestore && (
           <Button
             variant="ghost"
             size={showRestore === "compact" ? "icon-sm" : "sm"}
