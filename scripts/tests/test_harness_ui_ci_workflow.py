@@ -19,6 +19,8 @@ WORKFLOW = ROOT / ".github/workflows/ci-a13n-harness-ui.yml"
         ("TESTS", True, "failure"),
         ("FRONTEND", True, "cancelled"),
         ("WEBUI", True, "skipped"),
+        ("WEBUI", True, "failure"),
+        ("WEBUI", True, "cancelled"),
         ("DISTRIBUTION", False, "skipped"),
         ("TESTS", False, "success"),
     ],
@@ -104,6 +106,7 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
     by_name = {step["name"]: step for step in steps}
     native = by_name["Test Windows native UI integration"]
     assert native["if"] == "github.event_name == 'pull_request'"
+    assert "-n 4 --dist loadgroup" in native["run"]
     selections = [arg for arg in shlex.split(native["run"]) if arg.startswith("packages/")]
     assert selections
     for selection in selections:
@@ -127,6 +130,7 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
     assert shlex.split(full["run"])[-1] == "packages/a13n-harness-ui/tests"
     lifecycle = by_name["Test native command lifecycle"]
     assert lifecycle["if"] == "matrix.shard == 1"
+    assert "-n 4 --dist load " in lifecycle["run"]
     for name in ("test_direct_local.py", "test_direct_local_processes.py"):
         assert f"packages/a13n-harness/tests/providers_environment/{name}" in shlex.split(lifecycle["run"])
 
@@ -149,3 +153,42 @@ def test_python_checks_run_beside_the_test_shards_and_remain_required() -> None:
     assert all(
         step["name"] not in {"Type-check UI", "Test native command lifecycle"} for step in jobs["tests"]["steps"]
     )
+
+
+def test_linux_python_matrix_runs_every_duration_balanced_shard() -> None:
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    tests = jobs["tests"]
+    strategy = tests["strategy"]
+    shards = strategy["matrix"]["shard"]
+    assert len(shards) > 1
+    assert shards == list(range(1, len(shards) + 1))
+    assert "tests" in jobs["linux"]["needs"]
+    assert strategy["fail-fast"] is False
+    test = next(step for step in tests["steps"] if step["name"] == "Test UI")
+    assert f"--shard ${{{{ matrix.shard }}}} {len(shards)} --durations .github/ui-test-durations.json" in test["run"]
+    assert test["run"].endswith("packages/a13n-harness-ui/tests")
+
+
+def test_webui_matrix_requires_both_unit_shards_and_the_protocol_project() -> None:
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    webui = jobs["webui"]
+    assert "webui" in jobs["linux"]["needs"]
+    assert webui["needs"] == jobs["distribution"]["needs"] == "changes"
+    assert webui["if"] == jobs["distribution"]["if"]
+    assert webui["strategy"]["fail-fast"] is False
+    assert webui["strategy"]["matrix"]["include"] == [
+        {"project": "unit", "shard": "1/2"},
+        {"project": "unit", "shard": "2/2"},
+        {"project": "protocol"},
+    ]
+    steps = {step["name"]: step for step in webui["steps"]}
+    for name in (
+        "Set up Python",
+        "Set up uv",
+        "Synchronize UI test environment",
+        "Prepare bundled configuration Skill",
+    ):
+        assert steps[name]["if"] == "matrix.project == 'protocol'"
+    assert "--project=${{ matrix.project }}" in steps["Test WebUI"]["run"]
+    assert "matrix.shard && format('--shard={0}', matrix.shard)" in steps["Test WebUI"]["run"]
+    assert "strategy.job-index" in steps["Retain WebUI test reports"]["with"]["name"]

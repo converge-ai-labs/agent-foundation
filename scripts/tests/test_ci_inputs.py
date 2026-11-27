@@ -879,7 +879,12 @@ def test_python_component_ci_tiers_interpreters_with_daily_schedule(
     assert workflow[True]["schedule"], filename
     assert "${{ github.event_name }}" in workflow["concurrency"]["group"], filename
     job = workflow["jobs"][job_name]
-    tiered_expr = 'github.event_name == \'push\' && \'["3.13"]\' || \'["3.13","3.14","3.15"]\''
+    canonical = '["3.13"]'
+    full = '["3.13","3.14","3.15"]'
+    tiered_expr = f"github.event_name == 'push' && '{canonical}' || '{full}'"
+    if filename == "ci-a13n-harness-ui.yml":
+        full_matrix = "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')"
+        tiered_expr = f"{full_matrix} && '{full}' || '{canonical}'"
     if filename == "ci-a13n-service.yml":
         matrix_step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
         assert matrix_step["env"]["PYTHON_VERSIONS"] == f"${{{{ {tiered_expr} }}}}"
