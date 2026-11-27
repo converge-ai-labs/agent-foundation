@@ -82,6 +82,8 @@ if __name__ == "__main__":
 
 原生工具 Schema 会在建立连接时一次性宣告。若需在保持语音连接不断开的前提下审批敏感调用或回填外部工具结果，请在能力列表或 `RunBindings` 中注册 `HandleDeferredToolCalls`，在当前长连接内直接完成延迟调用。Harness 会将初始上下文注入会话指令，并在工具调用完成后追加刷新后的上下文。
 
+对于支持会话中更新工具的模型，`load_capability` 可在 Live 会话中添加延迟加载的工具，调用结果仍会附带刷新后的上下文。对于工具集固定的模型，如果延迟加载的能力提供工具且尚未加载，Live 会在建连时拒绝该配置。
+
 正常结束调用 `close()`（中止调用 `cancel()`），排空迭代器收到 `HarnessRunResultEvent`（由于对话内容保存在消息历史中，`result.output` 恒为 `None`），然后持久化 `await live.export_state()`。下次调用 `agent.live(..., previous_state=restored)` 即可在新连接上续接同一会话。
 
 读取 `live.usage` 或终态 `UsageSnapshot` 获取归因用量（`model_usage_coverage="responses_only"`，不含纯会话级转写或时长计费；`live.native_usage` 仅供底层诊断）。注意 Live 模式不支持逐请求预留检查，传入 `RunBindings.model_call_check` 会以 `live_model_check_unsupported` 拒绝连接。

@@ -630,11 +630,17 @@ class MCPServer(NativeMCP[AgentContext]):
         on_error: StartupErrorPolicy = "raise",
         tools: tuple[str, ...] | None = None,
         project: ProjectToolset | None = None,
+        defer_loading: bool = False,
     ) -> None:
         if not id or on_error not in {"skip", "raise"}:
             raise DefinitionError("Invalid MCP startup policy.", code="mcp_definition_invalid")
         # Pydantic AI accepts AbstractToolset at runtime; its MCP annotation omits it.
-        super().__init__(id=id, native=False, local=FunctionToolset(id=id))  # pyright: ignore[reportArgumentType]
+        super().__init__(
+            id=id,
+            native=False,
+            local=FunctionToolset(id=id),  # pyright: ignore[reportArgumentType]
+            defer_loading=defer_loading,
+        )
         self._prepare = prepare
         self._on_error = on_error
         self._selected_tools = tools
@@ -685,6 +691,7 @@ class MCPServer(NativeMCP[AgentContext]):
                     native=False,
                     local=_ProgressToolset(toolset),  # pyright: ignore[reportArgumentType]
                     allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
+                    defer_loading=self.defer_loading,
                 )
             )
             # Inspect the entered transport without unwrapping the tool projection.

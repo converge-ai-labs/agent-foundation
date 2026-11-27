@@ -508,6 +508,48 @@ async def test_local_mcp_invocation_retains_client_after_foreground_run_close():
 
 
 @pytest.mark.anyio
+async def test_mcp_server_defers_prepared_tools_until_loaded() -> None:
+    from a13n_harness.mcp import MCPServer as HarnessMCPServer
+    from fastmcp import Client, FastMCP
+
+    server = FastMCP("Lookup")
+
+    @server.tool
+    def lookup() -> str:
+        return "found"
+
+    async def factory() -> MCPToolset[AgentContext]:
+        return MCPToolset(Client(server), id="lookup-server")
+
+    async def prepare(ctx):
+        return factory
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        returns = _tool_returns(messages)
+        visible = {tool.name for tool in info.function_tools}
+        if not returns:
+            assert visible == {"load_capability"}
+            yield {0: DeltaToolCall(name="load_capability", json_args='{"id":"lookup-server"}', tool_call_id="load-1")}
+        elif len(returns) == 1:
+            assert "lookup" in visible
+            yield {0: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="lookup-1")}
+        else:
+            assert returns[-1].content == "found"
+            yield "done"
+
+    capability = HarnessMCPServer(id="lookup-server", prepare=prepare, defer_loading=True)
+    assert capability.defer_loading
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(capability,),
+    )
+    result = await executable.run("Load the lookup tool")
+    assert result.output_or_raise() == "done"
+
+
+@pytest.mark.anyio
 async def test_native_mcp_app_metadata_survives_parallel_calls_and_state_roundtrip() -> None:
     from a13n_harness import HarnessState
     from fastmcp import FastMCP
