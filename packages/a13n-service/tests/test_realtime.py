@@ -31,7 +31,7 @@ from a13n_service.settings import Providers
 from pydantic import SecretStr
 from pydantic_ai import ApprovalRequired, ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import BinaryAudio, ModelMessage, RealtimeTurnCompleteEvent
+from pydantic_ai.messages import BinaryAudio, ModelMessage, RealtimeSessionReconnectEvent, RealtimeTurnCompleteEvent
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.realtime import RealtimeModelSettings, WebRTCAnswer, WebRTCSession
 from pydantic_ai.realtime.codec import (
@@ -1262,6 +1262,63 @@ async def test_approval_close_straddles_dispatch_gate(
             items = await runs_kit.items(service, ticket["run_id"])
             item = next(i for i in items["items"] if i["content"].get("toolCallId") == "call_order")
             assert item["content"]["outcome"] == ("interrupted" if after_dispatch else "expired")
+
+
+async def test_provider_reconnect_expires_pending_approval_without_running_tool(executing, runs_kit, monkeypatch):
+    provider = ScriptedRealtimeProvider()
+    monkeypatch.setattr(OpenAIRealtimeModel, "connect", provider.connect)
+    lookup = Mock()
+
+    async def lookup_order() -> str:
+        lookup()
+        return "order found"
+
+    build = agent.build
+
+    def with_tool(root, *, capabilities, **kwargs):
+        return build(
+            root,
+            capabilities=lambda node: [
+                *capabilities(node),
+                Capability(tools=[Tool(lookup_order, requires_approval=True)]),
+            ],
+            **kwargs,
+        )
+
+    monkeypatch.setattr(agent, "build", with_tool)
+    voice = await create_voice_agent(executing, runs_kit)
+    response = await executing.client.post(f"{executing.api}/realtime/sessions", json={"agent_id": voice["id"]})
+    assert response.status_code == 201, response.text
+    ticket = response.json()
+    async with (
+        serve_http(executing.app, lifespan="off") as url,
+        connect(
+            url.replace("http://", "ws://") + ticket["websocket_path"],
+            subprotocols=[ticket["subprotocol"], ticket["ticket"]],
+        ) as socket,
+        asyncio.timeout(15),
+    ):
+        assert json.loads(await socket.recv())["type"] == "accepted"
+        assert json.loads(await socket.recv())["type"] == "ready"
+        await provider.connection.incoming.put(
+            ToolCall("call_order", tool_name="lookup_order", args="{}", response_usage_follows=True)
+        )
+        await provider.connection.incoming.put(ResponseDone())
+        approval = json.loads(await socket.recv())
+        assert approval["type"] == "approval_required" and approval["call_id"] == "call_order"
+
+        await provider.connection.incoming.put(RealtimeSessionReconnectEvent(state_restored=False))
+        assert json.loads(await socket.recv()) == {"type": "approval_expired", "call_id": "call_order"}
+        await socket.send('{"type":"approval","call_id":"call_order","approve":true}')
+        await socket.send('{"type":"stop"}')
+        assert json.loads(await socket.recv())["type"] == "sealed"
+
+    run = await runs_kit.sealed(executing, ticket["run_id"])
+    assert run["status"] == "completed"
+    lookup.assert_not_called()
+    items = await runs_kit.items(executing, run["id"])
+    tool = next(i for i in items["items"] if i["content"].get("toolCallId") == "call_order")
+    assert tool["content"]["outcome"] == "expired"
 
 
 async def test_missed_sealed_receipt_recovers_via_http(settings, serve, service_app, runs_kit, monkeypatch):

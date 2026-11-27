@@ -79,6 +79,7 @@ function mount({
   status = "completed",
   historical = false,
   realtime = false,
+  realtimePending,
   runOverrides,
   origin = "new",
   reject = false,
@@ -92,6 +93,7 @@ function mount({
   status?: Schema["RunStatus"];
   historical?: boolean;
   realtime?: boolean;
+  realtimePending?: Promise<void>;
   runOverrides?: Partial<Schema["RunView"]>;
   origin?: Schema["ThreadView"]["origin"];
   reject?: boolean;
@@ -202,12 +204,14 @@ function mount({
         }
         return Response.json(current);
       }
-      if (path.endsWith("/realtime"))
+      if (path.endsWith("/realtime")) {
+        await realtimePending;
         return Response.json({
           realtime,
           can_start: realtime,
           accepts_text: true,
         });
+      }
       reads.push(path);
       if (path.endsWith("/environments")) return Response.json({ items: [] });
       if (
@@ -298,7 +302,11 @@ it("continues the completed head with a next-run message and navigates to its Ru
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Next test" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  const send = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Send message",
+  });
+  await waitFor(() => expect(send.disabled).toBe(false));
+  fireEvent.click(send);
   await waitFor(() =>
     expect(screen.getByTestId("location").textContent).toContain("/runs/next"),
   );
@@ -672,6 +680,28 @@ it.each([
     ).toBe(visible);
   },
 );
+
+it("blocks HTTP submit without disabling the Run draft during the availability check", async () => {
+  let resolve!: () => void;
+  const realtimePending = new Promise<void>((done) => {
+    resolve = done;
+  });
+  const posts = mount({ realtime: true, realtimePending });
+  const editor = screen.getByRole<HTMLTextAreaElement>("textbox", {
+    name: "Message",
+  });
+  expect(editor.disabled).toBe(false);
+  fireEvent.change(editor, { target: { value: "Continue aloud" } });
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Send message" })
+      .disabled,
+  ).toBe(true);
+  fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
+  expect(posts).toHaveLength(0);
+  resolve();
+  await screen.findByRole("button", { name: "Start voice chat" });
+  expect(editor.value).toBe("Continue aloud");
+});
 
 it("keeps the dialing call mounted when the Thread announces its successor first", async () => {
   let resume!: () => void;

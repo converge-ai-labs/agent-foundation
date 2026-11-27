@@ -61,12 +61,15 @@ async def test_retained_call_completes_between_voice_sessions(executing, runs_ki
     monkeypatch.setattr(OpenAIRealtimeModel, "connect", provider.connect)
     await create_voice_agent(service, runs_kit)
     server = FastMCP("Retained work")
+    first_started = asyncio.Event()
     finish = {name: asyncio.Event() for name in ("first", "third")}
     calls = []
 
     @server.tool
     async def slow(name: str) -> str:
         calls.append(name)
+        if name == "first":
+            first_started.set()
         await finish[name].wait()
         return "completed between conversations"
 
@@ -83,6 +86,7 @@ async def test_retained_call_completes_between_voice_sessions(executing, runs_ki
             try:
                 async with call(service, url, parent) as (_, first):
                     receipt = await invoke(provider, "slow", {"name": "first"})
+                    await first_started.wait()
                     (record,) = await service.runtime.executions.summarize(first["thread_id"])
                     assert record.status == "running" and record.execution_id in str(receipt)
             finally:

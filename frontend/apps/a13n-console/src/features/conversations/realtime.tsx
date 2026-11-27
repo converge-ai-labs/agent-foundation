@@ -18,6 +18,7 @@ import { useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
+import { delay } from "../../service-client/transport";
 import { data, type Schema } from "../../shared/api";
 import { Composer } from "./composer";
 import captureModule from "./realtime-capture.js?url&no-inline";
@@ -101,6 +102,7 @@ type Approval = {
 
 type Event =
   | Approval
+  | { type: "approval_expired"; call_id: string }
   | ({ type: "accepted" } & RealtimeReceipt)
   | { type: "sealed"; run_id: string; status: string }
   | {
@@ -517,6 +519,11 @@ function useRealtimeCall() {
               : [...items, event],
           );
         }
+        if (event.type === "approval_expired") {
+          setApprovals((items) =>
+            items.filter((item) => item.call_id !== event.call_id),
+          );
+        }
         if (event.type === "error") {
           setError(event.message);
           // The close handler checks whether the ticket already created a Run.
@@ -544,12 +551,21 @@ function useRealtimeCall() {
               abort.signal,
               AbortSignal.timeout(20000),
             ]);
-            const run = await api.GET("/api/v1/runs/{run_id}", {
-              params: { path: { run_id: receipt.run_id } },
-              signal,
-            });
-            if (run.response.status === 404) return;
-            data(run);
+            // Retry an early 404 quickly and allow for the 10-second redemption window.
+            const retryDelays = [500, 1000, 2000, 3000, 4000];
+            for (let attempt = 0; ; attempt++) {
+              const run = await api.GET("/api/v1/runs/{run_id}", {
+                params: { path: { run_id: receipt.run_id } },
+                signal,
+              });
+              if (run.response.status !== 404) {
+                data(run);
+                break;
+              }
+              const retryDelay = retryDelays[attempt];
+              if (retryDelay === undefined) return;
+              await delay(retryDelay, signal);
+            }
           }
           if (!disposed) {
             void invalidateConversation(cache, workspace.id, {

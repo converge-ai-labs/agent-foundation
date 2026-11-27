@@ -202,10 +202,11 @@ A Worker claims a realtime Run in a dedicated slot. Each Run with this trigger h
 
 Each pending approval belongs to one live Attempt and one tool `call_id`. The Worker sends `approval_required` with the ID, tool name and arguments. Several requests can be pending at once.
 
-| Event                                              | Worker and client behavior                                                                                                                                                                  |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Client sends `approval` with a matching pending ID | Accept at most one decision. An explicit rejection records `denied`. Approval allows native argument revalidation and a dispatch check against the current lease, authority and connection. |
-| Call disconnects or seals                          | The client clears all prompts for that connection. A new Run requires its own approvals.                                                                                                    |
+| Event                                                 | Worker and client behavior                                                                                                                                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client sends `approval` with a matching pending ID    | Accept at most one decision. An explicit rejection records `denied`. Approval allows native argument revalidation and a dispatch check against the current lease, authority and connection. |
+| Provider reconnects without restoring in-flight state | `approval_expired` identifies each invalidated prompt by `call_id`. The client removes those prompts and keeps the call open.                                                               |
+| Call disconnects or seals                             | The client clears all prompts for that connection. A new Run requires its own approvals.                                                                                                    |
 
 Sending a decision dismisses the local prompt. Clients use the recorded tool outcome to determine what executed.
 

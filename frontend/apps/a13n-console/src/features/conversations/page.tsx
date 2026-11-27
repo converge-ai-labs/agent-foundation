@@ -202,11 +202,12 @@ export function NewConversation() {
     options.revision || selected?.default_revision_id,
   );
   const revisionId = options.revision || undefined;
-  const realtime = useRealtimeAvailability({
+  const availability = useRealtimeAvailability({
     agentId: selected?.id,
     revisionId,
     model: options.model || undefined,
-  }).data;
+  });
+  const realtime = availability.data;
   const controls = (
     <>
       <RunOptions
@@ -281,7 +282,7 @@ export function NewConversation() {
                       options: selectedOptions,
                       memories,
                       environment,
-                    } = options.build();
+                    } = options.build(true);
                     return {
                       options: selectedOptions,
                       memories,
@@ -310,7 +311,10 @@ export function NewConversation() {
                 : undefined
             }
             disabled={!can("run") || !selected}
-            submitDisabled={memory !== null && !validSpaceSelection(memory)}
+            submitDisabled={
+              (availability.isEnabled && availability.isPending) ||
+              (memory !== null && !validSpaceSelection(memory))
+            }
             agentName={selected?.name}
             options={controls}
             submit={async (payload) => {

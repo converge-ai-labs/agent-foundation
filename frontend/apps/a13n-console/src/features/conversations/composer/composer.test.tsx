@@ -254,8 +254,12 @@ it("uses the ordinary composer shortcuts for a voice draft", async () => {
   });
 });
 
-it("transfers call controls to the accepted Run while the same socket becomes ready", async () => {
-  const receipt = { session_id: "session", thread_id: "thread", run_id: "run" };
+it.each([true, false])("follows a Run (accepted: %s)", async (seen) => {
+  const receipt = {
+    session_id: "session",
+    thread_id: "thread",
+    run_id: "run",
+  };
   const path = "/workspace/design/sessions/session/threads/thread/runs/run";
   ticketRequest.mockResolvedValue({
     response: new Response(),
@@ -268,6 +272,8 @@ it("transfers call controls to the accepted Run while the same socket becomes re
   });
   const close = vi.fn();
   const send = vi.fn();
+  const accepted = vi.fn();
+  getRun.mockReset();
   let socket: Socket;
   class Socket {
     static OPEN = 1;
@@ -276,6 +282,7 @@ it("transfers call controls to the accepted Run while the same socket becomes re
     close = close;
     send = send;
     onmessage?: (event: MessageEvent) => void;
+    onclose?: (event: CloseEvent) => void;
     constructor() {
       socket = this;
     }
@@ -333,8 +340,15 @@ it("transfers call controls to the accepted Run while the same socket becomes re
       <RealtimeComposer
         agentId="agent"
         displayedRunId={inRun ? "run" : undefined}
-        availability={{ realtime: true, can_start: !inRun, accepts_text: true }}
-        onAccepted={() => navigate(path)}
+        availability={{
+          realtime: true,
+          can_start: !inRun,
+          accepts_text: true,
+        }}
+        onAccepted={(receipt) => {
+          accepted(receipt);
+          navigate(path);
+        }}
       />
     );
   }
@@ -359,11 +373,49 @@ it("transfers call controls to the accepted Run while the same socket becomes re
     );
     fireEvent.click(screen.getByRole("button", { name: "Start voice chat" }));
     await waitFor(() => expect(socket?.onmessage).toBeDefined());
+    if (!seen) {
+      getRun.mockResolvedValueOnce({
+        response: new Response(null, { status: 404 }),
+      });
+      getRun.mockResolvedValueOnce({
+        response: new Response(),
+        data: { sealed_at: null },
+      });
+      vi.useFakeTimers();
+      await act(async () =>
+        socket.onclose?.(new CloseEvent("close", { code: 1006 })),
+      );
+      expect(getRun).toHaveBeenCalledOnce();
+      expect(accepted).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(500));
+      expect(getRun).toHaveBeenCalledTimes(2);
+      expect(accepted).toHaveBeenCalledExactlyOnceWith(receipt);
+      return;
+    }
     receive({ type: "accepted", ...receipt });
-    receive({ type: "ready", accepts_text: true, supports_interruption: true });
+    receive({
+      type: "ready",
+      accepts_text: true,
+      supports_interruption: true,
+    });
     expect(
       screen.getByRole("button", { name: "Interrupt response" }),
     ).toBeTruthy();
+    receive({
+      type: "approval_required",
+      call_id: "old",
+      name: "Lookup order",
+      arguments: "{}",
+    });
+    receive({
+      type: "approval_required",
+      call_id: "new",
+      name: "Look up stock",
+      arguments: "{}",
+    });
+    receive({ type: "approval_expired", call_id: "old" });
+    expect(screen.queryByText("Lookup order")).toBeNull();
+    expect(screen.getByText("Look up stock")).toBeTruthy();
     const speech = () =>
       port.onmessage?.(new MessageEvent("message", { data: "speech" }));
     speech();

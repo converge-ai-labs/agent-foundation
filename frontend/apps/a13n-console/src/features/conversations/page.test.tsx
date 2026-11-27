@@ -680,8 +680,9 @@ it("prefills the first message from the link, leaving sending to the user", asyn
   cache.clear();
 });
 
-it("retains Run options and Session memory when starting a voice conversation", async () => {
+it("preserves an editable draft and blocks HTTP submit while checking realtime availability", async () => {
   allowed = ["run"];
+  const posts = vi.fn();
   const user = userEvent.setup();
   let finishAvailability!: () => void;
   const availability = new Promise<void>((resolve) => {
@@ -691,7 +692,9 @@ it("retains Run options and Session memory when starting a voice conversation", 
     baseUrl: "https://service.example",
     auth: { type: "session" },
     fetch: async (input, init) => {
-      const url = new URL(new Request(input, init).url);
+      const request = new Request(input, init);
+      if (request.method === "POST") posts(request.url);
+      const url = new URL(request.url);
       if (url.pathname.endsWith("/realtime")) {
         await availability;
         return Response.json({
@@ -725,6 +728,11 @@ it("retains Run options and Session memory when starting a voice conversation", 
     expect(editor.disabled || editor.matches(":disabled")).toBe(false),
   );
   await user.type(editor, "Keep my draft");
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled,
+  ).toBe(true);
+  await user.keyboard("{Control>}{Enter}{/Control}");
+  expect(posts).not.toHaveBeenCalled();
   finishAvailability();
   expect(
     await screen.findByRole("button", { name: "Start voice chat" }),

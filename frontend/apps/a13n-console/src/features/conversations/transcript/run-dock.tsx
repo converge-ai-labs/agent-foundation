@@ -122,13 +122,13 @@ export function RunDock({
     run.status !== "waiting";
   const detachedVoice = active && run.trigger === "realtime" && !activeVoice;
   const revisionId = options.revision || undefined;
-  const availableVoice = useRealtimeAvailability({
+  const availability = useRealtimeAvailability({
     agentId: interactive && idle ? run.agent_id : undefined,
     revisionId,
     model: options.model || undefined,
     threadId: thread.id,
-  }).data;
-  const realtime = activeVoice ?? availableVoice;
+  });
+  const realtime = activeVoice ?? availability.data;
   const navigate = useNavigate();
   const current =
     !!activeVoice ||
@@ -284,7 +284,7 @@ export function RunDock({
                           options:
                             run.revision_selection === "snapshot"
                               ? run.options
-                              : options.build().options,
+                              : options.build(true).options,
                         }),
                         onAccepted: (receipt) => {
                           options.reset();
@@ -317,6 +317,9 @@ export function RunDock({
                           : t("Message your agent…")
                   }
                   disabled={!can("run") || (following && latest !== run.id)}
+                  submitDisabled={
+                    availability.isEnabled && availability.isPending
+                  }
                   options={controls}
                   stop={canStop ? () => interrupt.mutate() : undefined}
                   stopping={interrupt.isPending}

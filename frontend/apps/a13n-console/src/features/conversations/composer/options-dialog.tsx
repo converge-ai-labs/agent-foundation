@@ -197,8 +197,9 @@ export function useRunOptions() {
     setAdvanced,
     labels,
     setLabels,
-    build: (): Options => {
-      const limit = requestLimit ? Number(requestLimit) : undefined;
+    build: (includeRequestLimit = false): Options => {
+      const limit =
+        includeRequestLimit && requestLimit ? Number(requestLimit) : undefined;
       if (
         limit !== undefined &&
         (!Number.isInteger(limit) || limit < 1 || limit > 10000)
@@ -405,7 +406,7 @@ export function RunOptionsDialog({
               variant="outline"
               onClick={() => {
                 try {
-                  options.build();
+                  options.build(showRequestLimit);
                   setValidation(undefined);
                   onOpenChange(false);
                 } catch (error) {

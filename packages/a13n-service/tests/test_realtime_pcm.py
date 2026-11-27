@@ -56,6 +56,17 @@ async def test_saturated_output_preserves_signaling_and_recent_audio():
     assert await control.receive() == b"sealed"
 
 
+def test_failed_run_reserves_last_outgoing_slot_for_sealed():
+    channel = Channel("actor", "workspace", outgoing=asyncio.Queue(2))
+    channel.emit({"type": "ready"})
+    channel.finish("run", "failed")
+
+    assert channel.outgoing.get_nowait() == {"type": "ready"}
+    assert channel.outgoing.get_nowait() == {"type": "sealed", "run_id": "run", "status": "failed"}
+    assert channel.finished.is_set()
+    assert not channel.closed.is_set()
+
+
 @pytest.mark.parametrize("audio_first", [True, False])
 async def test_consecutive_commits_preserve_input_boundaries(audio_first):
     control, worker = pair()
@@ -224,7 +235,48 @@ async def test_relay_rejects_input_before_worker_attach():
             )
 
 
-async def test_control_buffers_new_epoch_pcm_until_interruption_receipt():
+async def test_relay_keeps_sealed_outcome_when_reader_fails_on_same_tick():
+    from a13n_service.runs.realtime import relay
+    from a13n_service.runs.realtime_transport import unavailable
+
+    control, _ = pair()
+    socket = AsyncMock()
+    sealed = {"type": "sealed", "run_id": "run", "status": "completed"}
+    frames = iter((b"a", b'j{"type":"ready"}', b'j{"type":"sealed","run_id":"run","status":"completed"}'))
+    writer_waiting, reader_waiting, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def receive(**kwargs):
+        if frame := next(frames, None):
+            return frame
+        writer_waiting.set()
+        await release.wait()
+        return b"finish"
+
+    async def send(frame):
+        if frame.startswith(b"j"):
+            reader_waiting.set()
+            await release.wait()
+            raise unavailable()
+
+    control.receive = receive
+    control.send = send
+
+    async def input_after_seal():
+        await writer_waiting.wait()
+        return {"type": "websocket.receive", "text": '{"type":"text","text":"late input"}'}
+
+    socket.receive.side_effect = input_after_seal
+    async with asyncio.timeout(2), asyncio.TaskGroup() as group:
+        outcome = group.create_task(
+            relay(socket, control, offer=None, authorize_attachment=AsyncMock(), reauthorize=AsyncMock(), interval=60)
+        )
+        await reader_waiting.wait()
+        release.set()
+    assert outcome.result() is False
+    assert socket.send_json.await_args.args == (sealed,)
+
+
+async def test_control_orders_pcm_after_ready_and_interruption_receipts():
     from a13n_service.runs.realtime import relay
 
     control, _ = pair()
@@ -247,8 +299,11 @@ async def test_control_buffers_new_epoch_pcm_until_interruption_receipt():
         )
         try:
             await events.put(b"a")
+            # Pub/Sub PCM can reach Control before the ordered ready frame.
+            await events.put(b"b" + (0).to_bytes(8) + b"opening")
             await events.put(b'j{"type":"ready"}')
             assert await outgoing.get() == {"type": "ready"}
+            assert await outgoing.get() == b"opening"
             await incoming.put({"type": "websocket.receive", "text": '{"type":"interrupt","played_bytes":0}'})
             while not control.epoch:
                 await asyncio.sleep(0)

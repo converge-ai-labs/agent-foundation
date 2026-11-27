@@ -61,13 +61,16 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import HandleDeferredToolCalls
 from pydantic_ai.messages import (
     EnqueuedMessagesEvent,
+    FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
     RealtimeInputSpeechStartEvent,
     RealtimeOutputSpeechStartEvent,
     RealtimeResponseInterruptedEvent,
+    RealtimeSessionReconnectEvent,
     RealtimeTurnCompleteEvent,
     TextContent,
+    ToolReturnPart,
     UserContent,
 )
 from pydantic_ai.models import Model, ModelResolutionContext
@@ -964,14 +967,19 @@ class _Attempt:
             else:
                 ready["transport"] = "webrtc"
 
+            audio: asyncio.Task[None] | None = None
+
             def start_input() -> asyncio.Task[None]:
+                nonlocal audio
                 channel.emit(ready)
+                if pcm is not None:
+                    audio = tasks.create_task(self._realtime_audio(pcm, channel))
                 return tasks.create_task(self._realtime_input(stream, channel, output, tasks))
 
             receive = start_input() if opening_id is None else None
-            audio = tasks.create_task(self._realtime_audio(pcm, channel)) if pcm is not None else None
             stop = tasks.create_task(self._close_realtime(stream, channel))
             notices = tasks.create_task(self._receive_realtime_notices(stream, channel))
+            interrupted_approvals: set[str] = set()
             try:
                 async for item in stream:
                     await self._observe(item, output)
@@ -994,6 +1002,21 @@ class _Attempt:
                             and not channel.closed.is_set()
                         ):
                             channel.emit({"type": "barge_in"})
+                        # The provider settles lost tool calls before reporting reconnect. Keep
+                        # their IDs so a prompt from the new connection is not cleared with them.
+                        if (
+                            isinstance(item.event, FunctionToolResultEvent)
+                            and isinstance(item.event.part, ToolReturnPart)
+                            and item.event.part.outcome == "interrupted"
+                            and item.event.part.tool_call_id in channel.decisions
+                            and channel.decisions[item.event.part.tool_call_id] is None
+                        ):
+                            interrupted_approvals.add(item.event.part.tool_call_id)
+                        if isinstance(item.event, RealtimeSessionReconnectEvent) and not item.event.state_restored:
+                            if not channel.closed.is_set():
+                                for call_id in interrupted_approvals:
+                                    channel.emit({"type": "approval_expired", "call_id": call_id})
+                            interrupted_approvals.clear()
                         if isinstance(item.event, (RealtimeTurnCompleteEvent, EnqueuedMessagesEvent)):
                             await self.boundaries.stage_live(stream.export_state)
                         if not channel.closed.is_set() and (transcript := transcripts.observe(item)) is not None:

@@ -101,7 +101,7 @@ class Channel:
             raise ServiceError("unavailable", "The realtime client is not keeping up") from None
 
     def finish(self, run_id: str, status: str) -> None:
-        if status == "failed" and not self.outgoing.full():
+        if status == "failed" and self.outgoing.qsize() + 2 <= self.outgoing.maxsize:
             self.outgoing.put_nowait({"type": "error", "message": "The realtime run failed"})
         self.emit({"type": "sealed", "run_id": run_id, "status": status})
         self.finished.set()
@@ -699,7 +699,7 @@ async def relay(
     attached = asyncio.Event()
     ready = asyncio.Event()
 
-    # A new epoch's binary frames may arrive before its ordered interruption receipt.
+    # Pub/Sub PCM may arrive before ordered ready or interruption frames.
     waiting_pcm: deque[bytes] = deque(maxlen=32)
 
     async def pulse() -> None:
@@ -771,18 +771,19 @@ async def relay(
                 continue
             async with asyncio.timeout(5):
                 if raw.startswith(b"b"):
-                    if ready.is_set():
-                        if acknowledged_epoch == pipe.epoch:
-                            await play(raw)
-                        else:
-                            waiting_pcm.append(raw)
+                    if ready.is_set() and acknowledged_epoch == pipe.epoch:
+                        await play(raw)
+                    else:
+                        waiting_pcm.append(raw)
                 else:
                     event = _OUTPUT.validate_json(raw[1:])
-                    if event.get("type") == "ready":
+                    kind = event.get("type")
+                    if kind == "ready":
                         ready.set()
                     await socket.send_json(event)
-                    if event.get("type") == "interrupted":
+                    if kind == "interrupted":
                         acknowledged_epoch += 1
+                    if ready.is_set() and kind in {"ready", "interrupted"}:
                         while waiting_pcm and acknowledged_epoch == pipe.epoch:
                             await play(waiting_pcm.popleft())
 
@@ -796,12 +797,12 @@ async def relay(
     tasks = (reader, writer, asyncio.create_task(pulse()), asyncio.create_task(verify()))
     try:
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        if reader in done and reader.result():
+        if reader in done and not reader.cancelled() and reader.exception() is None and reader.result():
             return True
         if writer in done:
             # A terminal frame follows the committed outcome. The Worker can unsubscribe before our next ping.
             writer.result()
-            return reader in done and reader.exception() is None and reader.result()
+            return False
         for task in done:
             task.result()
         if reader not in done:
@@ -850,7 +851,11 @@ async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channe
                 await workspace_scope(session, actor, offer.workspace_id, "run")
             if channel.failed:
                 raise unavailable()
-            if await pipe.redis.get(pipe.inbox + ":close") == pipe.fence or channel.closed.is_set():
+            try:
+                closed = await pipe.redis.get(pipe.inbox + ":close")
+            except RedisError:
+                raise unavailable() from None
+            if closed == pipe.fence or channel.closed.is_set():
                 return False
             if call_id in channel.dispatched or not channel.decisions.get(call_id, True):
                 raise ServiceError("conflict", "This tool call was already decided")
