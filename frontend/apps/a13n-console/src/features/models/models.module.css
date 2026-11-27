@@ -111,9 +111,7 @@
   min-width: 0;
   width: 100%;
 }
-/* Wide enough that the Model list opens flush with it rather than past the card. */
 .mediaPicker {
-  width: 320px;
   max-width: 100%;
   min-width: 0;
 }
@@ -148,9 +146,6 @@
 @container (max-width: 420px) {
   .mediaControl {
     justify-content: flex-start;
-  }
-  .mediaPicker {
-    width: 100%;
   }
 }
 

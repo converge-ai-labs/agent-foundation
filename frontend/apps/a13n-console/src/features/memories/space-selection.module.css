@@ -82,8 +82,6 @@
   gap: 12px;
 }
 .alias {
-  display: grid;
-  gap: 6px;
   min-width: 0;
 }
 @media (width < 480px) {

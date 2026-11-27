@@ -269,8 +269,8 @@ function ProfileForm({
           label={nameLabel}
           controlId={editable ? nameId : undefined}
         >
-          <div className={styles.control}>
-            {editable ? (
+          {editable ? (
+            <div className={styles.control}>
               <Input
                 required
                 id={nameId}
@@ -279,10 +279,10 @@ function ProfileForm({
                 onChange={(event) => setName(event.target.value)}
                 maxLength={128}
               />
-            ) : (
-              <span className="select-text text-sm">{name}</span>
-            )}
-          </div>
+            </div>
+          ) : (
+            <span className="select-text text-sm">{name}</span>
+          )}
         </SettingsRow>
         <SettingsRow label={t("ID")}>
           <CopyableId value={current.value.id} />

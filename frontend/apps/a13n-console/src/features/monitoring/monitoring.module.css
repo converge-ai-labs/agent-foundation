@@ -400,7 +400,10 @@
 }
 .row > * {
   flex: 1;
-  min-width: 120px;
+  min-width: min(120px, 100%);
+}
+.row > [data-field-layout="stacked"] > [data-slot="select-trigger"] {
+  width: 100%;
 }
 .query {
   padding: 16px;

@@ -1,5 +1,7 @@
 /* Field guidance belongs beside its label, not at the far edge of the row. */
 [data-slot="field-label-row"]:has([data-field-help]) {
+  flex-direction: row;
+  align-items: center;
   justify-content: flex-start;
   flex-wrap: nowrap;
   gap: 4px;
@@ -15,7 +17,6 @@
   min-width: min(7.5rem, 100%);
   max-width: min(28rem, 100%);
   flex: none;
-  justify-self: end;
 }
 
 [data-slot="field"]:has(> .sr-only):has(> [role="combobox"]) {

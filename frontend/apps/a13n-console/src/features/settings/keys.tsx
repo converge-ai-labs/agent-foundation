@@ -25,7 +25,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm } from "../../shared/dialogs";
-import { SecretReveal } from "../../shared/forms";
+import { FormActions, SecretReveal } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
 import { CreateKeyForm, useCreateKey } from "./create-key";
@@ -122,7 +122,10 @@ export function ApiKeys({
       {actions === "header" ? (
         <PageActions>{create}</PageActions>
       ) : (
-        create && <div className={settings.inlineAction}>{create}</div>
+        create &&
+        (!query.data || items.length > 0) && (
+          <div className={settings.inlineAction}>{create}</div>
+        )
       )}
       {query.isPending ? (
         <Loading
@@ -307,11 +310,12 @@ function CreateKey({
             label={t("API key")}
             caution={t("Copy this key now. It will not be shown again.")}
           />
-          <footer className={styles.formActions}>
-            <Button type="button" onClick={close}>
-              {t("Done")}
-            </Button>
-          </footer>
+          <FormActions
+            pending={false}
+            dismiss
+            cancelLabel={t("Done")}
+            onCancel={close}
+          />
         </div>
       ) : (
         open && <CreateKeyForm create={create} onCancel={close} />

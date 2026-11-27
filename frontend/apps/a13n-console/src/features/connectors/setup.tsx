@@ -1,6 +1,6 @@
 import { Button, FormField, Input } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -26,7 +26,8 @@ export function ConnectionSetup({
   connector,
   provider,
   onStarted,
-}: SetupTarget & { onStarted?: () => void }) {
+  children,
+}: SetupTarget & { onStarted?: () => void; children?: ReactNode }) {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     cache = useQueryClient(),
@@ -209,6 +210,7 @@ export function ConnectionSetup({
             </>
           )}
           <ErrorNotice error={launch.error} />
+          {children}
           {definition.data.unavailable_reason ? (
             <div className={local.unavailable}>
               <p role="status">{t(definition.data.unavailable_reason)}</p>
@@ -232,6 +234,7 @@ export function ConnectionSetup({
           )}
         </form>
       )}
+      {(definition.isPending || definition.error) && children}
     </div>
   );
 }

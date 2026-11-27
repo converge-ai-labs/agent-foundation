@@ -198,13 +198,15 @@ function NewSourceEditor({ onClose: onClosed }: { onClose: () => void }) {
       {preset.isPending ? (
         <Loading />
       ) : (
-        <>
+        <div className={styles.fields}>
           <ErrorNotice error={preset.error} />
-          <Button onClick={() => void preset.refetch()}>{t("Retry")}</Button>
-          <Button variant="ghost" onClick={() => setManual(true)}>
-            {t("Configure manually")}
-          </Button>
-        </>
+          <div className={styles.queryActions}>
+            <Button onClick={() => void preset.refetch()}>{t("Retry")}</Button>
+            <Button variant="ghost" onClick={() => setManual(true)}>
+              {t("Configure manually")}
+            </Button>
+          </div>
+        </div>
       )}
     </ModalFrame>
   );
@@ -254,7 +256,7 @@ function CredentialEditor({
         <span>
           {label} · {t(saved ? "Saved" : "Not configured")}
         </span>
-        <div>
+        <div className={styles.queryActions}>
           {value.mode === "keep" ? (
             <Button
               type="button"
@@ -545,6 +547,7 @@ function SourceEditor({
               </FormField>
               <div className={styles.row}>
                 <ChoiceField
+                  data-field-layout="stacked"
                   label={t("Protocol")}
                   readOnly={readonly || collection === "proxy"}
                   value={collection === "proxy" ? "http/protobuf" : protocol}
@@ -556,7 +559,10 @@ function SourceEditor({
                     setProtocol(value === "grpc" ? "grpc" : "http/protobuf")
                   }
                 />
-                <FormField label={t("Export interval (seconds)")}>
+                <FormField
+                  data-field-layout="stacked"
+                  label={t("Export interval (seconds)")}
+                >
                   <Input
                     type="number"
                     min={5}
@@ -666,6 +672,29 @@ function SourceEditor({
             dismiss={readonly}
             cancelLabel={readonly ? t("Close") : undefined}
             onCancel={onClose}
+            beforeCancel={
+              basis &&
+              !readonly &&
+              !save.isPending && (
+                <Confirm
+                  title={t("Delete data source")}
+                  subject={basis.name}
+                  description={t(
+                    "Unbind this source from Environments and Devices before deleting it.",
+                  )}
+                  trigger={t("Delete data source")}
+                  triggerVariant="ghost"
+                  danger
+                  action={() =>
+                    http.DELETE("/api/v1/metrics-data-sources/{source_id}", {
+                      params: { path: { source_id: basis.id } },
+                      headers: ifMatch(rowTag(basis)),
+                    })
+                  }
+                  onSuccess={done}
+                />
+              )
+            }
             leading={
               basis?.config.query &&
               can("admin") && (
@@ -682,25 +711,6 @@ function SourceEditor({
           />
         </fieldset>
       </form>
-      {basis && !readonly && !save.isPending && (
-        <Confirm
-          title={t("Delete data source")}
-          subject={basis.name}
-          description={t(
-            "Unbind this source from Environments and Devices before deleting it.",
-          )}
-          trigger={t("Delete data source")}
-          triggerVariant="ghost"
-          danger
-          action={() =>
-            http.DELETE("/api/v1/metrics-data-sources/{source_id}", {
-              params: { path: { source_id: basis.id } },
-              headers: ifMatch(rowTag(basis)),
-            })
-          }
-          onSuccess={done}
-        />
-      )}
     </ModalFrame>
   );
 }

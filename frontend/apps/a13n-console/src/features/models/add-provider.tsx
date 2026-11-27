@@ -1,4 +1,4 @@
-import { Button, DisclosureSection } from "a13n-ui";
+import { DisclosureSection } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
@@ -208,9 +208,12 @@ export function ProviderConnectForm({
     return (
       <CatalogStep backLabel={t("All providers")}>
         <ProviderAuthorization provider={draft.createdProvider} />
-        <Button type="button" onClick={draft.close}>
-          {t("Done")}
-        </Button>
+        <FormActions
+          pending={false}
+          dismiss
+          cancelLabel={t("Done")}
+          onCancel={draft.close}
+        />
       </CatalogStep>
     );
   return (

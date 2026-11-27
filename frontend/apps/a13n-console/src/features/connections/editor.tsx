@@ -447,7 +447,6 @@ function ConnectionSettings({
               authority !== savedAuthority && (
                 <Button
                   type="button"
-                  size="sm"
                   aria-label={t("Save server instructions setting")}
                   disabled={save.isPending}
                   loading={save.isPending && !!save.variables?.config}

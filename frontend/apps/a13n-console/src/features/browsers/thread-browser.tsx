@@ -109,7 +109,9 @@ function ThreadBrowser({
         />
       ) : (
         !binding.error && (
-          <div className="flex items-start justify-between gap-3">
+          <div
+            className={`flex justify-between gap-3 ${selection ? "items-start" : "items-center"}`}
+          >
             {selection ? (
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">

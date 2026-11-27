@@ -2,7 +2,7 @@ import { Button, ModalFrame } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../shared/feedback";
-import { TextAreaField } from "../../shared/forms";
+import { FormActions, TextAreaField } from "../../shared/forms";
 import { sessionConfiguration } from "../../shared/forms/validation";
 import shared from "../../shared/shared.module.css";
 import styles from "./credentials.module.css";
@@ -65,7 +65,22 @@ function JsonDraft({
   const [text, setText] = useState(JSON.stringify(value, null, 2));
   const [error, setError] = useState<Error>();
   return (
-    <div className={shared.stack}>
+    <form
+      className={shared.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          onApply(sessionConfiguration(text));
+        } catch (error) {
+          setError(
+            error instanceof Error
+              ? error
+              : new Error(t("Invalid configuration")),
+          );
+        }
+      }}
+    >
       <TextAreaField
         label={t("Session configuration JSON")}
         value={text}
@@ -74,27 +89,11 @@ function JsonDraft({
         rows={14}
       />
       <ErrorNotice error={error} />
-      <div className={styles.actions}>
-        <Button type="button" variant="outline" onClick={onClose}>
-          {t("Cancel")}
-        </Button>
-        <Button
-          type="button"
-          onClick={() => {
-            try {
-              onApply(sessionConfiguration(text));
-            } catch (error) {
-              setError(
-                error instanceof Error
-                  ? error
-                  : new Error(t("Invalid configuration")),
-              );
-            }
-          }}
-        >
-          {t("Apply to draft")}
-        </Button>
-      </div>
-    </div>
+      <FormActions
+        pending={false}
+        onCancel={onClose}
+        label={t("Apply to draft")}
+      />
+    </form>
   );
 }

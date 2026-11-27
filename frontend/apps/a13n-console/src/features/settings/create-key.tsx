@@ -8,6 +8,7 @@ import { data } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
+import settings from "./settings.module.css";
 import {
   expirationOptions,
   expirationTimestamp,
@@ -88,9 +89,10 @@ export function CreateKeyForm({
           />
         </FormField>
         <ChoiceField
+          data-field-layout="stacked"
+          className={settings.keyExpiration}
           placeholder={t("Select expiration")}
           value={expires}
-          className="min-w-0"
           disabled={create.isPending}
           onValueChange={(value) => {
             const option = expirationOptions.find(

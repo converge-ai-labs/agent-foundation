@@ -193,7 +193,11 @@ export function AlwaysLoadField({
       )}
       {!readOnly && (
         <div className={styles.addPath}>
-          <FormField label={t("Path to always load")} error={error}>
+          <FormField
+            data-field-layout="stacked"
+            label={t("Path to always load")}
+            error={error}
+          >
             <Input
               value={path}
               list={suggestions}

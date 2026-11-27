@@ -106,7 +106,6 @@ export function MapFields({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
                 aria-label={`${t("Remove")} ${label} ${index + 1}`}
                 onClick={() =>
                   update(rows.filter((item) => item.id !== row.id))
@@ -115,7 +114,11 @@ export function MapFields({
                 {t("Remove")}
               </Button>
             )}
-            {duplicate && <p role="alert">{t("Keys must be unique.")}</p>}
+            {duplicate && (
+              <p role="alert" className={styles.error}>
+                {t("Keys must be unique.")}
+              </p>
+            )}
           </div>
         );
       })}

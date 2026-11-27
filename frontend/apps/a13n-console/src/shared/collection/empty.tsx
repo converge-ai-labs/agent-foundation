@@ -34,7 +34,11 @@ export function Empty({
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
       {action && (
-        <EmptyContent className={controls.compact}>{action}</EmptyContent>
+        <EmptyContent
+          className={`${controls.compact} max-w-none flex-row flex-wrap justify-center gap-2`}
+        >
+          {action}
+        </EmptyContent>
       )}
     </EmptyRoot>
   );

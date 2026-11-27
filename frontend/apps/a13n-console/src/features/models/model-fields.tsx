@@ -117,6 +117,7 @@ function ModelAddress({ model }: { model: ModelDraft }) {
         </FormField>
         {multipleApis && (
           <ChoiceField
+            data-field-layout="stacked"
             label={t("API")}
             value={model.callingApi}
             onValueChange={(value) => model.change("model_api", value)}

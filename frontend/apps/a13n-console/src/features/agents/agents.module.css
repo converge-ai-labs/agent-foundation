@@ -275,8 +275,7 @@
   color: var(--a13n-text);
   background: var(--a13n-hover);
 }
-.webConfigTrigger:focus-visible,
-.domainHelp:focus-visible {
+.webConfigTrigger:focus-visible {
   outline: 2px solid var(--a13n-focus);
   outline-offset: 2px;
 }
@@ -506,13 +505,12 @@
   background: color-mix(in srgb, var(--a13n-elevated) 75%, var(--a13n-surface));
 }
 .webProviderField {
-  position: relative;
   min-width: 0;
 }
+.webProviderField [data-slot="read-only-label"] {
+  justify-content: space-between;
+}
 .webProviderLink {
-  position: absolute;
-  top: 2px;
-  right: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);
   text-decoration: underline;
@@ -520,21 +518,6 @@
 }
 .webProviderLink:hover {
   color: var(--a13n-text);
-}
-.domainHelp {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: var(--a13n-secondary);
-}
-.domainHelp:hover {
-  color: var(--a13n-text);
-  background: var(--a13n-hover);
-}
-.domainTooltip {
-  max-width: 260px;
 }
 @media (max-width: 620px) {
   .toolsetTool {
@@ -626,7 +609,7 @@
 /* As wide as the form's rows read well, so the header's actions end where
    the fields do. */
 .createPage {
-  --create-gutter: 48px;
+  --create-gutter: var(--console-page-gutter);
   --sections-sticky-top: 88px;
   max-width: 1120px;
 }
@@ -695,7 +678,6 @@
 }
 @media (width < 768px) {
   .createPage {
-    --create-gutter: var(--a13n-page-gutter-mobile);
     --sections-sticky-top: 76px;
   }
   .createBar h1 {

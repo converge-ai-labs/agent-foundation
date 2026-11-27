@@ -369,7 +369,7 @@
     0 1px 2px color-mix(in srgb, var(--a13n-text) 6%, transparent);
 }
 /* Beside the desktop sidebar the bar centres on the content column. */
-@media (width >= 768px) {
+@media (width >= 1024px) {
   .saveBar {
     left: calc(50% + var(--sidebar-width, 0px) / 2);
     width: min(760px, calc(100% - var(--sidebar-width, 0px) - 48px));
