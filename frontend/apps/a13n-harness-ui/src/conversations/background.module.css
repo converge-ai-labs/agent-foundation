@@ -2,9 +2,29 @@
   gap: 4px;
   font-variant-numeric: tabular-nums;
 }
-.toggle svg {
+.toggle > svg {
   width: 18px;
   height: 18px;
+}
+.toggleLinks {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: 2px;
+  padding-inline-start: 6px;
+  border-left: 1px solid var(--border);
+}
+.toggleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1;
+}
+.toggleBadge svg {
+  width: 13px;
+  height: 13px;
 }
 .card {
   /* Clear the chat page padding and the transcript scrollbar gutter. */

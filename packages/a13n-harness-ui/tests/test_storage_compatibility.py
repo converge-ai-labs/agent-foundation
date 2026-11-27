@@ -113,6 +113,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "web_push_key",
                 "web_push_subscription",
                 "thread_inspection",
+                "thread_link",
                 "thread_run",
                 "thread_work",
                 "transcript_entry",

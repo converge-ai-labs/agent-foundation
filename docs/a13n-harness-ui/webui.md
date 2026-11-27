@@ -121,7 +121,7 @@ With a Project attached and computer sharing enabled:
 
 For a Git project in **Full Control** with computer sharing enabled, open the composer's **Chat options**, turn on **Worktree**, and send your task. The Agent uses the project's conventions to create and register an isolated Git worktree. You can also ask it to link a worktree, pull request, issue, or any HTTP(S) URL during an existing chat.
 
-Open **Thread links** in the chat header to see Git branches and external references. Use **Changes**, **Files**, or **Terminal** to open a worktree at its path. **Unlink** removes the bookmark and leaves the files on disk. Links follow chat forks and branches; scoped guests don't see the link list.
+Open **Activity** in the chat header (which displays compact worktree and link icons when references exist) to see **Worktrees** and **Links** alongside **Tasks** and **Notes**, or click **View all** to open a dedicated supporting tab. Use **Changes**, **Files**, or **Terminal** to open a worktree at its path. **Unlink** removes the bookmark and leaves the files on disk. Links follow chat forks and branches; scoped guests don't see worktrees or links.
 
 ## Voice input
 

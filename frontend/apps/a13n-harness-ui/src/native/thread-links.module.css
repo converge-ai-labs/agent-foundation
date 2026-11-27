@@ -1,55 +1,6 @@
-.trigger {
-  flex: none;
-  color: var(--a13n-secondary);
-  gap: 6px;
-  font-variant-numeric: tabular-nums;
-}
-.triggerSegment {
-  display: inline-flex;
-  align-items: center;
+.list {
+  display: grid;
   gap: 4px;
-  min-width: 0;
-}
-.triggerLabel {
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.triggerNumber {
-  white-space: nowrap;
-}
-.triggerDivider {
-  width: 1px;
-  height: 12px;
-  background: var(--border);
-}
-@media (max-width: 640px) {
-  .triggerLabel {
-    display: none;
-  }
-}
-.popup {
-  width: min(360px, calc(100vw - 24px), var(--available-width, 100vw));
-  border-radius: 16px;
-}
-.groups {
-  display: grid;
-  gap: 12px;
-}
-.section + .section {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-.groups h2 {
-  margin: 0 0 8px;
-  color: var(--a13n-secondary);
-  font-weight: 500;
-  font-size: 0.92em;
-}
-.groups ul {
-  display: grid;
-  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -57,6 +8,8 @@
 .worktree {
   display: grid;
   gap: 2px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 8px;
 }
 .row {
   display: flex;
@@ -66,11 +19,11 @@
 }
 .linkRow {
   border-radius: 8px;
-  padding: 2px 2px 2px 6px;
-  margin-inline: -6px -2px;
+  padding: 2px 4px 2px 8px;
   transition: background-color 120ms ease-out;
 }
-.linkRow:hover {
+.linkRow:hover,
+.linkRow:focus-within {
   background: var(--a13n-hover);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -129,7 +82,7 @@ a.identity:hover .nameText {
   gap: 6px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 0.9em;
+  font-size: var(--a13n-text-sm);
 }
 .detailText {
   overflow: hidden;
@@ -154,11 +107,6 @@ a.identity:hover .nameText {
 .actionButton:hover {
   color: var(--a13n-text);
 }
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.empty {
+  color: var(--a13n-secondary);
 }

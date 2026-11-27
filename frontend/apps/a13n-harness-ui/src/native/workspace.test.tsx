@@ -162,6 +162,10 @@ vi.mock("./terminal", () => ({
   },
 }));
 beforeEach(() => {
+  Object.defineProperty(Element.prototype, "getAnimations", {
+    configurable: true,
+    value: () => [],
+  });
   // Resource interaction tests start with an explicitly opened supporting panel.
   for (const chat of ["current", "other", "new"]) {
     localStorage.setItem(`a13n-harness-ui.native-panel.${chat}`, "open");
@@ -209,86 +213,93 @@ function setup(
         params?: { path?: { thread_id?: string }; query?: { path?: string } };
       },
     ) =>
-      url.endsWith("/children")
-        ? { data: { executions: [], total: 0 } }
-        : url.endsWith("/tool-executions")
-          ? { data: [] }
-          : url.endsWith("/transcript")
-            ? { data: { entries: [], turns: [], total: 0 } }
-            : url === "/api/host/files/metadata" && metadata
-              ? metadata
-              : {
-                  data:
-                    url === "/api/status"
-                      ? {
-                          features: {
-                            host_files: sharing,
-                            host_git: sharing,
-                            host_terminal: sharing,
-                            browser: sharing,
-                          },
-                        }
-                      : url === "/api/projects"
-                        ? [
-                            {
-                              project_id: "project-unrelated",
-                              name: "Unrelated",
-                              roots: ["/unrelated"],
+      url.endsWith("/work")
+        ? {
+            data: {
+              tasks: { total: 0, available: true, page: { tasks: [] } },
+              notes: { total: 0, available: true, page: { notes: [] } },
+            },
+          }
+        : url.endsWith("/children")
+          ? { data: { executions: [], total: 0 } }
+          : url.endsWith("/tool-executions")
+            ? { data: [] }
+            : url.endsWith("/transcript")
+              ? { data: { entries: [], turns: [], total: 0 } }
+              : url === "/api/host/files/metadata" && metadata
+                ? metadata
+                : {
+                    data:
+                      url === "/api/status"
+                        ? {
+                            features: {
+                              host_files: sharing,
+                              host_git: sharing,
+                              host_terminal: sharing,
+                              browser: sharing,
                             },
-                            {
-                              project_id: "project-one",
-                              name: "Current project",
-                              roots: initial.startsWith("/threads/")
-                                ? ["/changed-project-root"]
-                                : currentRoots,
-                            },
-                            {
-                              project_id: "project-two",
-                              name: "Other project",
-                              roots: ["/other"],
-                            },
-                          ]
-                        : url === "/api/bot"
-                          ? {
-                              available: true,
-                              state: { activated: false, paused: false },
-                              messages: [],
-                              inputs: [],
-                            }
-                          : url === "/api/threads/{thread_id}"
-                            ? {
-                                thread: {
-                                  title: "Current chat",
-                                  configuration: {
-                                    agent_source: {
-                                      kind: "agent",
-                                      agent_id: "agent-main",
-                                    },
-                                    local_roots:
-                                      options?.params?.path?.thread_id ===
-                                      "other"
-                                        ? otherProject === "project-two"
-                                          ? ["/other"]
-                                          : currentRoots
-                                        : currentProject
-                                          ? currentRoots
-                                          : [],
-                                    project_id:
-                                      options?.params?.path?.thread_id ===
-                                      "other"
-                                        ? otherProject
-                                        : currentProject,
-                                  },
-                                },
-                              }
-                            : {
-                                kind: options?.params?.query?.path?.endsWith(
-                                  ".txt",
-                                )
-                                  ? "file"
-                                  : "directory",
+                          }
+                        : url === "/api/projects"
+                          ? [
+                              {
+                                project_id: "project-unrelated",
+                                name: "Unrelated",
+                                roots: ["/unrelated"],
                               },
-                },
+                              {
+                                project_id: "project-one",
+                                name: "Current project",
+                                roots: initial.startsWith("/threads/")
+                                  ? ["/changed-project-root"]
+                                  : currentRoots,
+                              },
+                              {
+                                project_id: "project-two",
+                                name: "Other project",
+                                roots: ["/other"],
+                              },
+                            ]
+                          : url === "/api/bot"
+                            ? {
+                                available: true,
+                                state: { activated: false, paused: false },
+                                messages: [],
+                                inputs: [],
+                              }
+                            : url === "/api/threads/{thread_id}"
+                              ? {
+                                  thread: {
+                                    title: "Current chat",
+                                    configuration: {
+                                      agent_source: {
+                                        kind: "agent",
+                                        agent_id: "agent-main",
+                                      },
+                                      local_roots:
+                                        options?.params?.path?.thread_id ===
+                                        "other"
+                                          ? otherProject === "project-two"
+                                            ? ["/other"]
+                                            : currentRoots
+                                          : currentProject
+                                            ? currentRoots
+                                            : [],
+                                      project_id:
+                                        options?.params?.path?.thread_id ===
+                                        "other"
+                                          ? otherProject
+                                          : currentProject,
+                                    },
+                                  },
+                                }
+                              : {
+                                  kind: options?.params?.query?.path?.endsWith(
+                                    ".txt",
+                                  )
+                                    ? "file"
+                                    : "directory",
+                                },
+                  },
   );
   const removeLink = vi.fn(async () => {
     links = { ...links, urls: [] };
@@ -364,8 +375,9 @@ function setup(
   return { focus, get, queries, removeLink };
 }
 
-it("opens a popover for a single GitHub link and hides its trigger after unlinking", async () => {
+it("shows worktree and link icons on Activity, lists Tasks-Notes-Worktrees-Links in order, opens View all tabs, and updates on unlink", async () => {
   const url = "https://github.com/example/repo/pull/42";
+  const worktreePath = "/tmp/wt-feature";
   const { removeLink } = setup(
     "/threads/current",
     true,
@@ -377,8 +389,17 @@ it("opens a popover for a single GitHub link and hides its trigger after unlinki
     undefined,
     undefined,
     {
-      worktrees: [],
-      worktree_mode_available: false,
+      worktrees: [
+        {
+          label: null,
+          path: worktreePath,
+          implicit: false,
+          state: "ready",
+          branch: "feat/activity-links",
+          head_oid: "1234567890",
+        },
+      ],
+      worktree_mode_available: true,
       urls: [
         {
           kind: "url",
@@ -396,15 +417,37 @@ it("opens a popover for a single GitHub link and hides its trigger after unlinki
       ],
     },
   );
-  const trigger = await screen.findByRole("button", { name: "Thread links" });
-  expect(trigger.textContent).toContain("#42");
+  const trigger = await screen.findByRole("button", { name: "Activity" });
+  await waitFor(() => {
+    expect(
+      trigger.querySelector('[data-link-kind="worktrees"]')?.textContent,
+    ).toBe("1");
+    expect(trigger.querySelector('[data-link-kind="links"]')?.textContent).toBe(
+      "1",
+    );
+  });
   fireEvent.click(trigger);
+  const card = await screen.findByRole("region", { name: "Activity" });
+  const headings = Array.from(card.querySelectorAll("h3")).map(
+    (heading) => heading.textContent,
+  );
+  expect(headings).toEqual(["Tasks", "Notes", "Worktrees", "Links"]);
+  expect(card.textContent).toContain("feat/activity-links");
   const link = await screen.findByRole("link", { name: /Improve retries/ });
   expect(link.getAttribute("href")).toBe(url);
   expect(link.textContent).toContain("example/repo");
   expect(link.textContent).toContain("#42");
   expect(link.textContent).toContain("Merged");
-  fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
+  fireEvent.click(screen.getByRole("button", { name: "View all · Worktrees" }));
+  expect(
+    await screen.findByRole("tab", { name: "Worktrees", selected: true }),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(within(card).getByRole("region", { name: "Links" })).getByRole(
+      "button",
+      { name: "Unlink" },
+    ),
+  );
   await waitFor(() =>
     expect(removeLink).toHaveBeenCalledWith("/api/threads/{thread_id}/links", {
       params: { path: { thread_id: "current" } },
@@ -412,8 +455,11 @@ it("opens a popover for a single GitHub link and hides its trigger after unlinki
     }),
   );
   await waitFor(() =>
-    expect(screen.queryByRole("button", { name: "Thread links" })).toBeNull(),
+    expect(trigger.querySelector('[data-link-kind="links"]')).toBeNull(),
   );
+  expect(
+    trigger.querySelector('[data-link-kind="worktrees"]')?.textContent,
+  ).toBe("1");
 });
 
 it("keeps the full chat title available while bounding the document title", async () => {
