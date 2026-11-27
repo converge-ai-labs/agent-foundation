@@ -1187,13 +1187,21 @@ it("merges peer ACP commands and Harness UI skills on slash and shows skills on 
   expect(screen.getByText("Project")).toBeTruthy();
   expect(screen.getByText("Built-in")).toBeTruthy();
 
-  act(() =>
+  act(() => {
     editor.current!.dispatch({
-      changes: { from: 0, to: 1, insert: "$" },
+      changes: { from: 0, to: 1 },
+      selection: { anchor: 0 },
+      userEvent: "delete.backward",
+    });
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "$" },
       selection: { anchor: 1 },
       userEvent: "input.type",
-    }),
+    });
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("option", { name: /\/compact/ })).toBeNull(),
   );
   await screen.findByRole("option", { name: /Worktree Pr/ });
-  expect(screen.queryByRole("option", { name: /\/compact/ })).toBeNull();
+  expect(screen.queryByRole("option", { name: /\/plan/ })).toBeNull();
 });

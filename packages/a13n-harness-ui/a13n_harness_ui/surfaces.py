@@ -20,7 +20,7 @@ from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_controls import ModelControlSelection
-from a13n_harness_ui.model_fast import FastControl
+from a13n_harness_ui.model_fast import FastControl, FastState
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
 from a13n_harness_ui.model_thinking import ThinkingControl
 from a13n_harness_ui.storage import ThreadConfiguration
@@ -245,11 +245,22 @@ class DeferredRequestView(SurfaceModel):
     metadata_omitted: bool = False
 
 
+class ThreadModelDisplay(SurfaceModel):
+    """Read-only display summary of a Thread's effective Agent and Model."""
+
+    agent_name: str | None = None
+    model_name: str | None = None
+    model_identity: str | None = None
+    thinking_summary: str | None = None
+    fast: FastState = "default"
+
+
 class ThreadDetail(SurfaceModel):
     thread: ThreadSummary
     continuation_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     deferred_requests: tuple[DeferredRequestView, ...] = ()
     available_actions: tuple[Literal["run", "respond", "wait", "steer", "cancel", "archive", "clear_context"], ...] = ()
+    model_display: ThreadModelDisplay | None = None
 
 
 class AppliedEditView(SurfaceModel):

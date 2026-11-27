@@ -170,6 +170,36 @@ beforeEach(() => {
           thread: path === equivalent ? lead : selectedWorker,
           available_actions: permission === "view" ? [] : ["run"],
           continuation_id: "saved",
+          model_display: {
+            agent_name: "Assistant",
+            model_name: "GPT-5.4",
+            model_identity: "openai:gpt-5.4",
+            thinking_summary: "High",
+            fast: "on",
+          },
+        });
+      if (equivalent === prefix + "/threads/thread-one/context-usage")
+        return json({
+          thread_id: path === equivalent ? "thread-one" : "thread-worker",
+          context_window: 200000,
+          latest_request_tokens: 18500,
+        });
+      if (equivalent === prefix + "/threads/thread-one/usage")
+        return json({
+          first_observed_at: "2026-10-19",
+          root: { model_requests: 1, tokens: [] },
+          models: [],
+          other_models: { model_requests: 0 },
+          combined: {
+            provider_receipts: 0,
+            model_requests: 1,
+            unknown_model_costs: 0,
+            model_cost_usd: "0.042",
+            tokens: [
+              ["input_tokens", 18500],
+              ["output_tokens", 1200],
+            ],
+          },
         });
       if (equivalent === prefix + "/threads/thread-one/transcript")
         return json({
@@ -196,8 +226,25 @@ afterEach(() => {
 
 it("opens a thread guest directly without owner queries or a draft socket", async () => {
   render(<BrowserApp />);
-  await screen.findByText("View-only link - Following this chat live.");
+  await screen.findByRole("region", { name: "Message composer" });
+  expect(
+    screen.getByText("View-only link - Following this chat live."),
+  ).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    screen
+      .getByRole("button", { name: "Attach files" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(screen.getByText("GPT-5.4")).toBeTruthy();
+  expect(screen.getByText("High")).toBeTruthy();
+  expect(await screen.findByText("18.5k")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Cost details" }).textContent,
+  ).toContain("0.042");
   expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe(
@@ -215,8 +262,13 @@ it("opens a thread guest directly without owner queries or a draft socket", asyn
 
 it("mounts the shared composer for prompt guests without owner controls", async () => {
   permission = "prompt";
+  targetRole = "coordinator";
   render(<BrowserApp />);
   await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(screen.getByText("Coordinator")).toBeTruthy();
+  expect(screen.getByText("GPT-5.4")).toBeTruthy();
+  expect(screen.getByText("High")).toBeTruthy();
+  expect(await screen.findByText("18.5k")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Goal" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Clear context/i })).toBeNull();
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
@@ -300,6 +352,7 @@ it("shows the Coordinator rail only when workers exist and refreshes immediately
   targetRole = "coordinator";
   render(<BrowserApp />);
   await screen.findByText("View-only link - Following this chat live.");
+  expect(screen.getByText("Coordinator")).toBeTruthy();
   expect(
     screen.queryByRole("complementary", { name: "Shared coordinator" }),
   ).toBeNull();

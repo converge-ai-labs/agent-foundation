@@ -2787,7 +2787,7 @@ def create_webui(
                                     share_id := socket.path_params.get("share_id"), str
                                 ):
                                     thread = await app().sharing.thread(
-                                        share_id, frame.snapshot.thread.thread.thread_id
+                                        share_id, frame.snapshot.thread.thread.thread_id, include_display=True
                                     )
                                     operation = frame.snapshot.root_operation
                                     if operation is not None:
@@ -2971,7 +2971,7 @@ def create_webui(
 
     @guest.get("/threads/{thread_id}", response_model=ThreadDetail)
     async def shared_thread(share_id: str, thread_id: str) -> ThreadDetail:
-        return await app().sharing.thread(share_id, thread_id)
+        return await app().sharing.thread(share_id, thread_id, include_display=True)
 
     @guest.post(
         "/threads/{thread_id}/input-prediction",
@@ -3054,6 +3054,7 @@ def create_webui(
     guest.add_api_route(
         "/threads/{thread_id}/context-usage", context_usage, methods=["GET"], response_model=ContextUsageView
     )
+    guest.add_api_route("/threads/{thread_id}/usage", usage, methods=["GET"], response_model=ThreadUsageView)
     guest.add_api_route("/threads/{thread_id}/work", work, methods=["GET"], response_model=ThreadWork)
     guest.add_api_route("/threads/{thread_id}/attachments/{attachment_id}", download_attachment, methods=["GET"])
     guest.add_api_route(

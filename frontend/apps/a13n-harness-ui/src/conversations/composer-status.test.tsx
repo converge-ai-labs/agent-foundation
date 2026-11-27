@@ -8,7 +8,7 @@ import {
   screen,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TransportContext } from "../transport/context";
+import { GuestAccessContext, TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import { DebugProvider } from "../shell/debug";
 import { ComposerStatus } from "./composer-status";
@@ -270,6 +270,83 @@ it("handles external ACP tri-state context occupancy, honest hiding, and accurat
   expect(
     screen.getByText(/Context occupancy reported by the external ACP Agent\./),
   ).toBeTruthy();
+
+  view.unmount();
+  queries.clear();
+});
+
+it("renders context and cost for guests without requesting owner configuration or activity routes", () => {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  queries.setQueryData(["thread", "shared-one", "context-usage"], {
+    thread_id: "shared-one",
+    context_window: 200000,
+    latest_request_tokens: 18500,
+  });
+  queries.setQueryData(["thread", "shared-one", "usage"], {
+    first_observed_at: "2026-01-01T00:00:00Z",
+    root: { model_requests: 1, tokens: [] },
+    models: [],
+    other_models: { model_requests: 0 },
+    combined: {
+      provider_receipts: 0,
+      model_requests: 1,
+      unknown_model_costs: 0,
+      model_cost_usd: "0.042",
+      tokens: [
+        ["input_tokens", 18500],
+        ["output_tokens", 1200],
+      ],
+    },
+  });
+  const get = vi.fn(async (path: string) => ({
+    data: path.includes("context-usage")
+      ? {
+          thread_id: "shared-one",
+          context_window: 200000,
+          latest_request_tokens: 18500,
+        }
+      : { root: { tokens: [] } },
+  }));
+  const transport = {
+    shareId: "share-one",
+    client: { GET: get },
+  } as unknown as Transport;
+  const guest: Schema<"ShareAccess"> = {
+    title: "Shared chat",
+    grant: {
+      share_id: "share-one",
+      scope: "thread",
+      target_id: "shared-one",
+      permission: "view",
+      created_at: "2026-01-01T00:00:00Z",
+      expires_at: "2026-01-02T00:00:00Z",
+    },
+  };
+  const view = render(
+    <QueryClientProvider client={queries}>
+      <TransportContext value={transport}>
+        <GuestAccessContext value={guest}>
+          <DebugProvider>
+            <ComposerStatus threadId="shared-one" />
+          </DebugProvider>
+        </GuestAccessContext>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+
+  expect(screen.getByText("18.5k")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Cost details" }).textContent,
+  ).toContain("0.042");
+  fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh usage" }));
+  const requested = get.mock.calls.map(([path]) => path);
+  expect(requested).not.toContain("/api/threads/{thread_id}/configuration");
+  expect(requested).not.toContain("/api/threads/activity");
+  expect(requested).toContain("/api/threads/{thread_id}/usage");
+  expect(requested).toContain("/api/threads/{thread_id}/context-usage");
 
   view.unmount();
   queries.clear();
