@@ -75,6 +75,13 @@ function fixture(request: Request): Response | Promise<Response> {
       shared_with_cli: false,
     });
   if (path === "/api/status") return json(status);
+  if (path === "/api/update-notices")
+    return json({
+      current_version: status.version,
+      latest_stable: null,
+      advisories: [],
+      install_method: "other",
+    });
   if (path === "/api/threads") return json({ threads: [], total: 0 });
   if (path === "/api/threads/activity")
     return json({ rows: [], total: 0, next_cursor: null });
@@ -587,11 +594,21 @@ it("supports explicit server bypass without inventing a frontend version", async
     "fetch",
     vi.fn((request: Request) => {
       expect(request.headers.has("Authorization")).toBe(false);
-      return Promise.resolve(
-        decodeURIComponent(new URL(request.url).pathname) === "/api/status"
-          ? json({ ...status, version: "0.0.0", access: "dangerous_bypass" })
-          : fixture(request),
-      );
+      const path = decodeURIComponent(new URL(request.url).pathname);
+      if (path === "/api/status")
+        return json({
+          ...status,
+          version: "0.0.0",
+          access: "dangerous_bypass",
+        });
+      if (path === "/api/update-notices")
+        return json({
+          current_version: "0.0.0",
+          latest_stable: null,
+          advisories: [],
+          install_method: "other",
+        });
+      return fixture(request);
     }),
   );
   render(<BrowserApp />);
@@ -604,7 +621,7 @@ it("supports explicit server bypass without inventing a frontend version", async
   await userEvent.click(
     await screen.findByRole("link", { name: "Diagnostics" }),
   );
-  await screen.findByText(/Version 0.0.0/);
+  await screen.findByText(/v0\.0\.0/);
   expect(screen.getByText(/Server login is disabled/)).toBeTruthy();
 });
 
@@ -2107,4 +2124,53 @@ it("replaces chat navigation in Settings and returns to the same chat route", as
     screen.queryByRole("navigation", { name: "Settings sections" }),
   ).toBeNull();
   expect(window.location.pathname + window.location.search).toBe(chatRoute);
+});
+
+it("routes the owner from the workspace badge through Settings to Diagnostics", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((request: Request) => {
+      if (new URL(request.url).pathname === "/api/update-notices")
+        return json({
+          current_version: "1.9.0",
+          latest_stable: {
+            version: "1.10.0",
+            is_newer: true,
+            url: "https://github.com/releases",
+          },
+          advisories: [],
+          install_method: "other",
+        });
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  const description = "Harness UI update available";
+  const menu = await screen.findByRole("button", { name: "Workspace menu" });
+  await waitFor(() =>
+    expect(menu.getAttribute("aria-description")).toBe(description),
+  );
+  await user.click(menu);
+  const settings = await screen.findByRole("menuitem", { name: "Settings" });
+  expect(settings.getAttribute("aria-description")).toBe(description);
+  await user.click(settings);
+  const diagnostics = await screen.findByRole("link", { name: "Diagnostics" });
+  expect(diagnostics.getAttribute("aria-description")).toBe(description);
+  await user.click(diagnostics);
+  const about = await screen.findByRole("region", { name: "About" });
+  expect(
+    within(about).getByRole("link", { name: "v1.10.0 available" }),
+  ).toBeTruthy();
+  await user.click(within(about).getByRole("button", { name: "Hide badge" }));
+  expect(menu.getAttribute("aria-description")).toBeNull();
+  expect(
+    screen
+      .getByRole("link", { name: "Diagnostics" })
+      .getAttribute("aria-description"),
+  ).toBeNull();
+  expect(
+    within(about).getByRole("link", { name: "v1.10.0 available" }),
+  ).toBeTruthy();
 });

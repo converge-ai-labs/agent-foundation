@@ -966,6 +966,10 @@ class HarnessUiApp:
             await self._api_keys.delete(reference)
 
     @property
+    def data_root(self) -> Path:
+        return self._settings.storage.data_root
+
+    @property
     def state(self) -> AppState:
         return self._state
 

@@ -1255,6 +1255,24 @@
         }
       }
     },
+    "/api/update-notices": {
+      "get": {
+        "summary": "Update Notices",
+        "operationId": "update_notices_api_update_notices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateNotices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/presence": {
       "get": {
         "summary": "Presence",
@@ -23941,6 +23959,50 @@
         ],
         "title": "SavedOutputView"
       },
+      "SecurityAdvisory": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "high",
+              "critical"
+            ],
+            "title": "Severity"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "summary",
+          "severity",
+          "url",
+          "updated_at"
+        ],
+        "title": "SecurityAdvisory"
+      },
       "SelectableResourceSummary": {
         "properties": {
           "resource_id": {
@@ -24901,6 +24963,29 @@
           "reset_at"
         ],
         "title": "SpendControlLimit"
+      },
+      "StableRelease": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "is_newer": {
+            "type": "boolean",
+            "title": "Is Newer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "url",
+          "is_newer"
+        ],
+        "title": "StableRelease"
       },
       "Status": {
         "properties": {
@@ -28203,6 +28288,47 @@
           "kind"
         ],
         "title": "UnlimitedMemoryLimit"
+      },
+      "UpdateNotices": {
+        "properties": {
+          "current_version": {
+            "type": "string",
+            "title": "Current Version"
+          },
+          "latest_stable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StableRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "advisories": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityAdvisory"
+            },
+            "type": "array",
+            "title": "Advisories"
+          },
+          "install_method": {
+            "type": "string",
+            "enum": [
+              "uv_tool",
+              "other"
+            ],
+            "title": "Install Method"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_version",
+          "latest_stable",
+          "advisories",
+          "install_method"
+        ],
+        "title": "UpdateNotices"
       },
       "UrlInputSupport": {
         "properties": {

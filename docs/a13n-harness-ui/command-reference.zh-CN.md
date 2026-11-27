@@ -43,7 +43,7 @@ a13n-harness-ui --config ./a13n-harness-ui.yaml config validate
 | `--environment-mode`    | `full-control`、`sandbox` | 为新对话选择内置模式。                                               |
 | `--environment-profile` | Profile ID                | 为新对话选择自定义 profile。                                         |
 | `--display`             | `concise`、`detailed`     | 覆盖 `display.mode`；配置默认值为 `concise`。                        |
-| `--no-update-check`     | 标志                      | 本次启动跳过更新检测。                                               |
+| `--no-update-check`     | 标志                      | 本次跳过终端或 WebUI 的更新检查。                                    |
 | `--version`             | 标志                      | 打印已安装版本并退出。                                               |
 
 这些选项默认未设置；标志默认 false。`--environment-mode` 与 `--environment-profile` 互斥。`--resume` 不能与新对话的 Agent、Environment 或标题覆盖同用。先恢复，再在 TUI 中修改选择。

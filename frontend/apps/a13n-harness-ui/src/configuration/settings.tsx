@@ -28,6 +28,7 @@ import {
 import { DraftContext } from "./drafts";
 import { readDocument, type ResourceKind } from "./documents";
 import { InstallSettings } from "../shell/install";
+import { UpdateNotices, type UpdateNoticeState } from "./update-notices";
 import { DevicesSection } from "./devices";
 import { RuntimePage } from "./envd";
 import { NotificationSettings } from "../shell/notifications";
@@ -170,7 +171,17 @@ export function MemorySettings() {
     </>
   );
 }
-export function DiagnosticsPage({ instance }: { instance: React.ReactNode }) {
+export function DiagnosticsPage({
+  instance,
+  notices,
+  installedVersion,
+  disconnected,
+}: {
+  instance: React.ReactNode;
+  notices: UpdateNoticeState;
+  installedVersion: string;
+  disconnected: boolean;
+}) {
   const { t } = useTranslation();
   const status = useStatus();
   return (
@@ -185,11 +196,14 @@ export function DiagnosticsPage({ instance }: { instance: React.ReactNode }) {
         ].map((message) => (
           <p key={message}>{message}</p>
         ))}
-      </SettingsSection>
-      <SettingsSection title={t("About")}>
         {instance}
-        <InstallSettings />
       </SettingsSection>
+      <UpdateNotices
+        notices={notices}
+        installedVersion={installedVersion}
+        disconnected={disconnected}
+      />
+      <InstallSettings />
     </>
   );
 }

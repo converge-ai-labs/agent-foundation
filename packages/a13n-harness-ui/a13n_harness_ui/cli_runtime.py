@@ -78,6 +78,7 @@ async def _run(request: CliRequest) -> int:
             port=request.web_port,
             api_key=request.web_api_key,
             dangerously_bypass_permission=request.dangerously_bypass_permission,
+            no_update_check=request.no_update_check,
         )
         return 0
 
