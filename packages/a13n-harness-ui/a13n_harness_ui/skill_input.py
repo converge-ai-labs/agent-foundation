@@ -149,7 +149,12 @@ def prepare_skill_input(prompt: RunInputValue, catalog: SkillCatalogView, names:
                 "source_id": "a13n-harness-ui.skills",
                 "harness_ui": {
                     "selected_skills": [
-                        {"name": name, "source_id": source_id, "logical_path": logical_path}
+                        {
+                            "name": name,
+                            "source_id": source_id,
+                            "logical_path": logical_path,
+                            "description": " ".join(selected[name].description.split())[:200].rstrip(),
+                        }
                         for name, source_id, logical_path in entries
                     ]
                 },
