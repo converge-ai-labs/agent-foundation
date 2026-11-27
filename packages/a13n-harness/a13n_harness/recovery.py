@@ -17,6 +17,7 @@ from pydantic_ai.exceptions import (
     ModelAPIError,
     ModelConnectionError,
     ModelContextWindowExceededError,
+    ModelEmptyResponseError,
     ModelHTTPError,
     ModelQuotaExceededError,
     ModelRateLimitError,
@@ -431,12 +432,10 @@ def is_recoverable_model_failure(error: BaseException) -> bool:
     if isinstance(error, HarnessError | RunCancelled | UsageLimitExceeded | asyncio.CancelledError):
         return False
     if isinstance(error, UnexpectedModelBehavior):
-        # Upstream has no dedicated exception for these stream-establishment
-        # failures. Do not classify arbitrary malformed output as a network error.
+        # Retry the known empty-stream case, including its legacy form.
         return (
-            type(error) is UnexpectedModelBehavior
-            and error.message == "Streamed response ended without content or tool calls"
-        )
+            isinstance(error, ModelEmptyResponseError) or type(error) is UnexpectedModelBehavior
+        ) and error.message == "Streamed response ended without content or tool calls"
     if type(error) is ModelAPIError and error.message == "Streamed response ended without a `finish_reason`":
         return True
     if not isinstance(error, ModelAPIError | httpx2.HTTPError | ConnectionError | TimeoutError):
