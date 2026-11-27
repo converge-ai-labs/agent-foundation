@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -35,6 +36,17 @@ def local(path, mode, *flags):
     return LocalStdioTransport(sys.executable, str(path), (str(_FIXTURE), mode, *flags), inherit_environment=True)
 
 
+@asynccontextmanager
+async def peer_diagnostics(path: Path):
+    try:
+        yield
+    except ConnectionError as exc:
+        log = path / "peer-error.log"
+        if log.is_file():
+            exc.add_note(log.read_text(encoding="utf-8", errors="replace"))
+        raise
+
+
 def setup(path):
     return AcpSessionSetup(str(path), instructions=("guide",))
 
@@ -53,7 +65,7 @@ async def test_environment_run_callbacks(tmp_path):
         reviewed.append(request.command.executable)
         return request.command.executable != "denied"
 
-    async with bind(callbacks, "turn") as turn, asyncio.timeout(10):
+    async with peer_diagnostics(tmp_path), bind(callbacks, "turn") as turn, asyncio.timeout(10):
         transport = local(tmp_path, "callbacks")
         async with AcpSessionRuntime.open(transport) as acp:
             await acp.open_session(setup(tmp_path))
