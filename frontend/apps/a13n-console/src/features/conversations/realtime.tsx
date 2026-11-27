@@ -101,7 +101,6 @@ type Approval = {
 
 type Event =
   | Approval
-  | { type: "approval_withdrawn"; call_id: string }
   | ({ type: "accepted" } & RealtimeReceipt)
   | { type: "sealed"; run_id: string; status: string }
   | {
@@ -516,11 +515,6 @@ function useRealtimeCall() {
             items.some((item) => item.call_id === event.call_id)
               ? items
               : [...items, event],
-          );
-        }
-        if (event.type === "approval_withdrawn") {
-          setApprovals((items) =>
-            items.filter((item) => item.call_id !== event.call_id),
           );
         }
         if (event.type === "error") {

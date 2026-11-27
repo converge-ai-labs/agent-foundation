@@ -128,8 +128,6 @@ class Channel:
             self.approvals.pop(call_id, None)
             answer.cancel()
             disconnected.cancel()
-            if self.decisions[call_id] is None and not self.closed.is_set():
-                self.emit({"type": "approval_withdrawn", "call_id": call_id})
             await asyncio.gather(disconnected, return_exceptions=True)
 
 

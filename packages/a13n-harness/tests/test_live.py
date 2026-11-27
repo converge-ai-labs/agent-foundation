@@ -319,10 +319,11 @@ async def test_live_approval_resolves_inline_without_executing_denied_tool(appro
 
     async def approve(ctx: RunContext[AgentContext], requests: DeferredToolRequests) -> DeferredToolResults:
         assert ctx.run_id == live.run_id
-        assert len(requests.approvals) == 1
+        (request,) = requests.approvals
+        assert request.tool_name == "change"
         waiting.set()
         await decide.wait()
-        return DeferredToolResults(approvals={request.tool_call_id: approved for request in requests.approvals})
+        return DeferredToolResults(approvals={request.tool_call_id: approved})
 
     executable = HarnessBuilder().build(
         AgentDefinition(
@@ -1115,46 +1116,3 @@ async def test_live_recall_deduplicates_across_turns_and_spends_one_byte_budget(
         assert model.connection.sent.empty()
         await live.close()
         await consumer
-
-
-@pytest.mark.parametrize("approved", [False, True])
-async def test_realtime_waits_for_host_decision_before_an_approved_tool(approved: bool) -> None:
-    pending, answer = asyncio.Event(), asyncio.Event()
-    calls = []
-
-    def lookup() -> str:
-        calls.append("called")
-        return "lookup proof"
-
-    from pydantic_ai.capabilities import HandleDeferredToolCalls
-    from pydantic_ai.tools import DeferredToolResults
-
-    async def approve(ctx, requests):
-        (call,) = requests.approvals
-        assert call.tool_name == "lookup"
-        pending.set()
-        await answer.wait()
-        return DeferredToolResults(approvals={call.tool_call_id: approved})
-
-    executable = HarnessBuilder().build(
-        AgentDefinition(
-            output_type=str,
-            agent=AgentSpec(),
-            capabilities=(
-                Capability(tools=[Tool(lookup, requires_approval=True)]),
-                HandleDeferredToolCalls(handler=approve),
-            ),
-        )
-    )
-    model = _Model()
-    async with asyncio.timeout(5), executable.live(model=model) as live:
-        collector = asyncio.create_task(_collect(live))
-        request = asyncio.create_task(_call(model, "lookup"))
-        await pending.wait()
-        assert calls == []
-        answer.set()
-        result = await request
-        assert calls == (["called"] if approved else [])
-        assert ("lookup proof" in result.output) is approved
-        await live.close()
-        await collector

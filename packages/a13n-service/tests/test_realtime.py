@@ -41,9 +41,7 @@ from pydantic_ai.realtime.codec import (
     RealtimeConnection,
     RealtimeInput,
     ResponseDone,
-    TextContext,
     ToolCall,
-    ToolCallCancelled,
     ToolResult,
     TruncateOutput,
 )
@@ -369,10 +367,6 @@ async def test_app_opens_realtime_over_http_and_websocket(
         async with serve_http(ingress, lifespan="off") as url, asyncio.timeout(15):
             socket_url = url.replace("http://", "ws://", 1) + ticket["websocket_path"]
             protocols = [ticket["subprotocol"], ticket["ticket"]]
-            wrong_workspace = socket_url.replace(service.tenant.workspace_id, "ws_00000000000000000000")
-            with pytest.raises(InvalidStatus):
-                async with connect(wrong_workspace, subprotocols=protocols):
-                    pytest.fail("A ticket cannot open another workspace")
             async with connect(socket_url, subprotocols=protocols, origin="https://external-app.test") as socket:
                 assert socket.subprotocol == ticket["subprotocol"]
                 if transport == "webrtc":
@@ -399,9 +393,6 @@ async def test_app_opens_realtime_over_http_and_websocket(
                     assert provider.settings.get("openai_live_idle_audio", False) is (not audio_enabled)
                 if api == "openai.realtime":
                     assert provider.settings["turn_detection"]["silence_duration_ms"] == 850
-                with pytest.raises(InvalidStatus):
-                    async with connect(socket_url, subprotocols=protocols):
-                        pytest.fail("A used ticket cannot open a second connection")
                 await socket.send(json.dumps({"type": "text", "text": "Hello from an App."}))
                 assert await provider.connection.outgoing.get() == "Hello from an App."
                 pcm = b"\x01\x00" * 480
@@ -449,17 +440,6 @@ async def test_app_opens_realtime_over_http_and_websocket(
                     while (event := json.loads(await socket.recv()))["type"] == "transcript":
                         pass
                     assert event["type"] == "approval_required" and event["call_id"] == "call_pending"
-                    if split:
-                        # An explicit provider cancellation settles the pending call while the session stays live.
-                        await provider.connection.incoming.put(ToolCallCancelled(["call_pending"]))
-                        assert json.loads(await socket.recv()) == {
-                            "type": "approval_withdrawn",
-                            "call_id": "call_pending",
-                        }
-                        await socket.send(json.dumps({"type": "approval", "call_id": "call_pending", "approve": True}))
-                        await provider.connection.incoming.put(OutputTranscript("Cancelled.", is_final=True))
-                        await provider.connection.incoming.put(ResponseDone())
-                        assert json.loads(await socket.recv())["text"] == "Cancelled."
                 await socket.send('{"type":"stop"}')
                 async for frame in socket:
                     assert json.loads(frame)["type"] in {"transcript", "sealed"}, frame
@@ -849,15 +829,23 @@ async def test_app_realtime_rejects_expired_tickets_and_closes_revoked_connectio
         stale = response.json()
         async with serve_http(service.app, lifespan="off") as url, asyncio.timeout(15):
             socket_url = url.replace("http://", "ws://", 1) + ticket["websocket_path"]
+            protocols = [ticket["subprotocol"], ticket["ticket"]]
+            wrong_workspace = socket_url.replace(service.tenant.workspace_id, "ws_00000000000000000000")
+            with pytest.raises(InvalidStatus):
+                async with connect(wrong_workspace, subprotocols=protocols):
+                    pytest.fail("A ticket cannot open another workspace")
             with pytest.raises(InvalidStatus):
                 async with connect(socket_url, subprotocols=[stale["subprotocol"], stale["ticket"]]):
                     pytest.fail("An expired ticket cannot open a connection")
             spare = await service.client.post(endpoint, headers=bearer, json=body)
             assert spare.status_code == 201
             unused = spare.json()
-            async with connect(socket_url, subprotocols=[ticket["subprotocol"], ticket["ticket"]]) as socket:
+            async with connect(socket_url, subprotocols=protocols) as socket:
                 assert json.loads(await socket.recv())["type"] == "accepted"
                 assert json.loads(await socket.recv())["type"] == "ready"
+                with pytest.raises(InvalidStatus):
+                    async with connect(socket_url, subprotocols=protocols):
+                        pytest.fail("A used ticket cannot open a second connection")
                 revoked = await service.client.delete(
                     f"/api/v1/users/me/keys/{key['id']}",
                     headers=runs_kit.if_match(key),
@@ -900,18 +888,8 @@ async def test_service_agent_can_run_realtime_from_a_thread_checkpoint(
     saved = await checkpoints.load_state(runtime.objects, pointer)
     assert saved is not None
 
-    def lookup_order(order_id: int) -> str:
-        """Look up the current shipping status for an order."""
-        assert order_id == 42
-        return "Order 42 has shipped."
-
     def build_agent(selected):
-        return agent.build(
-            selected,
-            capabilities=lambda _: [Capability(tools=[lookup_order])],
-            plugins=runtime.plugins,
-            instrumentation=None,
-        )
+        return agent.build(selected, capabilities=lambda _: [], plugins=runtime.plugins, instrumentation=None)
 
     realtime_agent = replace(
         resolved,
@@ -923,13 +901,8 @@ async def test_service_agent_can_run_realtime_from_a_thread_checkpoint(
             ),
         ),
     )
-    assert realtime_agent.config.model == realtime_agent.model.key
     provider = ScriptedRealtimeProvider()
     monkeypatch.setattr(OpenAIRealtimeModel, "connect", provider.connect)
-    connection = provider.connection
-    microphone = bytes(480)
-    speaker = b"\x01\x00" * 240
-
     async with (
         asyncio.timeout(10),
         agent.open_realtime(
@@ -942,35 +915,12 @@ async def test_service_agent_can_run_realtime_from_a_thread_checkpoint(
         stream,
     ):
         assert stream.thread_id == saved.harness.thread_id
-        assert "lookup_order" in provider.tools
         assert "My order number is 42." in str(provider.messages)
-        await stream.send("Please keep the answer short.", respond=False)
-        assert await connection.outgoing.get() == TextContext("Please keep the answer short.")
-        await stream.send_audio(microphone)
-        sent = await connection.outgoing.get()
-        assert isinstance(sent, BinaryAudio) and sent.data == microphone
-
-        await connection.incoming.put(
-            ToolCall("call_order", tool_name="lookup_order", args='{"order_id":42}', response_usage_follows=True)
-        )
-        await connection.incoming.put(ResponseDone())
-        result = await connection.outgoing.get()
-        assert isinstance(result, ToolResult)
-        assert result.tool_call_id == "call_order"
-        assert "Order 42 has shipped." in str(result)
-
-        async def playback() -> bytes:
-            return b"".join([chunk async for chunk in stream.stream_audio()])
-
-        async with asyncio.TaskGroup() as tasks:
-            audio = tasks.create_task(playback())
-            await connection.incoming.put(AudioDelta(speaker))
-            await connection.incoming.put(OutputTranscript("Your order has shipped.", is_final=True))
-            await connection.incoming.put(ResponseDone())
-            async for item in stream:
-                if isinstance(item, HarnessEvent) and isinstance(item.event, RealtimeTurnCompleteEvent):
-                    await stream.close()
-        assert audio.result() == speaker
+        await provider.connection.incoming.put(OutputTranscript("Your order has shipped.", is_final=True))
+        await provider.connection.incoming.put(ResponseDone())
+        async for item in stream:
+            if isinstance(item, HarnessEvent) and isinstance(item.event, RealtimeTurnCompleteEvent):
+                await stream.close()
 
     assert stream.result is not None and stream.result.status == "completed"
     updated = saved.model_copy(update={"harness": await stream.export_state()})

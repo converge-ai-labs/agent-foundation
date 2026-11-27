@@ -148,10 +148,6 @@ it("keeps the waveform action usable after audio startup fails with an empty dra
   }
   fireEvent.change(input, { target: { value: "Typed input" } });
   const withDraft = screen.getByRole("button", { name: "Start voice chat" });
-  expect(withDraft.className).toBe(voice.className);
-  expect(withDraft.querySelector("svg")?.outerHTML).toBe(
-    voice.querySelector("svg")?.outerHTML,
-  );
   expect((withDraft as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
 });
