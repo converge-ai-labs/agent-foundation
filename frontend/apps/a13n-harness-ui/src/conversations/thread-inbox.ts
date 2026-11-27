@@ -51,6 +51,9 @@ export function useThreadInbox({
   // Explicitly unread items stay unread for the lifetime of this chat view.
   // Consult the fence at dispatch so a refetch cannot race the card action.
   const manualUnread = useRef(new Set<string>());
+  useEffect(() => {
+    manualUnread.current.clear();
+  }, [threadId]);
   const autoRead = useRef<{ ids: string[]; settled: Promise<void> }>(undefined);
   const fenceUnread = useCallback((itemId: string, fenced: boolean) => {
     if (!fenced) {

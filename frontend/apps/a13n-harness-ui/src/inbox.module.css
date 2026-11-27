@@ -427,7 +427,13 @@
   min-inline-size: 0;
 }
 .postDone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--a13n-secondary);
+}
+.postDoneSeparator {
+  color: var(--a13n-tertiary);
 }
 .postActions {
   --post-action-inline-size: 26px;
@@ -445,16 +451,18 @@
   border-radius: 8px;
   background: transparent;
   color: var(--a13n-secondary);
+  cursor: pointer;
 }
 .postActions button svg {
   inline-size: 16px;
   block-size: 16px;
 }
 .postActions button:disabled {
+  cursor: default;
   opacity: 0.6;
 }
 .postActions button:focus-visible {
-  outline: 2px solid var(--a13n-signal);
+  outline: 2px solid var(--a13n-focus);
   outline-offset: -2px;
 }
 @media (hover: hover) {

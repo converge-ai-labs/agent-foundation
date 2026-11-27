@@ -181,6 +181,10 @@ function setup({
       });
       return finish;
     },
+    selectThread: (id: string) => {
+      threadId = id;
+      rerender(tree(entries));
+    },
     setAutoMarkRead: (enabled: boolean) => {
       autoMarkRead = enabled;
       rerender(tree(entries));
@@ -333,6 +337,39 @@ it("keeps a card manually marked unread at the focused bottom of the chat", asyn
   ).toBeTruthy();
   expect(mark).toHaveBeenCalledTimes(1);
   expect(patch).toHaveBeenCalledExactlyOnceWith({ read: false });
+});
+
+it.each(["Mark as read", "Mark as done"])(
+  "clears the visibility fence after %s succeeds",
+  async (action) => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { mark, changedInInbox } = setup({ atBottom: true });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Mark as unread" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: action }));
+    if (action === "Mark as done") {
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Move back to Open" }),
+      );
+    }
+    await screen.findByRole("button", { name: "Mark as unread" });
+    // A later Inbox action can mark the item unread again independently.
+    await act(() => changedInInbox(["call-1"]));
+    await waitFor(() => expect(mark).toHaveBeenCalledTimes(2));
+  },
+);
+
+it("clears the visibility fence when a mounted view switches threads", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const { mark, selectThread } = setup({ atBottom: true });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Mark as unread" }),
+  );
+  await screen.findByRole("button", { name: "Mark as read" });
+  selectThread("thread-other");
+  selectThread("thread-example");
+  await waitFor(() => expect(mark).toHaveBeenCalledTimes(2));
 });
 
 it("lets a manual unread write win over an already submitted automatic batch", async () => {

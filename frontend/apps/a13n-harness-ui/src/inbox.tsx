@@ -582,6 +582,9 @@ function InboxPostActions({
               update.mutate(
                 { itemId: post.item_id, read: unread },
                 {
+                  onSuccess: () => {
+                    if (unread) fenceUnread(post.item_id, false);
+                  },
                   onError: () => {
                     if (!unread) fenceUnread(post.item_id, false);
                   },
@@ -602,7 +605,16 @@ function InboxPostActions({
           aria-label={doneLabel}
           title={doneLabel}
           disabled={update.isPending}
-          onClick={() => update.mutate({ itemId: post.item_id, done: !done })}
+          onClick={() =>
+            update.mutate(
+              { itemId: post.item_id, done: !done },
+              {
+                onSuccess: () => {
+                  if (!done) fenceUnread(post.item_id, false);
+                },
+              },
+            )
+          }
         >
           {done ? (
             <ArrowCounterClockwise aria-hidden="true" />
@@ -670,6 +682,9 @@ export function InboxPost({ tool }: { tool: ToolView }) {
           )}
           {post?.done_at && (
             <span className={styles.postDone}>
+              <span className={styles.postDoneSeparator} aria-hidden="true">
+                ·
+              </span>
               {t("Done", { context: "inbox" })}
             </span>
           )}
