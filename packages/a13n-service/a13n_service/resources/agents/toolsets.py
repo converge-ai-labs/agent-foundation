@@ -609,6 +609,11 @@ _TOOLSETS: tuple[_Toolset, ...] = (
     _platform("connections", "Connections", "Connections, their tools and connector apps."),
     _platform("skills", "Skills", "Skills and their versions."),
     _platform("environment_templates", "Environment templates", "Environment templates."),
+    _platform(
+        "environments",
+        "Environments",
+        "Discover and connect existing environments for this Run and optionally its Thread.",
+    ),
     _platform("providers", "Providers", "Providers, and tests of their saved connections."),
     _platform(
         "execution", "Execution", "Sessions, threads, runs, traces and findings; its only write submits a finding."

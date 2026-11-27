@@ -20,3 +20,15 @@ Service 管理的 agent 使用独立的内部平台工具目录。Host 将 Run �
 `usage` 工具集提供九个现有查询操作，需要工作空间读权限；成员归属查询另需管理员权限。`subscriptions` 提供三个读取操作和三个需要审核的非敏感写操作，全部受 Run 接受时的管理员权限限制。`egress_credentials` 只提供四个元数据或应用状态查询。普通 Agent 按需启用这些工具集，当前 Composer 定义默认启用。
 
 Composer 的原生客户端工具 `configure_webhook` 和 `configure_egress_credential` 会暂停 Run，等待 Console 私密表单。当前用户通过现有 HTTP 接口执行修改，密钥和令牌不进入工具参数或结果。凭据写操作仍不向内部或外部 MCP 开放。使用流程、版本冲突和异步应用规则见 [Composer](agent-composer.md#configure-webhooks-and-credentials)。
+
+## 连接已有环境
+
+启用 `environments` 工具集后，agent 可以使用 `list_connectable_environments` 和 `connect_environment`。工具沿用当前 Run 的委托权限，不暴露凭证。查询返回可使用的已有环境及其配置能力，不会启动环境或验证就绪状态。
+
+使用环境 ID 和新别名连接，例如 `connect_environment(environment_id="env_...", alias="dev")`，即可给当前 Run 添加命名挂载。如需同时供后续普通 Run 使用，设置 `persist_to_thread=true`，并传入通过 `get_thread` 读到的 Thread `expected_version`。版本过期或别名冲突时，两处写入都不会发生。已有挂载和默认环境保持不变。
+
+新别名只会在当前工具批次结束后的下一次根模型请求中生效。同一批次内不能使用新别名，即使通过编排工具串行调用也不行。下一次模型响应应先确认当前环境上下文中出现该别名，再调用 Shell、Files 或 Computer 工具。不需要用户额外发一条消息。接受挂载不代表远端已经就绪，首次使用仍可能触发准备或返回环境不可用。Agent 工具设置和环境权限继续生效。
+
+通过 `get_run` 返回的 `content.environment_mounts` 引用调用 `read_content`，可查询已保存挂载。这是已接受的配置，不是实时连接检查。恢复会保留已接受的新增挂载；已开始的后台操作继续使用原有环境范围。
+
+启用此工具集前，应升级全部 Control 和 Worker，并执行数据库保护规则迁移。旧 Worker 即使能读取挂载记录，也无法应用运行中的新增挂载。

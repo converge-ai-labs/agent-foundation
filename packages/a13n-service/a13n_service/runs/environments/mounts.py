@@ -1,4 +1,4 @@
-"""Desired thread mounts and the immutable mount set a run freezes at acceptance.
+"""Desired Thread mounts and individually frozen Run mount selections.
 
 The frozen `runs.environment_mounts` of accepted and running runs is the durable active-use evidence that
 stop and destroy check under the environment row lock; acceptance share-locks the same rows before installing it.
@@ -350,6 +350,29 @@ async def freeze_mounts(
         else:
             require_usable(environment, principal.id)
 
+    return await admit_mounts(
+        session,
+        thread,
+        selected,
+        locked,
+        principal=principal,
+        default_session_configuration=default_session_configuration,
+        authority=authority,
+    )
+
+
+async def admit_mounts(
+    session: AsyncSession,
+    thread: ThreadRow,
+    selected: Sequence[ThreadEnvironmentRow | EnvironmentMount | MountCreate],
+    locked: Mapping[str, EnvironmentRow],
+    *,
+    principal: Principal,
+    existing: Sequence[EnvironmentMount] = (),
+    default_session_configuration: SessionConfiguration | None = None,
+    authority: ExecutionAuthority | None = None,
+) -> list[dict]:
+    """Resolve directories, permission ceilings and Session versions under the caller's locks."""
     client_ids = [environment.id for environment in locked.values() if environment.kind == "external"]
     configurations = (
         {
@@ -402,7 +425,8 @@ async def freeze_mounts(
         [reference for mount in frozen for reference in mount.session_configuration.credential_references],
         authority=authority,
     )
-    return [mount.model_dump(mode="json") for mount in await bindings.admit(session, thread, frozen)]
+    admitted = await bindings.admit(session, thread, [*existing, *frozen])
+    return [mount.model_dump(mode="json") for mount in admitted[len(existing) :]]
 
 
 async def _selection(session: AsyncSession, thread_id: str, mount: ThreadEnvironmentRow) -> EnvironmentMount:

@@ -330,6 +330,18 @@
     "summary": "Change only named template fields; preserve every omitted lifecycle value and recipe.\n\nRecipe replacement is typed and complete. Changing provider requires its new\nrecipe; no incompatible old recipe is implicitly carried across providers."
   },
   {
+    "effect": "write",
+    "group": "environments",
+    "key": "connect_environment",
+    "summary": "Accept a named environment mount for this Run, optionally saving it to its Thread.\n\nThe new alias enters environment context and tool routing only at the next root model request,\nafter the entire current tool batch finishes. Do not use it in the same batch, even through\nsequential orchestration. Check the next model turn's current environment context before use.\nAcceptance does not prove remote readiness. persist_to_thread also saves the mount for later Runs;\nit requires the Thread's expected_version from get_thread and never makes the alias available earlier.\nRead accepted mounts through get_run and read_content on content.environment_mounts."
+  },
+  {
+    "effect": "read",
+    "group": "environments",
+    "key": "list_connectable_environments",
+    "summary": "Find existing environments this execution identity may use. Listing never starts or connects them.\n\nOperations describe configured support, not verified readiness. Continue with next_cursor."
+  },
+  {
     "effect": "read",
     "group": "providers",
     "key": "discover_model_provider_models",

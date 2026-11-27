@@ -67,6 +67,7 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.tool_executions.authority import lock_execution, lock_owner, prove
+from a13n_service.runs.tool_executions.store import MOUNTS
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -208,6 +209,11 @@ class Source:
 
     @asynccontextmanager
     async def operation_guard(self, action: EnvironmentAction) -> AsyncGenerator[None]:
+        visible = MOUNTS.get()
+        if current_execution() is not None and visible is not None and self.mount not in visible:
+            raise EnvironmentError(
+                "Environment was not available when this tool started.", code="environment_permission_denied"
+            )
         try:
             if execution_cleanup_active() and action in {
                 EnvironmentAction.PROCESS_KILL,

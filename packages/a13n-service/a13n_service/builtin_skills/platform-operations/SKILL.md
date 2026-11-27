@@ -31,6 +31,7 @@ Read only the references needed for the current task:
 - [Providers](references/providers.md): private credential cards, provider configuration, connection tests and safe retries.
 - [Connections](references/connections.md): tools, tests and authorization.
 - [Skills](references/skills.md): upload/GitHub sources and exact revision references.
+- [Connect environments](references/environments.md): discover existing environments, optionally persist a named mount to the Thread, and use it only after the next model request.
 - [Environment templates](references/environment-templates.md): headless/desktop preparation, custom runtime prerequisites, recipes and instance boundaries.
 - [Schedules](references/schedules.md): read before creating, changing or dispatching scheduled work; covers time preview, durable delegation, approval and trigger results.
 - [Execution and diagnostics](references/execution-and-diagnostics.md): sessions through attempts, retained tool executions and traces.

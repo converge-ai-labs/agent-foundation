@@ -635,6 +635,22 @@ class RunRow(AppOwned, Stamped, Base):
                     THEN RAISE EXCEPTION 'sealed run facts are immutable'; END IF;
                     RETURN NEW;
                 END IF;
+                IF NEW.environment_mounts IS DISTINCT FROM OLD.environment_mounts THEN
+                    IF OLD.status <> 'running' OR NEW.status <> 'running'
+                        OR OLD.cancel_requested_at IS NOT NULL OR NEW.cancel_requested_at IS NOT NULL
+                        OR jsonb_typeof(NEW.environment_mounts) <> 'array'
+                    THEN RAISE EXCEPTION 'only running runs may append environment mounts'; END IF;
+                    IF jsonb_array_length(NEW.environment_mounts) < jsonb_array_length(OLD.environment_mounts)
+                        OR EXISTS (
+                            SELECT 1 FROM jsonb_array_elements(OLD.environment_mounts) WITH ORDINALITY AS m(value, position)
+                            WHERE NEW.environment_mounts->(m.position::int - 1) IS DISTINCT FROM m.value
+                        ) OR EXISTS (
+                            SELECT 1 FROM jsonb_array_elements(NEW.environment_mounts) AS m(value)
+                            GROUP BY m.value->>'name' HAVING count(*) > 1 OR m.value->>'name' IS NULL
+                        )
+                    THEN RAISE EXCEPTION 'run environment mounts are append-only with unique names'; END IF;
+                    new_facts.environment_mounts := OLD.environment_mounts;
+                END IF;
                 IF (to_jsonb(new_facts) - ARRAY[{_RUN_PROGRESS}]) IS DISTINCT FROM (to_jsonb(old_facts) - ARRAY[{_RUN_PROGRESS}])
                 THEN RAISE EXCEPTION 'accepted run selection is immutable'; END IF;
                 IF NEW.status <> OLD.status AND NOT (

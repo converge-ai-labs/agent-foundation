@@ -164,7 +164,10 @@ class ControlSnapshot:
         principal = self.principals[run.id]
         if isinstance(principal, ServiceError):
             raise AuthorityRevoked() from principal
-        for value in run.environment_mounts:
+        mounts = (
+            self.executions[caller.execution_id].environment_mounts if caller.execution_id else run.environment_mounts
+        )
+        for value in mounts:
             if value["environment_id"] == environment_id and value["name"] == mount_name:
                 mount = EnvironmentMount.model_validate(value)
                 if actions <= mount.permission_ceiling.operations:

@@ -1,11 +1,13 @@
 """Coverage and real model-adapter checks for the explicit platform catalog."""
 
 import json
+from dataclasses import replace
 
 import pytest
 from a13n_service.platform_catalog import catalog
 from a13n_service.platform_tools import validate_catalog
 from jsonschema import Draft202012Validator
+from pydantic import ValidationError
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel, _function_declaration_from_tool
@@ -17,6 +19,8 @@ from pydantic_ai.tools import ToolDefinition
 
 # Every required capability must remain selectable through the OSS platform catalog.
 REQUIRED_TOOL_NAMES = {
+    "list_connectable_environments",
+    "connect_environment",
     "list_agents",
     "create_agent",
     "validate_agent_configuration",
@@ -139,7 +143,7 @@ def test_catalog_keeps_required_capabilities_and_valid_input_schemas():
         schema = tool.inputs.model_json_schema()
         Draft202012Validator.check_schema(schema)
         assert "request_body" not in schema["properties"]
-        if "expected_version" in schema["properties"]:
+        if "expected_version" in schema["properties"] and tool.version_when is None:
             assert "expected_version" in schema["required"]
 
 
@@ -174,3 +178,15 @@ def test_catalog_uses_real_provider_preparation_and_serialization(route):
         encoded = json.dumps(wire, allow_nan=False)
         assert contract.name in encoded
         assert len(encoded) > 50
+
+
+def test_conditional_thread_version_is_explicit_and_other_preconditions_stay_required():
+    tool = next(tool for tool in catalog() if tool.name == "connect_environment")
+    arguments = {"environment_id": "env_" + "a" * 28, "alias": "dev"}
+    tool.inputs.model_validate(arguments)
+    tool.inputs.model_validate({**arguments, "persist_to_thread": True, "expected_version": "thr_target:1"})
+    for extra in ({"persist_to_thread": True}, {"expected_version": "thr_target:1"}, {"expected_version": None}):
+        with pytest.raises(ValidationError):
+            tool.inputs.model_validate(arguments | extra)
+    with pytest.raises(ValueError, match="precondition must be required"):
+        validate_catalog([replace(tool, version_when=None)])

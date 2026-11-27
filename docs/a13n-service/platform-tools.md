@@ -20,3 +20,15 @@ External clients use [management MCP](mcp.md), with HTTP envelopes and `request_
 The `usage` toolset exposes nine existing query operations, with workspace read access and admin checks for member attribution. The `subscriptions` toolset exposes three reads and three reviewed nonsecret writes; all require admin within the accepted Run authority. The `egress_credentials` toolset exposes only four metadata/application reads. They are opt-in for ordinary Agents and enabled in the current Composer definition.
 
 Composer's native `configure_webhook` and `configure_egress_credential` client tools pause the Run for private Console forms. The current user executes writes through existing HTTP APIs; keys and tokens never enter tool arguments or results. Credential writes remain excluded from both internal and external MCP. Read [Composer](agent-composer.md#configure-webhooks-and-credentials) for the user flow, version conflicts and asynchronous application semantics.
+
+## Connect an existing environment
+
+Enable the `environments` toolset to offer `list_connectable_environments` and `connect_environment`. The tools use the current Run's delegated authority and do not expose credentials. Discovery returns existing usable instances and configured operations; it does not start them or verify readiness.
+
+Connect with an environment ID and a new alias, for example `connect_environment(environment_id="env_...", alias="dev")`. This adds a named mount to the current Run. To also save it for later ordinary Runs, set `persist_to_thread=true` and supply the Thread's observed `expected_version` from `get_thread`. A stale version or alias conflict rejects both writes. Existing mounts and the default environment are preserved.
+
+The new alias becomes available only at the next root model request, after the current tool batch finishes. Do not use it in the same batch, including sequential orchestration. On the next model turn, check the current environment context before calling Shell, Files or Computer tools against that alias. No additional user message is required. Acceptance is not remote readiness: first use may still prepare the environment or report an unavailable target. Agent tool settings and environment permissions continue to apply.
+
+Query saved mounts through `get_run` and `read_content` on `content.environment_mounts`. This is accepted configuration, not a live connection check. Recovery retains accepted additions; already-started background operations retain their original environment scope.
+
+Upgrade all Controls and Workers and apply the database guard migration before enabling this toolset. Older Workers cannot apply live additions, even though they can read the mount records.
