@@ -1766,7 +1766,8 @@ class HarnessUiApp:
                     raise ThreadError(
                         "Resolve pending decisions before converting this Thread.", code="thread_deferred_pending"
                     )
-                await self._threads.promote_coordinator(thread_id)
+                if await self._threads.promote_coordinator(thread_id):
+                    await self._acp_sessions.retire(thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
 

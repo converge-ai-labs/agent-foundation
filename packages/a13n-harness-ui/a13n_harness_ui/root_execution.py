@@ -305,20 +305,21 @@ class RootRunExecutor:
         workspaces = composition.project_roots
         cwd = workspaces[0] if workspaces else str(self._store.settings.data_root)
         thread_files = self._thread_files.directory(thread_id) if self._thread_files is not None else None
+        digest_payload: dict[str, Any] = {
+            "root": node.model_dump(mode="json"),
+            "cwd": cwd,
+            # Retain the existing continuation identity for saved sessions.
+            "additional_directories": (
+                *workspaces[1:],
+                *((str(thread_files),) if thread_files else ()),
+            ),
+        }
+        if composition.role != "ordinary":
+            digest_payload["role"] = composition.role
         return AcpTurn(
             sessions=self.acp_sessions,
             resource=node.resource,
-            digest=canonical_digest(
-                {
-                    "root": node.model_dump(mode="json"),
-                    "cwd": cwd,
-                    # Retain the existing continuation identity for saved sessions.
-                    "additional_directories": (
-                        *workspaces[1:],
-                        *((str(thread_files),) if thread_files else ()),
-                    ),
-                }
-            ),
+            digest=canonical_digest(digest_payload),
             setup=AcpSessionSetup(
                 cwd=cwd,
                 instructions=(*node.global_guidance, node.resource.instructions),
