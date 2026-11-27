@@ -25,11 +25,31 @@
 .row + .row {
   border-top: 1px solid var(--a13n-border-soft);
 }
-.row strong {
+.item,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.link {
+  flex: 1;
+  min-width: 0;
+  color: var(--a13n-text);
+  text-decoration: none;
+}
+.link strong,
+.link small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: var(--a13n-text-body);
 }
-.row small {
-  font-size: var(--a13n-text-body);
+.link strong {
+  font-weight: 500;
+}
+.link small {
+  color: var(--a13n-secondary);
 }
 .empty {
   display: flex;

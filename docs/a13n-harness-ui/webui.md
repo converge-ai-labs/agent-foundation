@@ -57,6 +57,8 @@ Use the sidebar menu to switch between **Projects** (grouped by directory) and *
 
 ### Everyday conversation actions
 
+Right-click a sidebar conversation or open its three-dot menu to access the same actions. The archived chats list offers Restore and Delete beside each eligible chat.
+
 | Action                        | How to do it                                                                                  |
 | ----------------------------- | --------------------------------------------------------------------------------------------- |
 | Send / line break             | `Enter` sends by default; `Shift+Enter` inserts a new line                                    |

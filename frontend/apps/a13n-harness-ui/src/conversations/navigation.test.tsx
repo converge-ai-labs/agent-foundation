@@ -1570,7 +1570,7 @@ it("keeps an off-page owner in Running while its worker is active without loadin
     "off-page-owner",
   );
   expect(
-    screen.getByRole("button", { name: "Restore off-page-owner" }),
+    screen.getByRole("button", { name: "Actions for off-page-owner" }),
   ).toBeTruthy();
   expect(screen.queryByRole("link", { name: /off-page-worker/ })).toBeNull();
   expect(
@@ -1834,7 +1834,7 @@ it("keeps an archived owner reachable for a visible worker outside the owner pag
     name: /archived-owner.*Coordinator.*Archived/,
   });
   expect(
-    screen.getByRole("button", { name: "Restore archived-owner" }),
+    screen.getByRole("button", { name: "Actions for archived-owner" }),
   ).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for archived-owner" }),
@@ -2783,7 +2783,7 @@ it("keeps an archived Coordinator reachable for an unselected active worker in R
   });
   await within(recent).findByRole("link", { name: /archived-owner/ });
   expect(
-    within(recent).getByRole("button", { name: "Restore archived-owner" }),
+    within(recent).getByRole("button", { name: "Actions for archived-owner" }),
   ).toBeTruthy();
   expect(
     within(recent).queryByRole("link", { name: /active-worker/ }),
@@ -2849,7 +2849,7 @@ it("does not resurrect an archived owner for an idle worker in Recent, while kee
   ).toBeNull();
   expect(
     within(recent).getByRole("button", {
-      name: "Restore selected-archived-owner",
+      name: "Actions for selected-archived-owner",
     }),
   ).toBeTruthy();
   fireEvent.click(

@@ -9,6 +9,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
@@ -89,15 +90,15 @@ it("queries only archived chats with independent search and pagination, then res
     }),
   );
   mount();
-  await screen.findByRole("link", { name: /Stored.*Archived/ });
+  await screen.findByRole("link", { name: /Stored.*One/ });
   expect(screen.queryByRole("link", { name: "Active" })).toBeNull();
   expect(urls[0].searchParams.get("archived_only")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-  await screen.findByRole("link", { name: /Older.*Archived/ });
+  await screen.findByRole("link", { name: /Older.*One/ });
   expect(urls.at(-1)?.searchParams.get("cursor")).toBe("older");
   fireEvent.click(screen.getByRole("button", { name: "Restore Stored" }));
   await waitFor(() =>
-    expect(screen.queryByRole("link", { name: /Stored.*Archived/ })).toBeNull(),
+    expect(screen.queryByRole("link", { name: /Stored.*One/ })).toBeNull(),
   );
   expect(mutation).toEqual({ expected_version: 3, patch: { archived: false } });
   expect(screen.getByRole("heading", { name: "Archived chats" })).toBeTruthy();
@@ -170,10 +171,10 @@ it("preserves archive filters and pending restore across language changes withou
   ).toBeTruthy();
   expect(screen.getByRole("button", { name: "恢复 未命名聊天" })).toBeTruthy();
   expect(vi.mocked(fetch).mock.calls).toHaveLength(calls);
-  await user.click(
-    screen.getByRole("button", { name: "Untitled chat 的操作" }),
-  );
-  await user.click(await screen.findByRole("menuitem", { name: "删除聊天" }));
+  const item = screen.getByRole("link", {
+    name: /Untitled chat.*One/,
+  }).parentElement!;
+  await user.click(within(item).getByRole("button", { name: "删除" }));
   expect(
     screen.getByRole("dialog", { name: "删除聊天？" }).textContent,
   ).toContain("“Untitled chat”及其子智能体历史记录");
