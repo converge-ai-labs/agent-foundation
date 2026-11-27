@@ -173,15 +173,11 @@ export function SkillsPage() {
                     description={item.description}
                     resourceId={item.workspaceSkill?.id}
                     icon={
-                      item.workspaceSkill ? (
-                        <SkillAvatar
-                          name={item.name}
-                          id={item.id}
-                          className="size-8 rounded-lg"
-                        />
-                      ) : (
-                        <SkillIcon size={24} />
-                      )
+                      <SkillAvatar
+                        name={item.name}
+                        id={item.workspaceSkill?.id ?? item.name}
+                        className="size-8 rounded-lg"
+                      />
                     }
                   />
                 ),
