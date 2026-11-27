@@ -30,7 +30,7 @@ async def capture(**kwargs):
         prompt=kwargs["prompt"],
         response=kwargs["response"],
         published=SimpleNamespace(
-            value=SimpleNamespace(origin_browser_id=None, project_id=None),
+            value=SimpleNamespace(origin_browser_id=None, project_id=None, coordinator_thread_id=None),
             reference=ObjectRef(
                 object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64
             ),
