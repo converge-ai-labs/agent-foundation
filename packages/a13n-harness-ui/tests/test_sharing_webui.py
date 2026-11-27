@@ -14,7 +14,7 @@ from .test_app import _settings, _write_configuration
 from .test_coordinators import coordinator_configuration
 from .test_sharing import owned_child
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @asynccontextmanager

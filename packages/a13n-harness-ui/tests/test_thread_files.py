@@ -24,6 +24,8 @@ from pydantic_ai.models.function import FunctionModel
 
 from .test_interactive import _seed
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 def _expire(path: Path) -> None:
     os.utime(path, (1, 1))

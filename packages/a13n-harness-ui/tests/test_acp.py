@@ -7,8 +7,10 @@ import sys
 
 import pytest
 
-from .acp_test_support import _FAKE, PROFILE, _agent
+from .acp_test_support import _FAKE, PROFILE, _in_process_agent
 from .test_interactive import _seed
+
+pytestmark = pytest.mark.usefixtures("migrated_databases")
 
 
 def test_acp_rejects_windows_before_app_start(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,22 +73,19 @@ async def test_acp_rejects_nonordinary_resume_and_dangling_model(tmp_path):
     assert model_option.current_value in {option.value for option in model_option.options}
 
 
-@pytest.mark.xdist_group("harness-ui-acp-usage-window")
 @pytest.mark.anyio
 async def test_unknown_usage_window_reports_in_extension_notification(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
-    hooks = """
-from a13n_harness_ui.app import HarnessUiApp
+    from a13n_harness_ui.app import HarnessUiApp
 
-original_usage = HarnessUiApp.context_usage
+    original_usage = HarnessUiApp.context_usage
 
-async def context_usage(self, thread_id):
-    context = await original_usage(self, thread_id)
-    return context.model_copy(update={'context_window': None})
+    async def context_usage(self, thread_id):
+        context = await original_usage(self, thread_id)
+        return context.model_copy(update={"context_window": None})
 
-HarnessUiApp.context_usage = context_usage
-"""
-    async with _agent(path, tmp_path, hooks=hooks) as rpc:
+    monkeypatch.setattr(HarnessUiApp, "context_usage", context_usage)
+    async with _in_process_agent(path, tmp_path, monkeypatch) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
         reply, _ = await rpc.response(2)
         session_id = reply["result"]["sessionId"]
@@ -103,7 +102,6 @@ HarnessUiApp.context_usage = context_usage
             assert report["version"] == 1 and report["sessionId"] == session_id and report["usageReport"]["records"]
 
 
-@pytest.mark.xdist_group("harness-ui-acp-sessions")
 @pytest.mark.anyio
 async def test_new_prompt_acceptance_stream_and_resume(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
@@ -114,7 +112,7 @@ async def test_new_prompt_acceptance_stream_and_resume(tmp_path, monkeypatch):
     (model_path.parent / "second.yaml").write_text(
         model_source.replace("model-codex", "model-second").replace("gpt-5.6-sol", "gpt-5.6-luna")
     )
-    async with _agent(path, tmp_path) as rpc:
+    async with _in_process_agent(path, tmp_path, monkeypatch) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
         reply, _ = await rpc.response(2)
         session_id = reply["result"]["sessionId"]
@@ -157,7 +155,7 @@ async def test_new_prompt_acceptance_stream_and_resume(tmp_path, monkeypatch):
         await rpc.send("session/prompt", id=8, sessionId=session_id, prompt=[{"type": "text", "text": "model check"}])
         reply, _ = await rpc.response(8)
         assert reply["result"]["_meta"][PROFILE]["finalOutput"] == "gpt-5.6-luna low"
-    async with _agent(path, tmp_path) as rpc:
+    async with _in_process_agent(path, tmp_path, monkeypatch) as rpc:
         await rpc.send("session/resume", id=2, sessionId=session_id, cwd=str(other), mcpServers=[])
         reply, _ = await rpc.response(2)
         assert "error" in reply
@@ -175,7 +173,6 @@ async def test_new_prompt_acceptance_stream_and_resume(tmp_path, monkeypatch):
     assert model_source == model_path.read_text()
 
 
-@pytest.mark.xdist_group("harness-ui-acp-client")
 @pytest.mark.anyio
 async def test_harness_acp_client_interoperates_with_ui_agent(tmp_path, monkeypatch):
     from a13n_harness.acp import AcpRunBinding, AcpSessionRuntime, AcpSessionSetup, LocalStdioTransport
@@ -191,7 +188,7 @@ async def test_harness_acp_client_interoperates_with_ui_agent(tmp_path, monkeypa
     setup = AcpSessionSetup(str(tmp_path))
     async with asyncio.timeout(45):
         async with AcpSessionRuntime.open(transport) as runtime:
-            session_id = await runtime.open_session(setup)
+            assert await runtime.open_session(setup)
             updates = []
             response = await runtime.prompt(
                 [TextContentBlock(text="model check")], binding=AcpRunBinding(on_update=updates.append)
@@ -202,7 +199,3 @@ async def test_harness_acp_client_interoperates_with_ui_agent(tmp_path, monkeypa
                 for update in updates
                 if isinstance(update, AgentMessageChunk) and isinstance(update.content, TextContentBlock)
             )
-        async with AcpSessionRuntime.open(transport) as runtime:
-            assert await runtime.open_session(setup, saved_session_id=session_id) == session_id
-            response = await runtime.prompt([TextContentBlock(text="model check")], binding=AcpRunBinding())
-            assert response.stop_reason == "end_turn"

@@ -4,7 +4,7 @@ import pytest
 from a13n_harness_ui.browser_handback import BLOCKED, HANDBACK, BrowserHandback
 from anyio import Event, create_task_group, fail_after, wait_all_tasks_blocked
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_only_blocked_threads_are_registered_and_repeated_takeovers_coalesce():

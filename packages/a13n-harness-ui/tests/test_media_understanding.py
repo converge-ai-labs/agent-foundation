@@ -20,7 +20,7 @@ from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, model_recipe_id
 from pydantic_ai.models.test import TestModel
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def write_configuration(path: Path, media=None) -> Path:

@@ -25,7 +25,7 @@ from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentials, OpenA
 
 from .test_app import _settings
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def credentials(host: str) -> OpenAIChatGPTCredentials:

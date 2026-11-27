@@ -18,6 +18,8 @@ from pydantic_ai.models.function import FunctionModel
 
 from .test_app import _settings, _write_configuration
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 def live_configuration(tmp_path: Path, *, files_enabled: bool = True) -> Path:
     root = _write_configuration(tmp_path)

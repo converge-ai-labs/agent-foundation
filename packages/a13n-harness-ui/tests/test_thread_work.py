@@ -15,7 +15,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from .test_app import _settings
 from .test_thread_collaboration import configuration, controller
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(

@@ -24,7 +24,7 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import BinaryContent, TextContent
 from pydantic_ai.toolsets import FunctionToolset
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 _PEER = Path(__file__).resolve().parents[2] / "a13n-harness/tests/fixtures/acp_peer.py"
 

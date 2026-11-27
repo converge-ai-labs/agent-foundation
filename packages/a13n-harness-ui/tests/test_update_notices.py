@@ -17,7 +17,7 @@ from a13n_harness_ui.interactive.updates import AvailableUpdate, check_update
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from click.testing import CliRunner
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 REPOSITORY_PATH = "/repos/converge-ai-labs/agent-foundation"
 RELEASE_URL = "https://github.com/converge-ai-labs/agent-foundation/releases/tag/release/a13n-harness-ui-v1.10.0"
