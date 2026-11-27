@@ -92,6 +92,7 @@ from a13n_service.runs.dynamic_subagents import SpawnCapability
 from a13n_service.runs.environments.clients.recovery import Recovery as ClientRecovery
 from a13n_service.runs.environments.execution import EnvironmentUnavailable, Source, open_mounts, prepare
 from a13n_service.runs.environments.lifecycle import public_message
+from a13n_service.runs.environments.live import LiveMounts
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import Host, HostPlan, open_host, resolve_host
@@ -552,6 +553,7 @@ class _Attempt:
         self.cursors = MemoryCursors(plan.memory_cursors)
         self.boundaries = Boundaries(self.cursors.snapshot)
         self.client_recovery: ClientRecovery | None = None
+        self.live_mounts: LiveMounts | None = None
         models = {model.key: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
         self.compaction = (
@@ -707,7 +709,19 @@ class _Attempt:
                     if isinstance(mount.source, Source) and mount.source.session_recovery is not None
                 },
             )
-            self.client_recovery = recovery if recovery.mounts else None
+            can_connect = any("connect_environment" in parts.platform for parts in self.plan.host.parts.values())
+            self.client_recovery = recovery if recovery.mounts or can_connect else None
+            if can_connect:
+                self.live_mounts = LiveMounts(
+                    runtime,
+                    lease,
+                    self.plan.principal,
+                    self.plan.authority,
+                    host.environment,
+                    self.plan.mounts,
+                    stack,
+                    recovery,
+                )
             yield host
 
     async def _stream(
@@ -718,7 +732,7 @@ class _Attempt:
         runtime, lease = self.runtime, self.lease
         root = self.plan.agent
         async with (
-            resources(lease, self._open_resources(models, model_scope)) as host,
+            resources(lease, self._open_resources(models, model_scope), mounts=self.plan.mounts) as host,
             AsyncExitStack() as stack,
         ):
             executable = agent.build(
@@ -726,6 +740,7 @@ class _Attempt:
                 capabilities=lambda node: (
                     [
                         self.boundaries,
+                        *([self.live_mounts] if self.live_mounts is not None else []),
                         *([self.client_recovery] if self.client_recovery is not None else []),
                         InputBoundary(self.boundaries, self.offers.pending_notice),
                         *(

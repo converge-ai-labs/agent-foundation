@@ -2280,3 +2280,76 @@ async def test_app_run_hooks_use_frozen_activation_on_connect_only_environment(
             assert (laptop.workspace / "run-proof.txt").read_text() == "entered"
             assert (laptop.workspace / "exit.txt").read_text() == "collected before close"
             assert calls == ["enter", "exit"]
+
+
+async def test_agent_connects_environment_between_tool_batches(service, daemons, scripted_model, runs_kit):
+    from .test_environment_platform_tools import environment_context
+
+    await runs_kit.pause_sweeps(service)
+    initial = await daemons.start("initial-device")
+    extra = await daemons.start("extra-device")
+    initial_response = await register(service, initial.endpoint)
+    extra_response = await register(service, extra.endpoint)
+    assert initial_response.status_code == 201, initial_response.text
+    assert extra_response.status_code == 201, extra_response.text
+    initial_id, extra_id = initial_response.json()["id"], extra_response.json()["id"]
+    agent = await runs_kit.create_agent(
+        service,
+        scripted_model,
+        toolsets={
+            "environments": {"enabled": True, "tools": {"connect_environment": {"permission": "allow"}}},
+            "shell": {"enabled": True},
+        },
+    )
+    async with runs_kit.platform_runtime(service) as runtime:
+        submitted = await runs_kit.start_thread(
+            service,
+            agent,
+            "Connect then use the new environment",
+            environments=[{"name": "workspace", "environment_id": initial_id}],
+        )
+        # Two calls from one response cannot use a mount accepted in that response.
+        calls = [
+            ("connect", "connect_environment", {"environment_id": extra_id, "alias": "dev"}),
+            ("too-early", "shell_exec", {"command": "printf premature > premature.txt", "alias": "dev"}),
+        ]
+        scripted_model._script(
+            {
+                "deltas": [
+                    {
+                        "tool_calls": [
+                            {
+                                "index": i,
+                                "id": call_id,
+                                "type": "function",
+                                "function": {"name": name, "arguments": json.dumps(args)},
+                            }
+                            for i, (call_id, name, args) in enumerate(calls)
+                        ]
+                    }
+                ],
+                "chunk_gate": None,
+                "finish": "tool_calls",
+                "gate": None,
+                "to": None,
+            }
+        )
+        scripted_model.call(
+            "shell_exec",
+            {"command": "printf connected > proof.txt", "alias": "dev", "cwd": f"/mnt/dev{extra.workspace}"},
+            call_id="after",
+        )
+        scripted_model.say("Done")
+        await (await runs_kit.attempt(service, runtime=runtime))
+        run = await runs_kit.get_run(service, submitted["run"]["id"])
+        assert run["status"] == "completed", run
+        requests = [await scripted_model.request() for _ in range(3)]
+        early = next(m["content"] for m in requests[1]["messages"] if m.get("tool_call_id") == "too-early")
+        assert "environment_selection_invalid" in early, early
+        assert "dev" in [m["name"] for m in environment_context(requests[1])["mounts"]]
+        after = next(m["content"] for m in requests[2]["messages"] if m.get("tool_call_id") == "after")
+        assert json.loads(after).get("status", {}).get("exit_code") == 0, after
+        assert not (extra.workspace / "premature.txt").exists()
+        assert (extra.workspace / "proof.txt").exists(), after
+        assert (extra.workspace / "proof.txt").read_text() == "connected"
+        assert not (initial.workspace / "proof.txt").exists()

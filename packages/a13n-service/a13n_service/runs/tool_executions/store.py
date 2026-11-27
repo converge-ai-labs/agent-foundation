@@ -24,7 +24,7 @@ from a13n_service.infra.telemetry import meter
 from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.findings.tables import AnalysisRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import RunOptions
+from a13n_service.runs.schemas import EnvironmentMount, RunOptions
 from a13n_service.runs.tables import RunRow, ToolExecutionRow
 
 DURATION = meter.create_histogram(
@@ -48,6 +48,9 @@ def ended(session: AsyncSession, row: ToolExecutionRow) -> None:
 
 # Set by the worker's resource scope. The original Harness task inherits it; later readers need no origin.
 ORIGIN: contextvars.ContextVar[Lease] = contextvars.ContextVar("service_tool_origin")
+MOUNTS: contextvars.ContextVar[tuple[EnvironmentMount, ...] | None] = contextvars.ContextVar(
+    "service_tool_mounts", default=None
+)
 
 
 async def managed_inline(session: AsyncSession, run: RunRow) -> bool:
@@ -185,6 +188,7 @@ class Store:
                     raise ToolExecutionAdmissionRejected(
                         "Tool admission was rejected: its origin is no longer current."
                     ) from None
+                selected_mounts = MOUNTS.get()
                 row = ToolExecutionRow(
                     id=record.execution_id,
                     organization_id=lease.organization_id,
@@ -199,7 +203,9 @@ class Store:
                     sequential=record.sequential,
                     created_at=record.created_at,
                     record=record.model_dump(mode="json"),
-                    environment_mounts=run.environment_mounts,
+                    environment_mounts=[m.model_dump(mode="json") for m in selected_mounts]
+                    if selected_mounts is not None
+                    else run.environment_mounts,
                 )
                 session.add(row)
                 return

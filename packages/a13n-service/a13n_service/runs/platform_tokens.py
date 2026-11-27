@@ -16,12 +16,12 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation, secret_hash
-from a13n_service.infra.db import now, transaction
+from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.platform import PlatformAccess, PlatformGroup
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, authorize_execution, lock_lease
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import AttemptRow, RunRow, ToolExecutionRow
+from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, ToolExecutionRow
 from a13n_service.runs.tool_executions.authority import lock_execution
 from a13n_service.tenancy.access import (
     Authenticated,
@@ -30,7 +30,7 @@ from a13n_service.tenancy.access import (
     require_active_workspace,
     unauthenticated,
 )
-from a13n_service.tenancy.authorize import ExecutionAuthority
+from a13n_service.tenancy.authorize import ExecutionAuthority, Principal
 
 PREFIX = "a13n_run_"
 _LOCATION = SecretLocation(None, "run_platform_tokens", "platform_tools_v1", "service")
@@ -164,3 +164,30 @@ async def _live_run(session: AsyncSession, claims: Claims) -> RunRow:
     ):
         raise unauthenticated()
     return run
+
+
+async def lock_run(runtime: Runtime, session: AsyncSession, claims: Claims) -> tuple[ThreadRow, RunRow, Principal]:
+    """Recheck a platform mutation under Thread → Run → Attempt → execution locks."""
+    run = await session.get(RunRow, claims.run_id)
+    if run is None:
+        raise unauthenticated()
+    thread = await lock(session, ThreadRow, run.thread_id)
+    run = await lock(session, RunRow, claims.run_id)
+    attempt = await lock(session, AttemptRow, claims.attempt_id)
+    if claims.execution_id is not None:
+        await lock(session, ToolExecutionRow, claims.execution_id)
+    if thread is None or run is None or run.status != "running" or run.current_attempt_id != claims.attempt_id:
+        raise unauthenticated()
+    current = await now(session)
+    if (
+        attempt is None
+        or attempt.run_id != run.id
+        or attempt.status not in {"leased", "running"}
+        or attempt.lease_expires_at <= current
+        or not hmac.compare_digest(attempt.lease_token_hash, claims.lease_hash)
+    ):
+        raise unauthenticated()
+    await _live_run(session, claims)
+    await require_active_workspace(session, run.workspace_id)
+    principal = await authorize_execution(session, runtime.access, run)
+    return thread, run, principal

@@ -12444,6 +12444,7 @@ export interface components {
       | "connections"
       | "skills"
       | "environment_templates"
+      | "environments"
       | "providers"
       | "execution"
       | "schedules"

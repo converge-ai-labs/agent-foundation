@@ -31,20 +31,24 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, authorize_execution
 from a13n_service.runs.environments.recovery import prepare as prepare_recovery
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import AttemptRow, ToolExecutionRow
 from a13n_service.runs.tool_executions.authority import authorize_control, lock_execution, prove
 from a13n_service.runs.tool_executions.claims import ShellClaim, claim_shells, relinquish_shell
 from a13n_service.runs.tool_executions.output import Output, Snapshot
 from a13n_service.runs.tool_executions.routing import Caller, Request, Routing
-from a13n_service.runs.tool_executions.store import ORIGIN, Store
+from a13n_service.runs.tool_executions.store import MOUNTS, ORIGIN, Store
 
 _RESOURCES: ContextVar[RetainedScope[Any]] = ContextVar("service_tool_resources")
 
 
 @asynccontextmanager
-async def resources[T](lease: Lease, manager: AbstractAsyncContextManager[T]) -> AsyncIterator[T]:
+async def resources[T](
+    lease: Lease, manager: AbstractAsyncContextManager[T], *, mounts: tuple[EnvironmentMount, ...] | None = None
+) -> AsyncIterator[T]:
     """Keep task-affine clients alive until the last original invocation releases them."""
     origin = ORIGIN.set(lease)
+    mount_token = MOUNTS.set(mounts)
     scope = RetainedScope(manager)
     token = _RESOURCES.set(scope)
     try:
@@ -52,6 +56,7 @@ async def resources[T](lease: Lease, manager: AbstractAsyncContextManager[T]) ->
     finally:
         _RESOURCES.reset(token)
         ORIGIN.reset(origin)
+        MOUNTS.reset(mount_token)
         await scope.close()
 
 

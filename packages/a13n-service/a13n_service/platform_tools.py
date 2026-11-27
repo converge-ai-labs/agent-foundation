@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools import Tool, ToolResult
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model, model_validator
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import request_id
@@ -42,10 +42,15 @@ class Definition:
     inputs: type[BaseModel]
     handler: Callable[..., Awaitable[object]]
     containers: dict[str, type[BaseModel]]
+    version_when: str | None = None
 
 
 def definition(
-    handler: Callable[..., Awaitable[object]], *, group: PlatformGroup, effect: Literal["read", "write"]
+    handler: Callable[..., Awaitable[object]],
+    *,
+    group: PlatformGroup,
+    effect: Literal["read", "write"],
+    version_when: str | None = None,
 ) -> Definition:
     """Compile an explicitly contributed typed callable, expanding its input record.
 
@@ -70,7 +75,24 @@ def definition(
             if name in fields:
                 raise ValueError(f"Conflicting platform input: {handler.__name__}.{name}")
             fields[name] = (annotation, ... if parameter.default is inspect.Parameter.empty else parameter.default)
-    inputs = create_model(handler.__name__ + "Input", __config__=ConfigDict(extra="forbid"), **fields)
+
+    @model_validator(mode="after")
+    def require_version(value: Any) -> Any:
+        if version_when is not None:
+            required = getattr(value, version_when)
+            if (required and value.expected_version is None) or (
+                not required and "expected_version" in value.model_fields_set
+            ):
+                raise ValueError(f"expected_version must be supplied exactly when {version_when} is true")
+        return value
+
+    validators: dict[str, Any] = {"require_version": require_version} if version_when is not None else {}
+    inputs = create_model(
+        handler.__name__ + "Input",
+        __config__=ConfigDict(extra="forbid"),
+        __validators__=validators,
+        **fields,
+    )
     return Definition(
         handler.__name__,
         group,
@@ -79,6 +101,7 @@ def definition(
         inputs,
         handler,
         containers,
+        version_when,
     )
 
 
@@ -91,7 +114,11 @@ def validate_catalog(definitions: Sequence[Definition]) -> None:
         if "request_body" in contract.inputs.model_fields:
             raise ValueError(f"Platform tool cannot expose an HTTP body: {contract.name}")
         version = contract.inputs.model_fields.get("expected_version")
-        if version is not None and not version.is_required():
+        if contract.version_when is not None:
+            condition = contract.inputs.model_fields.get(contract.version_when)
+            if contract.effect != "write" or version is None or condition is None or condition.annotation is not bool:
+                raise ValueError(f"Invalid conditional platform precondition: {contract.name}")
+        elif version is not None and not version.is_required():
             raise ValueError(f"Platform precondition must be required: {contract.name}")
 
 

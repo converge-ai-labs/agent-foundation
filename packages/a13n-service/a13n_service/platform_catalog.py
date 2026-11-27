@@ -27,6 +27,7 @@ def catalog() -> tuple[Definition, ...]:
     from a13n_service.resources.subscriptions.platform_tools import TOOLS as subscriptions
     from a13n_service.runs.content_tools import TOOLS as content
     from a13n_service.runs.environments.egress.platform_tools import TOOLS as credential_sessions
+    from a13n_service.runs.environments.platform_tools import TOOLS as environments
     from a13n_service.runs.findings.platform_tools import TOOLS as findings
     from a13n_service.runs.platform_queries import TOOLS as runs
     from a13n_service.runs.schedules.platform_tools import TOOLS as schedules
@@ -43,6 +44,7 @@ def catalog() -> tuple[Definition, ...]:
         *models,
         *skills,
         *templates,
+        *environments,
         *connections,
         *connectors,
         *providers,
