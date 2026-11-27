@@ -128,5 +128,5 @@ mcp = ContextualMCP(
 
 ## 启动故障隔离与大型工具目录
 
-- **可选服务器与初始化重试：** 使用 `MCPServer(id=..., prepare=..., on_error="skip")` 搭配 `InitializationRetryClient`（瞬态初始化错误最多重试 3 次，带 1s/2s 退避；`skip` 仅在当次 Run 中略过失败服务器而不中断运行）。
+- **可选服务器与初始化重试：** 使用 `MCPServer(id=..., prepare=..., on_error="skip")` 搭配 `InitializationRetryClient`（瞬态初始化错误最多重试 3 次，带 1s/2s 退避；`skip` 仅在当次 Run 中略过失败服务器而不中断运行）。为 `MCPServer` 设置 `defer_loading=True` 后，模型可通过 `load_capability` 按需加载该服务器的工具。
 - **工具搜索：** 当服务器暴露大量工具时，将本地 `MCP` 或 `ContextualMCP` 实例直接作为 [ToolSearchGroup 来源](tool-search.md#group-a-run-bound-mcp-capability)（`native=False, local=True`），在按需加载 Schema 的同时保留按次请求头解析。
