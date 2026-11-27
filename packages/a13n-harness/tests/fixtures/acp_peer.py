@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 
 
 def log_failure(*args):
-    with open("peer-error.log", "w") as file:
+    with open("peer-error.log", "w", encoding="utf-8", errors="backslashreplace") as file:
         traceback.print_exception(*args, file=file)
 
 
@@ -82,7 +82,9 @@ def settle_when_released():
 
 
 def send(**data):
-    print(json.dumps({"jsonrpc": "2.0", **data}), flush=True)
+    frame = json.dumps({"jsonrpc": "2.0", **data}, ensure_ascii=False).encode("utf-8")
+    sys.stdout.buffer.write(frame + b"\n")
+    sys.stdout.buffer.flush()
 
 
 def update(update_type, **fields):
@@ -96,7 +98,7 @@ def text(value):
 def callback(method, /, **params):
     request_id = next(IDS)
     send(id=request_id, method=method, params=params)
-    answer = json.loads(sys.stdin.readline())
+    answer = json.loads(sys.stdin.buffer.readline())
     assert answer["id"] == request_id, answer
     return answer
 
@@ -162,7 +164,7 @@ def mcp(method, params=None, *, notification=False, expect_error=False, **meta):
     return answer["error"] if expect_error else answer["result"]
 
 
-for line in sys.stdin:
+for line in sys.stdin.buffer:
     frame = json.loads(line)
     method = frame.get("method")
     params = frame.get("params", {})
@@ -615,9 +617,12 @@ for line in sys.stdin:
         if message == "callbacks":
             path = "/workspace/sample.txt"
             for line_ending in ("\n", "\r\n"):
-                contents = line_ending.join(("one", "two", "three", ""))
+                second_line = "twö 界"
+                contents = line_ending.join(("one", second_line, "three", ""))
                 session_call("fs/write_text_file", path=path, content=contents)
-                assert session_call("fs/read_text_file", path=path, line=2, limit=1)["content"] == "two" + line_ending
+                assert session_call("fs/read_text_file", path=path, line=2, limit=1)["content"] == (
+                    second_line + line_ending
+                )
                 assert session_call("fs/read_text_file", path=path)["content"] == contents
                 # Send exact UTF-8 bytes so the byte-limit check does not depend on the child's text defaults.
                 terminal_bytes = ("012345é界" + line_ending).encode()

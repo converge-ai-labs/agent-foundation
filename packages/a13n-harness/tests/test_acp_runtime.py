@@ -57,7 +57,9 @@ def source(path):
     )
 
 
-async def test_environment_run_callbacks(tmp_path):
+async def test_environment_run_callbacks(tmp_path, monkeypatch):
+    # ACP frames must remain UTF-8 even when the peer's default text streams are not.
+    monkeypatch.setenv("PYTHONIOENCODING", "cp1252")
     callbacks = create_environment_runtime(mounts={"workspace": source(tmp_path)}, default_mount="workspace")
     reviewed = []
 
