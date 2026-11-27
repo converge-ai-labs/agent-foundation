@@ -57,6 +57,10 @@ fn selection(get: impl Fn(&str) -> Option<String>) -> Result<bool, ConfigError> 
 /// environments even in Full Control. Payloads can configure their own OTEL
 /// settings explicitly through the existing command environment surface.
 pub(crate) fn environment_name(name: &str) -> bool {
+    #[cfg(windows)]
+    let normalized = name.to_ascii_uppercase();
+    #[cfg(windows)]
+    let name = normalized.as_str();
     matches!(
         name,
         "OTEL_SDK_DISABLED"

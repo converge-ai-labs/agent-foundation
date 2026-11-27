@@ -31,7 +31,7 @@ from a13n_harness.capabilities._mcp_skills import (
 )
 from a13n_harness.context import AgentContext, SkillPath
 from a13n_harness.context_breakdown import ContextItemUsage, InstructionCatalog
-from a13n_harness.environment._mount_path import parse_mount_path
+from a13n_harness.environment._mount_path import operation_path_parent, parse_mount_path
 from a13n_harness.environment._ordered import map_ordered
 from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.archives import FileArchive
@@ -319,7 +319,7 @@ class FileSkillSource:
                                 "skill_catalog_entry_skipped",
                                 extra={
                                     "source_id": self.source_id,
-                                    "path": path.rsplit("/", 1)[0] or "/",
+                                    "path": operation_path_parent(path) or "/",
                                     "code": error.code,
                                 },
                             )
@@ -357,7 +357,7 @@ class FileSkillSource:
                 code="skill_catalog_invalid",
                 details={"path": path},
             )
-        return SkillCatalogItem(name=name, description=description, path=path.rsplit("/", 1)[0] or "/")
+        return SkillCatalogItem(name=name, description=description, path=operation_path_parent(path) or "/")
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,8 +388,8 @@ class _PinnedSkillFileOperator:
     def resolve_path(self, path: str) -> EnvironmentPath:
         route = self._route(path)
         relative = path[len(route.root) :].lstrip("/")
-        base = route.selection.resolved_path.path.rstrip("/")
-        provider_path = f"{base}/{relative}" if relative else (base or "/")
+        base = route.selection.resolved_path.path
+        provider_path = f"{base.rstrip('/')}/{relative}" if relative else base
         return EnvironmentPath(
             mount_id=route.selection.resolved_path.mount_id,
             execution_id=route.selection.resolved_path.execution_id,

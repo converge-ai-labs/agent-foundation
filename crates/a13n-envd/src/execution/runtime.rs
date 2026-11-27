@@ -187,6 +187,7 @@ impl Runtime {
         protected: &[std::path::PathBuf],
         reservation: crate::daemon::execution::Reservation,
     ) -> io::Result<Self> {
+        use crate::windows_path::ordinary_path;
         use tokio::io::AsyncWriteExt;
         let state = super::StateDirectory::new(None)?;
         config.runtime_directory = state.0.join("state");
@@ -204,9 +205,10 @@ impl Runtime {
                 ("TEMP", &temporary),
                 ("TMP", &temporary),
             ] {
-                command
-                    .base_environment
-                    .insert(name.into(), path.to_string_lossy().into_owned());
+                command.base_environment.insert(
+                    name.into(),
+                    ordinary_path(path).to_string_lossy().into_owned(),
+                );
             }
         }
         let clean = reservation.clean.clone();

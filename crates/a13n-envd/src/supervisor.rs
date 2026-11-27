@@ -194,6 +194,14 @@ pub(crate) async fn run_internal() -> io::Result<()> {
             return Err(io::Error::last_os_error());
         }
     }
+    #[cfg(windows)]
+    if unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 1) } == 0 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(windows_sys::Win32::Foundation::ERROR_INVALID_HANDLE as i32)
+        {
+            return Err(error);
+        }
+    }
     let stdin = tokio::io::stdin();
     let mut requests = BufReader::new(stdin);
     let mut stdout = tokio::io::stdout();

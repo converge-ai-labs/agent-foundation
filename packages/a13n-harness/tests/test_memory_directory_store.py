@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 import sys
 from collections.abc import Awaitable
 from pathlib import Path
@@ -312,3 +314,33 @@ async def test_directory_dependencies_allow_unrelated_changes_and_check_absence(
         store.write("refused.md", "stale", expected=None, origin=ORIGIN, dependencies=dependencies)
     )
     assert refused.code == "read_conflict"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows NTFS junctions")
+async def test_windows_junction_is_ignored_by_memory_listing_and_purge(tmp_path: Path) -> None:
+    root, outside = tmp_path / "memory", tmp_path / "outside"
+    outside.mkdir()
+    payload = outside / "note.md"
+    payload.write_bytes(b"preserved")
+    store = DirectoryFileStore(root)
+    await store.write("kept.md", "kept\n", expected=None, origin=ORIGIN)
+    junction = root / "junction"
+    subprocess.run(
+        [os.environ.get("COMSPEC", "cmd.exe"), "/c", "mklink", "/J", str(junction), str(outside)], check=True
+    )
+    assert [entry.path for entry in await store.list()] == ["kept.md"]
+    assert (await _failure(store.read("junction/note.md"))).code == "invalid_path"
+    await store.purge()
+    assert not junction.exists()
+    assert payload.read_bytes() == b"preserved"
+
+
+@pytest.mark.parametrize("path", ["C:/note.md", "normal/name:stream", "NUL.txt"])
+async def test_windows_memory_rejects_drive_device_and_stream_names(tmp_path, monkeypatch, path):
+    from types import SimpleNamespace
+
+    from a13n_harness.providers.memory import directory
+
+    monkeypatch.setattr(directory, "os", SimpleNamespace(name="nt"))
+    store = DirectoryFileStore(tmp_path)
+    assert (await _failure(store.read(path))).code == "invalid_path"

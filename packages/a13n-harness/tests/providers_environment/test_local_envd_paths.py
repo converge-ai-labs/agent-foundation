@@ -64,3 +64,12 @@ def test_restricted_windows_daemon_environment_keeps_only_runtime_inputs(tmp_pat
     assert environment["TEMP"] == str(tmp_path)
     assert "PRIVATE_TOKEN" not in environment
     assert "USERPROFILE" not in environment
+
+
+@pytest.mark.parametrize("path", ["/", "/foo", "/C:", "/UNC/server", "C:/child"])
+def test_local_envd_native_path_requires_windows_anchor(monkeypatch, path):
+    from a13n_harness.providers.environment.local_envd import configuration
+
+    monkeypatch.setattr(configuration, "Path", PureWindowsPath)
+    with pytest.raises(ValueError):
+        configuration.local_envd_native_path(path)

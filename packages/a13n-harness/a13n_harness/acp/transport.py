@@ -127,7 +127,9 @@ class LocalStdioTransport:
         from a13n_harness.providers.environment.direct_local.processes import NativeProcessTrees
 
         environment = dict(os.environ) if self.inherit_environment else {}
-        environment.update(self.environment)
+        environment.update(
+            {name.upper(): value for name, value in self.environment.items()} if os.name == "nt" else self.environment
+        )
         owner = NativeProcessTrees(terminate_grace_seconds=0.25)
         async with owner.open_pipes((self.executable, *self.arguments), Path(self.cwd), environment) as process:
             assert process.stdout is not None and process.stdin is not None

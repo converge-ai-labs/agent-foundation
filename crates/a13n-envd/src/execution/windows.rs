@@ -352,12 +352,13 @@ pub(crate) async fn spawn(
     let mut command = tokio::process::Command::new(std::env::current_exe()?);
     command
         .arg("--internal-mxc-launcher")
-        .current_dir(&state.0)
+        .current_dir(crate::windows_path::ordinary_path(&state.0).as_ref())
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    crate::windows_path::inherit_system_directories(&mut command);
     let (child, job) = crate::windows_job::WindowsJob::spawn(&mut command).await?;
     if let Some(reservation) = &mut reservation {
         reservation.started = true;
@@ -404,7 +405,7 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
     }
     let mut retained = Vec::new();
     let mut read = platform_roots()?;
-    let system_root = unicode(&read[0])?;
+    let system_root = ordinary_unicode(&read[0])?;
     if *full_disk_read {
         read.extend(full_disk_read_roots()?);
     }
@@ -432,17 +433,24 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
             CommandLineContext::WindowsCreateProcess,
         )
         .map_err(io::Error::other)?,
-        working_directory: unicode(&launch.state)?,
+        working_directory: ordinary_unicode(&launch.state)?,
         // Explicit private environment; never synthesize or inherit Host defaults.
         inherit_default_env: false,
         env: Some(vec![
             format!("SystemRoot={system_root}"),
             format!("WINDIR={system_root}"),
-            format!("HOME={}", unicode(&launch.state.join("home"))?),
-            format!("USERPROFILE={}", unicode(&launch.state.join("home"))?),
-            format!("LOCALAPPDATA={}", unicode(&launch.state.join("home"))?),
-            format!("TEMP={}", unicode(&launch.state.join("tmp"))?),
-            format!("TMP={}", unicode(&launch.state.join("tmp"))?),
+            format!("HOME={}", ordinary_unicode(&launch.state.join("home"))?),
+            format!(
+                "USERPROFILE={}",
+                ordinary_unicode(&launch.state.join("home"))?
+            ),
+            format!("APPDATA={}", ordinary_unicode(&launch.state.join("home"))?),
+            format!(
+                "LOCALAPPDATA={}",
+                ordinary_unicode(&launch.state.join("home"))?
+            ),
+            format!("TEMP={}", ordinary_unicode(&launch.state.join("tmp"))?),
+            format!("TMP={}", ordinary_unicode(&launch.state.join("tmp"))?),
         ]),
         policy: ContainerPolicy {
             denied_paths: launch
@@ -468,6 +476,10 @@ pub(crate) fn run_launcher() -> io::Result<i32> {
     let result = child.wait().map_err(io::Error::other);
     drop(retained);
     result
+}
+
+fn ordinary_unicode(path: &Path) -> io::Result<String> {
+    unicode(crate::windows_path::ordinary_path(path).as_ref())
 }
 
 fn unicode(path: &Path) -> io::Result<String> {

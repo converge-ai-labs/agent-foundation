@@ -6,6 +6,7 @@ from typing import Annotated, Self
 from a13n_envd_client.eip.v1 import DisabledSandbox, SandboxPolicy
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from a13n_harness.environment._mount_path import parse_provider_path
 from a13n_harness.environment.envd_policy import EnvdExecutionConfiguration, EnvdNetworkConfiguration
 from a13n_harness.providers.environment.remote_envd.configuration import RemoteEnvdEnvironmentConfiguration
 
@@ -17,8 +18,10 @@ _MAX_RESPONSE_BYTES = 16 * _MIB
 def local_envd_native_path(path: str) -> Path:
     """Translate a local Device EIP path to its Host-native path."""
     if isinstance(Path(), PureWindowsPath):
-        if path.startswith("/UNC/"):
-            return Path("//" + path.removeprefix("/UNC/"))
+        if parse_provider_path(path).flavor != "windows":
+            raise ValueError("Local Envd Windows paths require a drive or UNC share")
+        if path[:5].upper() == "/UNC/":
+            return Path("//" + path[5:])
         return Path(path.removeprefix("/"))
     return Path(path)
 

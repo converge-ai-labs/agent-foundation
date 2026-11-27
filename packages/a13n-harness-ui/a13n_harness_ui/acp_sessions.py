@@ -183,8 +183,11 @@ def local_transport(
     resource: AcpAgentResource, cwd: str, *, environ: Mapping[str, str] | None = None
 ) -> LocalStdioTransport:
     environment = local_environment(environ)
-    executable, *arguments = resolve_acp_argv(resource, path=environment.get("PATH", os.defpath))
-    return LocalStdioTransport(executable, cwd, tuple(arguments), environment=environment)
+    search_path = environment.get("PATH", os.defpath)
+    executable, *arguments = resolve_acp_argv(resource, path=search_path)
+    candidate = str(Path(cwd) / executable) if os.path.dirname(executable) else executable
+    resolved = shutil.which(candidate, path=search_path)
+    return LocalStdioTransport(resolved or executable, cwd, tuple(arguments), environment=environment)
 
 
 def acp_current_model_id(runtime: AcpSessionRuntime) -> str | None:
