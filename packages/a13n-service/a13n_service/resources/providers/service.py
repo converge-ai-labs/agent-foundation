@@ -238,7 +238,11 @@ async def update_provider[R: ProviderRow](
         if replaces_credential and (body.credential is not None or row.credential is not None):
             row.credential = None if body.credential is None else _protect(keys, row, body.credential)
             changed.append("credential")
-        if oauth_config_changed and isinstance(row, ModelProviderRow) and row.type == "openai_chatgpt":
+        if (
+            oauth_config_changed
+            and isinstance(row, ModelProviderRow)
+            and registry.get("model", row.type).oauth is not None
+        ):
             oauth_row = await session.get(ModelProviderOAuthRow, row.id, with_for_update=True)
             if oauth_row is not None:
                 # A changed registration supersedes both unconsumed and in-flight sign-ins.

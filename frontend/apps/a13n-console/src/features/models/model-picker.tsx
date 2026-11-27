@@ -34,6 +34,9 @@ export function ModelPicker({
     );
   return (
     <>
+      {model.definition?.oauth_scheme && model.selectedProvider && (
+        <ProviderAuthorization provider={model.selectedProvider} />
+      )}
       <CatalogNotice model={model} />
       {model.catalog.isPending ? (
         <Loading variant="list" rows={5} />

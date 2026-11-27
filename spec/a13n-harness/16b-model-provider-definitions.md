@@ -20,6 +20,8 @@ Discovery returns ordered `DiscoveredModel` choices containing the unchanged ups
 
 The built-in `openai_chatgpt` definition discovers through the official Sign in with ChatGPT plan-usage `GET https://api.openai.com/v1/models` endpoint using the same Host access-token source as inference. It includes only entries with `visibility=list`, preserves server order and original slugs. Vendor failures are normalized without exposing upstream bodies. The existing standalone ChatGPT discovery helper remains available to other Hosts.
 
+The `google_ai_plan` definition uses `google.interactions` with a fixed endpoint and the Host's [Google AI Plan OAuth source](16a-model-authentication.md#google-ai-plan). It accepts no static credentials or endpoint overrides. Curated suggestions are authoring hints, not account discovery, entitlements, or per-token prices.
+
 ## Authentication
 
 The built-in `anthropic` Provider uses one `api_key` credential for both `X-Api-Key: <key>` and `Authorization: Bearer <key>` on native Model requests and connection probes, including custom base URLs. Both header names are Provider-owned and cannot be supplied through extra headers, request settings, or session-affinity configuration. Existing custom `Authorization` entries must be removed; no separate bearer credential is required.

@@ -118,10 +118,11 @@ export function ProviderAuthorization({
   });
   const writable = can("write") && !configurationDirty,
     busy = start.isPending || complete.isPending || disconnect.isPending,
-    connected = status.data?.state === "connected";
+    connected = status.data?.state === "connected",
+    chatgpt = provider.type === "openai_chatgpt";
   return (
     <FormSection
-      title={t("ChatGPT authorization")}
+      title={chatgpt ? t("ChatGPT authorization") : t("Authorization")}
       description={t("Shared by this workspace, not a personal connection.")}
     >
       {configurationDirty && (
@@ -161,7 +162,11 @@ export function ProviderAuthorization({
               autoComplete="off"
               spellCheck={false}
               maxLength={16384}
-              placeholder="http://127.0.0.1:1456/auth/callback?code=…&state=…"
+              placeholder={
+                chatgpt
+                  ? "http://127.0.0.1:1456/auth/callback?code=…&state=…"
+                  : undefined
+              }
               value={callback}
               disabled={busy || !writable}
               onChange={(event) => setCallback(event.target.value)}
@@ -199,10 +204,12 @@ export function ProviderAuthorization({
           {t(
             connected || attempt
               ? "Restart authorization"
-              : "Continue with ChatGPT",
+              : chatgpt
+                ? "Continue with ChatGPT"
+                : "Authorize",
           )}
         </Button>
-        {status.data?.client_id && (
+        {chatgpt && status.data?.client_id && (
           <Button
             type="button"
             variant="ghost"
@@ -229,7 +236,7 @@ export function ProviderAuthorization({
           </Button>
         )}
       </div>
-      {tokensCleared && (
+      {chatgpt && tokensCleared && (
         <p role="status" className="text-sm">
           {t(
             "Local tokens were cleared. Manage remote access in ChatGPT settings.",

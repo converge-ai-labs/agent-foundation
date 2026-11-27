@@ -75,7 +75,7 @@ export function connectStepDescription(
 ) {
   return t(
     definition.oauth_scheme
-      ? "Create a workspace-shared provider, then sign in with ChatGPT."
+      ? "Create a workspace-shared provider, then authorize {{provider}}."
       : definition.authentication.mode === "forbidden"
         ? "Point the console at the endpoint that serves your models."
         : credentialFieldFor(definition).description,

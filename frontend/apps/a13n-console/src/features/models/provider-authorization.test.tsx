@@ -26,10 +26,12 @@ vi.mock("react-i18next", () => ({
 const provider = {
   id: "mprov_test",
   workspace_id: "ws_test",
+  type: "openai_chatgpt",
 } as Schema["Provider"];
 function mount(
   onSave = vi.fn(),
   method: Schema["AuthorizationStart"]["method"] = "manual_callback",
+  type = provider.type,
 ) {
   state.GET.mockResolvedValue({
     data: { state: "disconnected", provider_id: provider.id },
@@ -62,7 +64,7 @@ function mount(
           onSave();
         }}
       >
-        <ProviderAuthorization provider={provider} />
+        <ProviderAuthorization provider={{ ...provider, type }} />
       </form>
     </QueryClientProvider>,
   );
@@ -166,4 +168,13 @@ it("leaves authorization metadata readable but refuses viewer actions", async ()
   });
   expect((button as HTMLButtonElement).disabled).toBe(true);
   expect(state.POST).not.toHaveBeenCalled();
+});
+
+it("uses provider-neutral authorization copy for Google AI Plan", async () => {
+  mount(vi.fn(), "manual_callback", "google_ai_plan");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Authorize" }));
+  const callback = await screen.findByLabelText("Complete callback URL");
+  expect(callback.getAttribute("placeholder")).toBeNull();
+  expect(screen.queryByText(/ChatGPT/)).toBeNull();
 });

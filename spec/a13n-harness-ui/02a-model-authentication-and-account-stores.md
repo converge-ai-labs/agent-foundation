@@ -282,3 +282,9 @@ Provider file schemas, path policy, and login presentation may evolve with upstr
 The Host drives device polling, callback receipt, and expiry within a 15-minute session. Callback logins use Host PKCE S256 and state; a browser callback binds to loopback before authorization. A pasted URL is data, checked against the exact redirect and state, with unique query keys and OAuth errors handled before exchange. The plugin supplies upstream request details and the resulting account identity. Credentials are published to a private CAS-protected file. Confirmed reauthorization advances the login generation; a refresh preserves this generation and cannot change the bound identity. Requests can refresh and replay a buffered body once after HTTP 401.
 
 SDK HTTP is restricted to exact declared HTTPS origins and the Run's outbound policy. Credential headers are attached only for declared origins; redirects are rejected. Explicit model discovery is account-scoped, with a 10-second deadline and 4 MiB response budget. Optional usage returns generic allowance windows. Account status, login status and recipes omit credential material.
+
+### Google AI Plan
+
+The installed `google-ai-plan` plugin uses the Host's browser loopback and full callback URL paste flows with the [Harness Google AI Plan protocol](../a13n-harness/16a-model-authentication.md#google-ai-plan). Set `A13N_GOOGLE_AI_PLAN_CLIENT_ID` and `A13N_GOOGLE_AI_PLAN_CLIENT_SECRET` on the Host or inject an approved registration when embedding. Without it, sign-in reports that the OAuth client is unconfigured.
+
+The private account snapshot associates Google's verified `sub` with the DPoP key and nonce. The per-account refresh lock and CAS preserve that identity and the login generation while replacing rotated credentials. The plugin provides model suggestions without account discovery or token pricing.

@@ -24,6 +24,7 @@ from .sdk import (
     DeviceChallenge,
     DevicePollSlowDown,
     LoginMethod,
+    OAuthClientUnconfigured,
     OAuthContext,
     PkceChallenge,
     https_url,
@@ -83,6 +84,10 @@ async def _provider_call[T](operation: Awaitable[T]) -> T:
         return await operation
     except (DevicePollSlowDown, httpx2.TimeoutException):
         raise
+    except OAuthClientUnconfigured:
+        raise HarnessUiError(
+            "Configure an approved Model Provider OAuth client before signing in.", code="oauth_client_unconfigured"
+        ) from None
     except Exception:
         raise HarnessUiError("Model Provider authorization failed.", code="oauth_login_failed") from None
 

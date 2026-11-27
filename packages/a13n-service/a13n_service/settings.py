@@ -723,8 +723,12 @@ class Providers(Section):
     chatgpt_client_id: str | None = Field(default=None, min_length=1, max_length=256)
     chatgpt_redirect_uri: str = Field(default="http://127.0.0.1:1456/auth/callback", max_length=2048)
 
+    google_ai_plan_client_id: str | None = Field(default=None, min_length=1, max_length=256)
+    google_ai_plan_client_secret: SecretStr | None = Field(default=None, repr=False)
+    google_ai_plan_redirect_uri: str = "http://127.0.0.1:1457/oauth2callback"
+
     @model_validator(mode="after")
-    def chatgpt_callback(self) -> "Providers":
+    def model_oauth_callbacks(self) -> "Providers":
         if self.chatgpt_client_id is not None and (
             not self.chatgpt_client_id.strip() or self.chatgpt_client_id == "dynamic_agent_client"
         ):
@@ -733,6 +737,11 @@ class Providers(Section):
             OpenAIChatGPTOAuthFlow(app_name="Agent Foundation OSS", redirect_uri=self.chatgpt_redirect_uri)
         except UserError as error:
             raise ValueError(f"providers.chatgpt_redirect_uri: {error}") from None
+        if (self.google_ai_plan_client_id is None) != (self.google_ai_plan_client_secret is None):
+            raise ValueError("Google AI Plan requires both the approved client ID and secret")
+        from a13n_harness.providers.model.oauth.google_ai_plan import validate_redirect_uri
+
+        validate_redirect_uri(self.google_ai_plan_redirect_uri)
         return self
 
     @property

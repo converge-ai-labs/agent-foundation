@@ -906,7 +906,7 @@
   "Choose a model available to this provider, or enter a model ID.": "इस प्रदाता के पास उपलब्ध कोई मॉडल चुनें, या मॉडल ID दर्ज करें।",
   "Use another ChatGPT account": "दूसरे ChatGPT खाते का उपयोग करें",
   "Local tokens were cleared. Manage remote access in ChatGPT settings.": "लोकल टोकन हटा दिए गए। रिमोट एक्सेस को ChatGPT सेटिंग्स में प्रबंधित करें।",
-  "Create a workspace-shared provider, then sign in with ChatGPT.": "वर्कस्पेस में साझा होने वाला प्रदाता बनाएँ, फिर ChatGPT से लॉग इन करें।",
+  "Create a workspace-shared provider, then authorize {{provider}}.": "वर्कस्पेस में साझा होने वाला प्रदाता बनाएँ, फिर {{provider}} को अधिकृत करें।",
   "Provider default": "प्रदाता डिफ़ॉल्ट",
   "Default (off)": "डिफ़ॉल्ट (बंद)",
   "Reasoning summary": "रीज़निंग सारांश",

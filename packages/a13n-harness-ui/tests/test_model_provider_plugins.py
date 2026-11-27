@@ -281,3 +281,106 @@ async def test_plugin_group_routes_a_real_run(tmp_path, strategy):
         assert operation.status is RootOperationStatus.completed, operation
         assert operation.main_account is not None
         assert operation.main_account.account_id == second.id
+
+
+@pytest.mark.usefixtures("migrated_databases")
+@pytest.mark.parametrize("method", ["browser", "manual_callback"])
+async def test_google_ai_plan_login_and_private_refresh(tmp_path, monkeypatch, method):
+    from datetime import UTC, datetime, timedelta
+
+    from a13n_harness.providers.model.oauth.google_ai_plan import (
+        DPoPKey,
+        GoogleAIPlanClient,
+        GoogleAIPlanCredentials,
+        GoogleAIPlanFlow,
+    )
+    from a13n_harness_ui.model_providers import google_ai_plan
+
+    registration = GoogleAIPlanClient.configured("fixture-client", "fixture-secret")
+    initial = GoogleAIPlanCredentials(
+        account_id="fixture-subject",
+        client_id=registration.client_id,
+        access_token="fixture-initial-access",
+        refresh_token="fixture-initial-refresh",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        dpop_jwk=DPoPKey.generate(),
+        dpop_nonce="fixture-initial-nonce",
+    )
+    exchanges = []
+
+    async def exchange(flow, code):
+        assert flow.registration == registration
+        assert flow.code_verifier and flow.nonce
+        exchanges.append(code)
+        return initial
+
+    monkeypatch.setattr(GoogleAIPlanFlow, "exchange_code", exchange)
+    monkeypatch.setenv("A13N_GOOGLE_AI_PLAN_CLIENT_ID", "fixture-client")
+    monkeypatch.setenv("A13N_GOOGLE_AI_PLAN_CLIENT_SECRET", "fixture-secret")
+    root = tmp_path / "data"
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=root), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=tmp_path / "config.yaml") as app:
+        connection = next(item for item in (await app.model_choices()).connections if item.id == "google-ai-plan")
+        assert connection.account and connection.account.managed_accounts
+        request = LoginRequest.model_validate({"provider": connection.id, "method": method})
+        status = await app.start_login(request)
+        with fail_after(8):
+            while status.state == "starting":
+                await sleep(0.02)
+                status = await app.login_status(status.session_id)
+            assert status.state == "waiting" and status.verification_url
+            fields = parse_qs(urlsplit(status.verification_url).query)
+            assert fields["code_challenge_method"] == ["S256"]
+            callback = (
+                fields["redirect_uri"][0] + "?" + urlencode({"code": "fixture-code", "state": fields["state"][0]})
+            )
+            with pytest.raises(Exception, match="callback"):
+                await app.submit_login_callback(status.session_id, callback + "&code=duplicate")
+            if method == "browser":
+                async with httpx2.AsyncClient(trust_env=False) as client:
+                    assert (await client.get(callback)).status_code == 200
+            else:
+                await app.submit_login_callback(status.session_id, callback)
+            while status.state == "waiting":
+                await sleep(0.02)
+                status = await app.login_status(status.session_id)
+            assert status.state == "succeeded", status
+        assert exchanges == ["fixture-code"]
+        assert "fixture-initial" not in status.model_dump_json()
+    oauth_root = root / "oauth"
+    account_id = "acct-google-ai-plan-default"
+    store = PluginAccountStore(oauth_root, provider="google-ai-plan", account_id=account_id)
+    snapshot = await store.read()
+    assert snapshot.account is not None
+    assert GoogleAIPlanCredentials.model_validate(snapshot.account.credentials) == initial
+    assert (oauth_root / "accounts" / f"{account_id}.json").stat().st_mode & 0o777 == 0o600
+    plugin = google_ai_plan.GoogleAIPlanPlugin(registration)
+    admitted = ModelProviderCatalog((plugin,), installed=()).registrations["google-ai-plan"]
+    source = PluginCredentialSource(store, admitted, expected_generation=snapshot.generation)
+    updates = {"refresh_token": "fixture-rotated", "dpop_nonce": "fixture-renewed-nonce"}
+    refreshes = []
+
+    async def refresh(client_registration, http, current):
+        assert client_registration == registration and current == initial
+        refreshes.append(current)
+        await sleep(0.03)
+        return current.model_copy(update=updates)
+
+    monkeypatch.setattr(google_ai_plan, "refresh_google_ai_plan", refresh)
+    _, digest = await source.current()
+    async with create_task_group() as tasks:
+        tasks.start_soon(source.refresh, digest)
+        tasks.start_soon(source.refresh, digest)
+    latest = await store.read()
+    assert len(refreshes) == 1 and latest.generation == snapshot.generation and latest.account is not None
+    assert GoogleAIPlanCredentials.model_validate(latest.account.credentials) == initial.model_copy(update=updates)
+
+
+def test_google_ai_plan_requires_explicit_client_registration(monkeypatch):
+    from a13n_harness_ui.model_providers.google_ai_plan import GoogleAIPlanPlugin
+    from a13n_harness_ui.model_providers.sdk import OAuthClientUnconfigured
+
+    monkeypatch.delenv("A13N_GOOGLE_AI_PLAN_CLIENT_ID", raising=False)
+    monkeypatch.delenv("A13N_GOOGLE_AI_PLAN_CLIENT_SECRET", raising=False)
+    with pytest.raises(OAuthClientUnconfigured):
+        GoogleAIPlanPlugin()._client()

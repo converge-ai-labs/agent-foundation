@@ -68,26 +68,28 @@ class OAuthFlow[CredentialsT](ABC):
     @abstractmethod
     async def exchange_code(self, code: str) -> CredentialsT: ...
 
+    def _loopback_result(self, target: str) -> dict[str, str]:
+        url = urlparse(target)
+        params = {name: values[0] for name, values in parse_qs(url.query).items()}
+        if url.path != urlparse(self.redirect_uri).path or params.get("state") != self.state:
+            return {}
+        if code := params.get("code"):
+            return {"code": code}
+        return {"error": params.get("error", "unknown")}
+
     async def exchange_code_from_callback(self, *, timeout_seconds: float | None = None) -> CredentialsT:
         parsed = urlparse(self.redirect_uri)
         address = (parsed.hostname or "localhost", parsed.port or 80)
-        callback_path = parsed.path
-        expected_state = self.state
         result: dict[str, str] = {}
+        validate_target = self._loopback_result
 
         class CallbackHandler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
                 try:
-                    url = urlparse(self.path)
+                    result.update(validate_target(self.path))
                 except ValueError:
                     self.send_error(400, "Malformed request")
                     return
-                params = {name: values[0] for name, values in parse_qs(url.query).items()}
-                if url.path == callback_path and params.get("state") == expected_state:
-                    if code := params.get("code"):
-                        result["code"] = code
-                    else:
-                        result["error"] = params.get("error", "unknown")
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(b"You can close this tab.")

@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from pydantic_ai.providers import Provider
     from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
 
+    from .oauth.google_ai_plan import GoogleAIPlanCredentialSource
+
 
 _PROBE_TIMEOUT_SECONDS = 10
 _PROBE_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -52,7 +54,7 @@ class DiscoveredModel:
 
 
 type ModelDiscovery[C: ProviderConfiguration, K: BaseModel] = Callable[
-    [ModelConnection[C, K], OpenAIChatGPTCredentialSource | None, httpx2.AsyncClient],
+    [ModelConnection[C, K], ModelOAuthCredentialSource | None, httpx2.AsyncClient],
     Awaitable[tuple[DiscoveredModel, ...]],
 ]
 type EndpointResolver = Callable[[Mapping[str, object]], str | None]
@@ -68,12 +70,21 @@ class ModelOAuth:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class GoogleAIPlanModelOAuth:
+    build_provider: Callable[[GoogleAIPlanCredentialSource, httpx2.AsyncClient, dict[str, str]], Provider[Any]]
+    scheme: Literal["google-ai-plan"] = "google-ai-plan"
+
+
+type ModelOAuthCredentialSource = OpenAIChatGPTCredentialSource | GoogleAIPlanCredentialSource
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDefinition[C, K]):
     DOMAIN: ClassVar[str] = "Model"
 
     supported_model_apis: tuple[str, ...]
     build_provider: NativeProviderBuilder[C, K] | None = None
-    oauth: ModelOAuth | None = None
+    oauth: ModelOAuth | GoogleAIPlanModelOAuth | None = None
     build_model: NativeModelBuilder | None = None
     endpoint: str | EndpointResolver | None = None
     connection_probe: Callable[[ModelConnection[C, K]], ConnectionProbeRequest] | None = None
@@ -104,7 +115,7 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         *,
         configuration: Mapping[str, object],
         credential: object = None,
-        credential_source: OpenAIChatGPTCredentialSource | None = None,
+        credential_source: ModelOAuthCredentialSource | None = None,
         http_client: httpx2.AsyncClient,
         extra_headers: Mapping[str, str] | None = None,
         endpoint_policy: EndpointValidator | None = None,
@@ -188,7 +199,7 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         *,
         configuration: Mapping[str, object],
         credential: object = None,
-        credential_source: OpenAIChatGPTCredentialSource | None = None,
+        credential_source: ModelOAuthCredentialSource | None = None,
         model_api: str | None = None,
         http_client: httpx2.AsyncClient,
         extra_headers: Mapping[str, str] | None = None,
@@ -219,7 +230,16 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         if self.oauth is not None:
             if credential_source is None:
                 raise ValueError("the OAuth Model Provider requires an authorized Host credential source")
-            native = self.oauth.build_provider(credential_source, http_client, connection.extra_headers)
+            from .oauth.google_ai_plan import GoogleAIPlanCredentialSource
+
+            if isinstance(self.oauth, GoogleAIPlanModelOAuth):
+                if not isinstance(credential_source, GoogleAIPlanCredentialSource):
+                    raise ValueError("Google AI Plan requires a Google credential source")
+                native = self.oauth.build_provider(credential_source, http_client, connection.extra_headers)
+            else:
+                if isinstance(credential_source, GoogleAIPlanCredentialSource):
+                    raise ValueError("ChatGPT requires a ChatGPT credential source")
+                native = self.oauth.build_provider(credential_source, http_client, connection.extra_headers)
         else:
             if credential_source is not None:
                 raise ValueError("the Model Provider does not accept an OAuth credential source")
