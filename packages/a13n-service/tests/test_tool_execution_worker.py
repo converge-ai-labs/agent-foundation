@@ -250,6 +250,8 @@ async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
     script = textwrap.dedent("""
         import asyncio
         from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from sqlalchemy.engine import make_url
         from a13n_harness.tool_execution import ToolExecutionRuntime
         from a13n_service.runs.worker import Worker
         from a13n_service.runs import worker as worker_module
@@ -269,6 +271,10 @@ async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
                 worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30, scan_seconds=1),
                 tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
             ))
+            runtime.storage = SimpleNamespace(engine=SimpleNamespace(url=make_url("postgresql://localhost/test")))
+            runtime.redis = SimpleNamespace(eval=AsyncMock(return_value=1), zrem=AsyncMock())
+            runtime.settings.redis = SimpleNamespace(timeout=0.1)
+            runtime.settings.worker.scan_seconds = 0.01
             worker = Worker(runtime, None)
             worker.free = 0
             asyncio.get_running_loop().call_later(0.03, executions.stop_admission)
@@ -296,6 +302,8 @@ async def test_worker_fatal_boundary_preserves_normal_shutdown(cause):
         import asyncio
         import sys
         from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from sqlalchemy.engine import make_url
         from a13n_harness.tool_execution import ToolExecutionRuntime
         from a13n_service.runs.worker import Worker
 
@@ -317,6 +325,10 @@ async def test_worker_fatal_boundary_preserves_normal_shutdown(cause):
                 worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30),
                 tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
             ))
+            runtime.storage = SimpleNamespace(engine=SimpleNamespace(url=make_url("postgresql://localhost/test")))
+            runtime.redis = SimpleNamespace(eval=AsyncMock(return_value=1), zrem=AsyncMock())
+            runtime.settings.redis = SimpleNamespace(timeout=0.1)
+            runtime.settings.worker.scan_seconds = 0.01
             worker = Worker(runtime, None)
             worker.free = 0
             worker._supervise = fail if cause == "supervisor" else idle
