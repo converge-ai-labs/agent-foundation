@@ -1083,6 +1083,7 @@
   "Show more chats in {{name}}": "Show more chats in {{name}}",
   "Show fewer chats in {{name}}": "Show fewer chats in {{name}}",
   "Restore {{title}}": "Restore {{title}}",
+  "Delete {{title}}": "Delete {{title}}",
   "Starred chat: {{title}}": "Starred chat: {{title}}",
   "“{{title}}” and its subagent history will be deleted for everyone. This cannot be undone. Project files and other chats are kept.": "“{{title}}” and its subagent history will be deleted for everyone. This cannot be undone. Project files and other chats are kept.",
   "Chats with new results count_one": "{{count, number}} chat with new results",

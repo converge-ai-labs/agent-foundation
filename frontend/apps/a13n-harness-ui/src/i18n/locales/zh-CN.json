@@ -1080,6 +1080,7 @@
   "Show more chats in {{name}}": "显示 {{name}} 中更多聊天",
   "Show fewer chats in {{name}}": "收起 {{name}} 中的聊天",
   "Restore {{title}}": "恢复 {{title}}",
+  "Delete {{title}}": "删除 {{title}}",
   "Starred chat: {{title}}": "星标聊天：{{title}}",
   "“{{title}}” and its subagent history will be deleted for everyone. This cannot be undone. Project files and other chats are kept.": "“{{title}}”及其子智能体历史记录将为所有人删除，且无法撤销。项目文件和其他聊天会保留。",
   "Chats with new results count_other": "有新结果的聊天：{{count, number}} 个",

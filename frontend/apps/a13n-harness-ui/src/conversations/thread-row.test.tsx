@@ -86,6 +86,7 @@ function mount({
   unread = false,
   worker = false,
   activeWorkerCount = 0,
+  secondRow = false,
 }: {
   archived?: boolean;
   running?: boolean;
@@ -96,6 +97,7 @@ function mount({
   unread?: boolean;
   worker?: boolean;
   activeWorkerCount?: number;
+  secondRow?: boolean;
 } = {}) {
   const row = {
     pending_decision: null,
@@ -128,6 +130,18 @@ function mount({
           <NewConversationDrafts value={newDrafts}>
             <ResultsContext value={results}>
               <ThreadRow row={current} activeWorkerCount={workers} />
+              {secondRow && (
+                <ThreadRow
+                  row={{
+                    ...current,
+                    thread: {
+                      ...current.thread,
+                      thread_id: "thread-two",
+                      title: "Another chat",
+                    },
+                  }}
+                />
+              )}
             </ResultsContext>
           </NewConversationDrafts>
           <Location />
@@ -569,11 +583,67 @@ it("hides Mark unread and the unread dot on Coordinator workers while keeping Ma
   await screen.findByRole("menuitem", { name: "Mark unread" });
 });
 
-it("opens the row actions on right-click without navigating to the chat", async () => {
-  mount({ selected: false });
-  const link = screen.getByRole("link", { name: "Example" });
-  expect(fireEvent.contextMenu(link)).toBe(false);
+it("keeps one row menu open on repeat and cross-row right-clicks, and dismisses it normally", async () => {
+  mount({ secondRow: true });
+  const user = userEvent.setup();
+  const example = screen.getByRole("link", { name: "Example" });
+  const another = screen.getByRole("link", { name: "Another chat" });
+  const rightClick = (target: HTMLElement) =>
+    user.pointer({ keys: "[MouseRight]", target });
+  const actions = (title: string) =>
+    screen.getByRole("button", { name: `Actions for ${title}` });
+
+  expect(fireEvent.contextMenu(example)).toBe(false);
   await screen.findByRole("menuitem", { name: "Archive chat" });
-  expect(screen.getByLabelText("Location").textContent).toBe("/settings");
+  await rightClick(example);
+  expect(actions("Example").getAttribute("aria-expanded")).toBe("true");
+
+  await rightClick(another);
+  expect(actions("Example").getAttribute("aria-expanded")).toBe("false");
+  expect(actions("Another chat").getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getAllByRole("menu")).toHaveLength(1);
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  expect(document.activeElement).toBe(another);
+  await rightClick(another);
+  await screen.findByRole("menu");
+  await user.click(screen.getByLabelText("Location"));
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  expect(screen.getByLabelText("Location").textContent).toBe(
+    "/threads/thread-one",
+  );
   expect(requests).toHaveLength(0);
 });
+
+it.each(["right-click", "three-dot button"])(
+  "restores an archived Coordinator from its %s menu",
+  async (entry) => {
+    mount({ archived: true, coordinator: true });
+    const user = userEvent.setup();
+    if (entry === "right-click") {
+      await user.pointer({
+        keys: "[MouseRight]",
+        target: screen.getByRole("link", {
+          name: /Example.*Coordinator.*Archived/,
+        }),
+      });
+    } else {
+      await user.click(
+        screen.getByRole("button", { name: "Actions for Example" }),
+      );
+    }
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Restore chat" }),
+    );
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].method).toBe("PATCH");
+    expect(await requests[0].json()).toEqual({
+      expected_version: 3,
+      patch: { archived: false },
+    });
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      "/threads/thread-one",
+    );
+  },
+);

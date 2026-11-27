@@ -8,8 +8,8 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
-import { within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
@@ -174,7 +174,9 @@ it("preserves archive filters and pending restore across language changes withou
   const item = screen.getByRole("link", {
     name: /Untitled chat.*One/,
   }).parentElement!;
-  await user.click(within(item).getByRole("button", { name: "删除" }));
+  await user.click(
+    within(item).getByRole("button", { name: "删除 Untitled chat" }),
+  );
   expect(
     screen.getByRole("dialog", { name: "删除聊天？" }).textContent,
   ).toContain("“Untitled chat”及其子智能体历史记录");
@@ -184,7 +186,7 @@ it("preserves archive filters and pending restore across language changes withou
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(
-    screen.getAllByRole("button", { name: "Restore Untitled chat" })[0],
+    within(item).getByRole("button", { name: "Restore Untitled chat" }),
   );
   await waitFor(() =>
     expect(writes).toEqual([
@@ -192,7 +194,17 @@ it("preserves archive filters and pending restore across language changes withou
     ]),
   );
   await act(() => i18n.changeLanguage("zh-CN"));
-  await user.click(screen.getByRole("button", { name: "恢复 Untitled chat" }));
+  const restore = screen.getByRole<HTMLButtonElement>("button", {
+    name: "恢复 Untitled chat",
+  });
+  expect(restore.getAttribute("aria-busy")).toBe("true");
+  expect(restore.disabled).toBe(true);
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", {
+      name: "删除 Untitled chat",
+    }).disabled,
+  ).toBe(true);
+  await user.click(restore);
   expect(writes).toHaveLength(1);
   await act(async () => {
     finish();

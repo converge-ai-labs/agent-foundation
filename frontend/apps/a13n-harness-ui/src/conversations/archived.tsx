@@ -66,6 +66,7 @@ function ArchivedThreadItem({ row }: { row: Schema<"ThreadActivityView"> }) {
               variant="secondary"
               size="xs"
               aria-label={t("Restore {{title}}", { title })}
+              loading={restore.isPending}
               disabled={disabled}
               onClick={() => restore.mutate(false)}
             >
@@ -73,9 +74,9 @@ function ArchivedThreadItem({ row }: { row: Schema<"ThreadActivityView"> }) {
             </Button>
             {canDeleteThread(thread) && (
               <Button
-                variant="secondary"
-                className="bg-destructive/10 text-destructive-foreground hover:bg-destructive/15 active:bg-destructive/20"
+                variant="destructive-outline"
                 size="xs"
+                aria-label={t("Delete {{title}}", { title })}
                 disabled={disabled}
                 onClick={() => setDeleting(true)}
               >
