@@ -290,6 +290,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/threads/{thread_id}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Thread Inbox Unread */
+        get: operations["thread_inbox_unread_api_inbox_threads__thread_id__unread_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/threads/{thread_id}/mark-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Thread Inbox Mark Read */
+        post: operations["thread_inbox_mark_read_api_inbox_threads__thread_id__mark_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/mark-read": {
         parameters: {
             query?: never;
@@ -6681,6 +6715,20 @@ export interface components {
             /** Updates */
             updates: number;
         };
+        /** InboxUnreadPost */
+        InboxUnreadPost: {
+            /** Item Id */
+            item_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Has Transcript */
+            has_transcript: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** InputPredictionResponse */
         InputPredictionResponse: {
             /** Continuation Id */
@@ -11070,6 +11118,11 @@ export interface components {
             /** Paused */
             paused: boolean;
         };
+        /** ThreadInboxMarkReadRequest */
+        ThreadInboxMarkReadRequest: {
+            /** Item Ids */
+            item_ids: string[];
+        };
         /** InboxMarkReadRequest */
         InboxMarkReadRequest: {
             /**
@@ -12390,6 +12443,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["InboxPage"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    thread_inbox_unread_api_inbox_threads__thread_id__unread_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxUnreadPost"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    thread_inbox_mark_read_api_inbox_threads__thread_id__mark_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadInboxMarkReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

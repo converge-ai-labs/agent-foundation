@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { createContext, useContext, useId, useState } from "react";
 import {
   useInfiniteQuery,
   useIsMutating,
@@ -22,7 +22,11 @@ import {
 } from "@phosphor-icons/react";
 import { useTranslation } from "./i18n";
 import { result, type Schema } from "./transport/client";
-import { useProjects, useTransport } from "./transport/context";
+import {
+  TransportContext,
+  useProjects,
+  useTransport,
+} from "./transport/context";
 import { MessageText } from "./conversations/message-text";
 import { markdownPreview } from "./conversations/markdown-preview";
 import { describeTool, type ToolView } from "./conversations/tool-presentation";
@@ -531,10 +535,27 @@ export const isInboxPost = (tool: ToolView) =>
   tool.name === "post_to_inbox" &&
   (!tool.provider || tool.provider === "function");
 
+export const UnreadInboxPosts = createContext<ReadonlySet<string> | undefined>(
+  undefined,
+);
+
 /** The transcript receipt for one post_to_inbox call; Inbox jumps land here. */
 export function InboxPost({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
+  const shareId = useContext(TransportContext)?.shareId;
+  const unreadPosts = useContext(UnreadInboxPosts);
+  const unread = tool.toolCallId && unreadPosts?.has(tool.toolCallId);
   const { args, phase } = describeTool(tool);
+  const source = (
+    <>
+      <Tray aria-hidden="true" />
+      {phase === "Result received"
+        ? t("Sent to Inbox")
+        : phase === "Receiving input" || phase === "Awaiting result"
+          ? t("Sending to Inbox…")
+          : t("Not sent to Inbox")}
+    </>
+  );
   const kind: Kind =
     args.kind === "needs_human" || args.kind === "milestone"
       ? args.kind
@@ -547,14 +568,20 @@ export function InboxPost({ tool }: { tool: ToolView }) {
       aria-label={t("Inbox post")}
     >
       <header className={styles.postHeader}>
-        <Link to="/inbox" className={styles.postSource}>
-          <Tray aria-hidden="true" />
-          {phase === "Result received"
-            ? t("Sent to Inbox")
-            : phase === "Receiving input" || phase === "Awaiting result"
-              ? t("Sending to Inbox…")
-              : t("Not sent to Inbox")}
-        </Link>
+        {shareId ? (
+          <span className={styles.postSource}>{source}</span>
+        ) : (
+          <Link to="/inbox" className={styles.postSource}>
+            {source}
+            {unread && (
+              <span
+                className={styles.postUnread}
+                role="img"
+                aria-label={t("Unread")}
+              />
+            )}
+          </Link>
+        )}
         <KindLabel kind={kind} />
       </header>
       {typeof args.title === "string" && args.title && (

@@ -23,7 +23,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
-import { flashInboxPost } from "../inbox";
+import { flashInboxPost, UnreadInboxPosts } from "../inbox";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, ModalFrame } from "a13n-ui";
 import { ArrowDown, Sparkle } from "@phosphor-icons/react";
@@ -102,7 +102,8 @@ import {
 import styles from "./conversation.module.css";
 import layout from "../shell/workbench.module.css";
 import { useResults } from "./results";
-import { savedResultVisible } from "./result-visibility";
+import { observeSavedResult } from "./result-visibility";
+import { useThreadInbox } from "./thread-inbox";
 import { ReplyAnnotations } from "./reply-annotations";
 import { ConversationOpening, useInitialReady } from "./opening";
 import { canDeleteThread, DeleteThread } from "./delete-thread";
@@ -420,7 +421,9 @@ function ConversationContent({
   }, [entries, history.isPreviousHistory, findTurn, landJump]);
   const inboxItem = guest ? null : search.get("inbox");
   const [inboxProblem, setInboxProblem] = useState<unknown>();
+  const [openingInboxItem, setOpeningInboxItem] = useState(false);
   const openInboxItem = useEffectEvent((itemId: string) => {
+    setOpeningInboxItem(true);
     setSearch(
       (current) => {
         current.delete("inbox");
@@ -439,21 +442,23 @@ function ConversationContent({
         }),
       ),
       result(transport.client.GET("/api/inbox/{item_id}/location", path)),
-    ]).then(
-      ([item, location]) => {
-        void queries.invalidateQueries({ queryKey: ["inbox"] });
-        if (!location.continuation_id) return; // This post links to the chat, not its transcript.
-        if (!location.turn_id)
-          return setInboxProblem(
-            new Error(
-              t("This Inbox item is not in the chat's current history."),
-            ),
-          );
-        pendingPost.current = item.tool_call_id;
-        jumpToInput(location.turn_id);
-      },
-      (error: unknown) => setInboxProblem(error),
-    );
+    ])
+      .then(
+        ([item, location]) => {
+          void queries.invalidateQueries({ queryKey: ["inbox"] });
+          if (!location.continuation_id) return; // This post links to the chat, not its transcript.
+          if (!location.turn_id)
+            return setInboxProblem(
+              new Error(
+                t("This Inbox item is not in the chat's current history."),
+              ),
+            );
+          pendingPost.current = item.tool_call_id;
+          jumpToInput(location.turn_id);
+        },
+        (error: unknown) => setInboxProblem(error),
+      )
+      .finally(() => setOpeningInboxItem(false));
   });
   useEffect(() => {
     if (inboxItem) openInboxItem(inboxItem);
@@ -512,35 +517,14 @@ function ConversationContent({
       return;
     const element = reader.current;
     if (!element) return;
-    const check = () => {
-      if (!olderAnchor.current && savedResultVisible(element))
+    return observeSavedResult(element, () => {
+      if (!olderAnchor.current)
         void tracker.acknowledge(
           threadId,
           completionVersion,
           readState.read_state_version ?? 0,
         );
-    };
-    // The effect runs after transcript commit; the frame observes layout and the
-    // actual scroll position, never the optimistic follow/smooth-scroll flag.
-    const frame = requestAnimationFrame(check);
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(check);
-    observer?.observe(element);
-    if (element.firstElementChild) observer?.observe(element.firstElementChild);
-    element.addEventListener("scroll", check);
-    window.addEventListener("focus", check);
-    window.addEventListener("resize", check);
-    document.addEventListener("visibilitychange", check);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer?.disconnect();
-      element.removeEventListener("scroll", check);
-      window.removeEventListener("focus", check);
-      window.removeEventListener("resize", check);
-      document.removeEventListener("visibilitychange", check);
-    };
+    });
   }, [
     pageReady,
     tracker,
@@ -556,6 +540,26 @@ function ConversationContent({
     history.data,
     publication?.revision,
   ]);
+  const inboxReadBlocked = useCallback(
+    () => !!olderAnchor.current || !!pendingJump.current,
+    [],
+  );
+  const unreadInboxPosts = useThreadInbox({
+    threadId,
+    enabled: !!detail.data || !!publication?.threadAvailable,
+    canRead:
+      pageReady &&
+      !hasLater &&
+      !inboxItem &&
+      !openingInboxItem &&
+      (publication
+        ? publication.ready && !publicationHistory?.isError
+        : history.isSuccess && !history.isPreviousHistory),
+    reader,
+    blocked: inboxReadBlocked,
+    savedEntries: entries,
+    publications: publication?.messages,
+  });
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   useEffect(() => {
@@ -1655,7 +1659,9 @@ function ConversationContent({
         draft={draft}
         enabled={canCompose && !thread?.archived}
       >
-        {content}
+        <UnreadInboxPosts.Provider value={unreadInboxPosts}>
+          {content}
+        </UnreadInboxPosts.Provider>
       </ReplyAnnotations>
     </ConversationOpening>
   );

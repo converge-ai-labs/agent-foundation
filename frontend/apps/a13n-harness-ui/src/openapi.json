@@ -795,6 +795,91 @@
         }
       }
     },
+    "/api/inbox/threads/{thread_id}/unread": {
+      "get": {
+        "summary": "Thread Inbox Unread",
+        "operationId": "thread_inbox_unread_api_inbox_threads__thread_id__unread_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InboxUnreadPost"
+                  },
+                  "title": "Response Thread Inbox Unread Api Inbox Threads  Thread Id  Unread Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inbox/threads/{thread_id}/mark-read": {
+      "post": {
+        "summary": "Thread Inbox Mark Read",
+        "operationId": "thread_inbox_mark_read_api_inbox_threads__thread_id__mark_read_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadInboxMarkReadRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/inbox/mark-read": {
       "post": {
         "summary": "Inbox Mark Read",
@@ -19574,6 +19659,36 @@
         ],
         "title": "InboxUnreadCounts"
       },
+      "InboxUnreadPost": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "tool_call_id": {
+            "type": "string",
+            "title": "Tool Call Id"
+          },
+          "has_transcript": {
+            "type": "boolean",
+            "title": "Has Transcript"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "tool_call_id",
+          "has_transcript",
+          "created_at"
+        ],
+        "title": "InboxUnreadPost"
+      },
       "InputPredictionResponse": {
         "properties": {
           "continuation_id": {
@@ -31226,6 +31341,26 @@
           "paused"
         ],
         "title": "BotPause"
+      },
+      "ThreadInboxMarkReadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "item_ids": {
+            "items": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Item Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item_ids"
+        ],
+        "title": "ThreadInboxMarkReadRequest",
+        "type": "object"
       },
       "InboxMarkReadRequest": {
         "properties": {
