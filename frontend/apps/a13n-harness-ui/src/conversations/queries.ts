@@ -363,6 +363,7 @@ export function useHistory(
   continuation: string | null | undefined,
   enabled: boolean,
   turnId?: string,
+  resetKey?: string,
 ) {
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -518,16 +519,19 @@ export function useHistory(
   });
   // Keep the last successful history, with its real continuation identity, while
   // a replacement loads or fails. Query placeholder data disappears on errors.
-  const previous = useRef<{ threadId: string; data: typeof query.data }>(
-    undefined,
-  );
+  const previous = useRef<{
+    threadId: string;
+    resetKey?: string;
+    data: typeof query.data;
+  }>(undefined);
   useEffect(() => {
-    if (query.isSuccess) previous.current = { threadId, data: query.data };
-  }, [threadId, query.data, query.isSuccess]);
+    if (query.isSuccess)
+      previous.current = { threadId, resetKey, data: query.data };
+  }, [threadId, resetKey, query.data, query.isSuccess]);
   // A newly opened page can reuse history warmed by the workbench even while a
   // newer continuation is loading. Keep its original identity, never relabel it.
   const cached =
-    !query.data && previous.current?.threadId !== threadId
+    !query.data && !resetKey && previous.current?.threadId !== threadId
       ? queries
           .getQueryCache()
           .findAll({ queryKey: ["thread", threadId, "history"] })
@@ -535,7 +539,8 @@ export function useHistory(
           .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]
       : undefined;
   const retained =
-    previous.current?.threadId === threadId
+    previous.current?.threadId === threadId &&
+    previous.current.resetKey === resetKey
       ? previous.current.data
       : cached
         ? queries.getQueryData<NonNullable<typeof query.data>>(cached.queryKey)

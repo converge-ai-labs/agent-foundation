@@ -64,8 +64,11 @@ Use the sidebar menu to switch between **Projects** (grouped by directory) and *
 | Search chats                  | Click **Search** or press `Cmd/Ctrl+F`                                                        |
 | Rename, star, archive, delete | Open a conversation's **…** menu (**Delete chat** is permanent; stop active work first)       |
 | Fork or branch                | Choose **… → Fork conversation**, or hover a reply and select **Branch in new chat**          |
+| Edit a sent message           | Hover the input and choose **Edit message**. Select the checkmark to send again in this chat. |
 | Navigate history              | Use the left input rail to jump to earlier turns; expand **Execution details** for tool calls |
 | Inspect usage & cost          | Open conversation usage to see token totals and estimated USD cost by model                   |
+
+Editing replaces the selected message and everything after it. Keep or remove its existing attachments as you edit. If a Run is active, **Stop & send** stops it before sending the replacement. Press `Escape` to cancel the edit and leave the Run alone.
 
 To require `Ctrl+Enter` (`⌘+Enter` on Apple devices), go to **Settings → Chats → Chat input**, change **Send messages with**, and save changes. The setting is stored as `webui.send_shortcut` in the instance configuration and applies across browsers. In that mode, `Enter` and `Shift+Enter` both insert a new line. On touch-first devices, the on-screen Enter key inserts a new line in either mode.
 

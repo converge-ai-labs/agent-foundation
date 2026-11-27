@@ -92,7 +92,7 @@ import {
 import { LiveConnectionStatus } from "./live-connection";
 import { ConversationTranscript, type PublishedMessage } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
-import { inputSource, conversationTitle } from "./local-input";
+import { inputSource, conversationTitle, type LocalInput } from "./local-input";
 import { InputNavigation } from "./input-navigation";
 import {
   captureReadingAnchor,
@@ -234,12 +234,16 @@ function ConversationContent({
     );
   const draft = useDraft(threadId, true);
   const [selectedTurn, setSelectedTurn] = useState<string>();
+  const [historyReset, setHistoryReset] = useState<string>();
+  const [messageEditPending, setMessageEditPending] = useState(false);
+  const [composerPreparing, setComposerPreparing] = useState(false);
   const pendingJump = useRef<string | undefined>(undefined);
   const history = useHistory(
     threadId,
     detail.data?.continuation_id,
     !!detail.data,
     selectedTurn,
+    historyReset,
   );
   const publicationHistory = publication?.history;
   const hasEarlier = history.hasNextPage || publicationHistory?.hasEarlier;
@@ -256,8 +260,13 @@ function ConversationContent({
         : undefined,
     ]);
   }, [history.hasNextPage, history.fetchNextPage, publicationHistory]);
-  const { display, connection, reconnections, revision } =
-    useLiveThread(threadId);
+  const {
+    display,
+    connection,
+    reconnections,
+    revision,
+    reset: resetFocus,
+  } = useLiveThread(threadId);
   const [showAvailable, setShowAvailable] = useState(false);
   const pageReady = useInitialReady(
     publication?.ready ||
@@ -577,6 +586,51 @@ function ConversationContent({
     (draft.submission.kind === "accepted"
       ? draft.submission.receipt
       : undefined);
+  const rewindConversation = (
+    replacement: Schema<"MessageEditReceipt">,
+    input: LocalInput,
+  ) => {
+    const receiptId = replacement.receipt.receipt_id;
+    const detailKey = ["thread", threadId, "detail"];
+    void queries.cancelQueries({ queryKey: detailKey, exact: true });
+    for (const section of [
+      "history",
+      "turn-history",
+      "inputs",
+      "branch-points",
+    ]) {
+      queries.removeQueries({ queryKey: ["thread", threadId, section] });
+    }
+    setHistoryReset(replacement.continuation_id);
+    queries.setQueryData<Schema<"ThreadDetail">>(detailKey, (current) => {
+      if (
+        !current ||
+        current.thread.root_activity.receipt_id === receiptId ||
+        current.thread.last_execution?.execution_id === receiptId
+      )
+        return current;
+      return {
+        ...current,
+        continuation_id: replacement.continuation_id,
+        deferred_requests: [],
+        thread: {
+          ...current.thread,
+          last_execution: null,
+          completion: null,
+          root_activity: { state: "preparing", receipt_id: receiptId },
+        },
+      };
+    });
+    resetFocus();
+    setLastReceipt(receiptId);
+    pendingPost.current = undefined;
+    restoreScroll.current = "";
+    draft.localInputs = [input];
+    draft.submission = { kind: "accepted", action: "send", receipt: receiptId };
+    draft.notify();
+    backToLatest();
+    reconcile();
+  };
   const observedOperation = useOperation(
     threadId,
     operation?.receipt_id ??
@@ -1220,14 +1274,24 @@ function ConversationContent({
               <>
                 <PauseConversationFollowing value={interruptScroll}>
                   <MessageBranchProvider
-                    receipt={thread?.root_activity.receipt_id}
+                    receipt={operation?.receipt_id}
+                    runId={operation?.run_id}
                     thread={threadId}
                     draft={draft}
-                    continuation={continuation}
+                    continuation={detail.data?.continuation_id ?? continuation}
+                    acpCommands={acpAgent ? acpCommands.data : undefined}
+                    blocked={
+                      composerPreparing ||
+                      draft.submission.kind === "pending" ||
+                      draft.submission.kind === "unknown"
+                    }
+                    onEditPending={setMessageEditPending}
+                    onRewound={rewindConversation}
                     enabled={
                       !!thread &&
                       !isBot &&
                       !guest &&
+                      !readOnly &&
                       thread.role === "ordinary" &&
                       !thread.parent_thread_id &&
                       !thread.memory_scope &&
@@ -1236,10 +1300,7 @@ function ConversationContent({
                           "acp_agent") &&
                       !thread.archived
                     }
-                    active={
-                      thread?.root_activity.state !== "inactive" ||
-                      draft.submission.kind === "pending"
-                    }
+                    active={!!operation && operation.state !== "inactive"}
                   >
                     <ConversationTranscript
                       publications={publication?.messages}
@@ -1438,6 +1499,8 @@ function ConversationContent({
                 : undefined
             }
             runBlock={runBlock}
+            editingMessage={messageEditPending}
+            onPreparing={setComposerPreparing}
             continuationId={detail.data?.continuation_id}
             predictionEnabled={
               (guest

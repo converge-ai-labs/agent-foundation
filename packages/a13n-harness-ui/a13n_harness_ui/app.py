@@ -318,7 +318,7 @@ from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor
 from a13n_harness_ui.root_input import authored_text, detach_input
 from a13n_harness_ui.root_inputs import InputDelivery, StrictRootInputs
-from a13n_harness_ui.root_run import RootRunCoordinator
+from a13n_harness_ui.root_run import MessageEditAdmission, RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
 from a13n_harness_ui.settings import HarnessUiSettings
@@ -333,6 +333,8 @@ from a13n_harness_ui.sharing import Sharing
 from a13n_harness_ui.skill_input import prepare_skill_input
 from a13n_harness_ui.storage import (
     LocalStore,
+    ObjectRef,
+    Thread,
     ThreadConfiguration,
     ThreadConfigurationMutation,
     open_local_store,
@@ -360,6 +362,8 @@ from a13n_harness_ui.surfaces import (
     LaunchProjectResolution,
     MemoryFileEntry,
     MemoryFileText,
+    MessageEditReceipt,
+    MessageEditSelection,
     NewThreadDefaults,
     NotePage,
     ProjectDefaultsApply,
@@ -408,6 +412,7 @@ from a13n_harness_ui.thread_files import (
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import (
+    MessageRewind,
     RootThreadDefaults,
     ThreadService,
     configured_agent_source,
@@ -1682,20 +1687,70 @@ class HarnessUiApp:
             return await self._projections.get_thread(thread.thread_id)
 
     async def branch_points(self, thread_id: str) -> BranchPoints:
-        async with self._operation(), self._root_runs.message_branch_source(thread_id) as (base, continuing):
-            return await self._threads.branch_points(thread_id, base, continuing)
+        async with self._operation(), self._root_runs.message_branch_source(thread_id) as active:
+            return await self._threads.branch_points(thread_id, active)
 
     async def branch_thread(self, thread_id: str, request: BranchRequest) -> ThreadSummary:
         async with self._operation():
-            async with self._root_runs.message_branch_source(thread_id, editing=request.side == "before") as (
-                base,
-                continuing,
-            ):
-                thread = await self._threads.fork(
-                    thread_id, files=self._thread_files, branch=request, base=base, continuing=continuing
-                )
+            async with self._root_runs.message_branch_source(thread_id) as active:
+                thread = await self._threads.fork(thread_id, files=self._thread_files, branch=request, active=active)
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
+
+    async def edit_thread_message(
+        self,
+        *,
+        thread_id: str,
+        selection: MessageEditSelection,
+        prompt: ComposerInput,
+        skill_references: tuple[SkillReference, ...] = (),
+    ) -> MessageEditReceipt:
+        """Stop the selected operation, replace its history suffix, and admit the new input."""
+        async with self._operation(), self._root_runs.reserve_message_edit(thread_id) as (active, reservation):
+            target = await self._threads.message_edit_target(
+                thread_id,
+                turn_key=selection.turn_key,
+                expected_source=selection.expected_source,
+                attachment_ids=prompt.attachment_ids,
+                settled_at=self._root_runs.settled_message_checkpoint(thread_id, selection.expected_source),
+                active=active,
+            )
+            prepared = await self._prepare_user_input(thread_id, prompt, skill_references=skill_references)
+            stopped_at = (
+                await self._root_runs.stop_for_message_edit(target.receipt_id)
+                if target.receipt_id is not None
+                else None
+            )
+
+            async def prepare() -> MessageRewind:
+                return await self._threads.prepare_message_rewind(target, stopped_at)
+
+            continuation_id = None
+
+            async def select(rewind: MessageRewind, composition: ObjectRef) -> Thread:
+                nonlocal continuation_id
+                await self._acp_sessions.retire(thread_id)
+                selected = await self._threads.select_message_rewind(rewind, composition)
+                assert selected.continuation is not None
+                continuation_id = selected.continuation.logical_digest
+                try:
+                    await self._reset_context_runtime(thread_id)
+                except Exception:
+                    get_logger(__name__).warning("Could not clear stale Thread runtime state", exc_info=True)
+                return selected
+
+            receipt = await self._root_runs.submit_prompt(
+                thread_id=thread_id,
+                prompt=append_surface_provenance(prepared, "webui"),
+                touch=True,
+                human_input=True,
+                edit=MessageEditAdmission(reservation, prepare, select),
+            )
+            assert continuation_id is not None
+            self._tool_executions.retry(thread_id, refresh=True)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
+            return MessageEditReceipt(receipt=receipt, continuation_id=continuation_id)
 
     async def promote_coordinator(self, thread_id: str) -> ThreadSummary:
         """Convert an idle independent root without replacing its conversation."""
@@ -2284,19 +2339,22 @@ class HarnessUiApp:
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
                 await self._acp_sessions.retire(thread_id)
-                self._root_runs.cancel_prediction(thread_id)
-                draft = None
-                async with self._shared_drafts_lock:
-                    if thread_id in self._shared_drafts or await self._store.drafts.get(thread_id) is not None:
-                        draft = await self._load_shared_draft(thread_id)
-                if draft is not None:
-                    await draft.set_prediction(None)
-                self._tool_executions.clear_state(thread_id)
-                if self._browsers is not None:
-                    self._browsers.handback.suppress(thread_id)
+                await self._reset_context_runtime(thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
             return await self._projections.detail(thread_id)
+
+    async def _reset_context_runtime(self, thread_id: str) -> None:
+        self._root_runs.cancel_prediction(thread_id)
+        self._tool_executions.clear_state(thread_id)
+        if self._browsers is not None:
+            self._browsers.handback.suppress(thread_id)
+        draft = None
+        async with self._shared_drafts_lock:
+            if thread_id in self._shared_drafts or await self._store.drafts.get(thread_id) is not None:
+                draft = await self._load_shared_draft(thread_id)
+        if draft is not None:
+            await draft.set_prediction(None)
 
     async def delete_thread(self, *, thread_id: str, expected_version: int) -> tuple[str, ...]:
         """Permanently remove an idle conversation and its subagent history."""
@@ -2953,6 +3011,25 @@ class HarnessUiApp:
             await self._threads.get(thread_id)
             await self._store.threads.replace_external_context(thread_id, context)
 
+    async def _prepare_user_input(
+        self,
+        thread_id: str,
+        prompt: RunInputValue | ComposerInput,
+        *,
+        attachment_ids: tuple[str, ...] = (),
+        skill_references: tuple[SkillReference, ...] = (),
+        environment: EnvironmentSelectionPatch | None = None,
+        mutation: ThreadConfigurationMutation | None = None,
+    ) -> RunInputValue:
+        if not skill_references:
+            return await self._prepare_input(thread_id, prompt, attachment_ids)
+        catalog = await self._terminal_projections.skill_catalog(
+            thread_id=thread_id, environment=environment, mutation=mutation
+        )
+        selected = self._terminal_projections.validate_references_against(catalog, skill_references)
+        prepared = await self._prepare_input(thread_id, prompt, attachment_ids)
+        return prepare_skill_input(prepared, catalog, selected)
+
     async def submit_thread(
         self,
         *,
@@ -3006,19 +3083,14 @@ class HarnessUiApp:
                 if configuration is None:
                     raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
                 goal = GoalView(objective=objective, max_iterations=configuration.document.max_goal_iterations)
-            catalog = None
-            selected_skills: tuple[str, ...] = ()
-            if skill_references:
-                catalog = await self._terminal_projections.skill_catalog(
-                    thread_id=thread_id,
-                    environment=environment,
-                    mutation=mutation,
-                )
-                selected_skills = self._terminal_projections.validate_references_against(catalog, skill_references)
-            await self._threads.get(thread_id)
-            prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
-            if catalog is not None:
-                prompt = prepare_skill_input(prompt, catalog, selected_skills)
+            prompt = await self._prepare_user_input(
+                thread_id,
+                prompt,
+                attachment_ids=attachment_ids,
+                skill_references=skill_references,
+                environment=environment,
+                mutation=mutation,
+            )
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
                     TextContent(

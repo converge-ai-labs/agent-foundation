@@ -715,8 +715,9 @@ async def test_agy_oauth_callback_is_forwarded_and_released(tmp_path: Path) -> N
     await inputs.close()
 
 
+@pytest.mark.parametrize("edit_active", [False, True], ids=["idle-edit", "active-edit"])
 async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, edit_active: bool
 ) -> None:
     import json
 
@@ -725,8 +726,8 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
     from a13n_harness_ui.storage.contracts import AcpAgentSource, AgentResourceSource
-    from a13n_harness_ui.surfaces import BranchRequest, RootOperationStatus
-    from a13n_harness_ui.thread_files import AttachmentUpload
+    from a13n_harness_ui.surfaces import BranchRequest, MessageEditSelection, RootOperationStatus
+    from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput
     from pydantic_ai.messages import ModelMessagesTypeAdapter
     from pydantic_ai.models.function import FunctionModel
 
@@ -808,12 +809,12 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
             == (await app.get_thread(source.thread_id)).thread.excerpt.latest_reply
         )
 
-        # 2. Message branching ("after" turn 1, and "before"/edit turn 2) truncates cleanly and retains attachments.
+        # 2. Reply branching and in-place editing crop the native history independently.
         transcript = await app.get_thread_transcript(thread_id=source.thread_id)
         points = await app.branch_points(source.thread_id)
         turn_one_id = transcript.turns[0].turn_id
         turn_two_id = transcript.turns[1].turn_id
-        assert points.points[turn_one_id].branch and not points.points[turn_one_id].edit
+        assert points.points[turn_one_id].branch and points.points[turn_one_id].edit
         assert points.points[turn_two_id].branch and points.points[turn_two_id].edit
 
         branched = await app.branch_thread(
@@ -828,15 +829,30 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
         assert ";mode=plan;" in branch_reply
         assert "echo-prior:turn-one" in branch_reply and "echo-prior:turn-two" not in branch_reply
 
-        edited = await app.branch_thread(
-            source.thread_id,
-            BranchRequest(turn_key=turn_two_id, expected_continuation_id=points.source, side="before"),
+        active_run = None
+        if edit_active:
+            active_run = await app.submit_thread(thread_id=source.thread_id, prompt="cancel-me")
+            async with asyncio.timeout(5):
+                while (await app.get_root_operation(active_run.receipt_id)).status is RootOperationStatus.preparing:
+                    await asyncio.sleep(0.01)
+            points = await app.branch_points(source.thread_id)
+            assert points.edit_source == active_run.receipt_id
+        edit_run = await app.edit_thread_message(
+            thread_id=source.thread_id,
+            selection=MessageEditSelection(turn_key=turn_two_id, expected_source=points.edit_source),
+            prompt=ComposerInput(parts=("echo-prior:edited-turn-two",)),
         )
-        edit_run = await app.submit_thread(thread_id=edited.thread_id, prompt="echo-prior:edited-turn-two")
-        assert (await app.wait_root_operation(edit_run.receipt_id)).status is RootOperationStatus.completed
-        edit_reply = (await app.get_thread(edited.thread_id)).thread.excerpt.latest_reply
-        assert edit_reply is not None
+        assert edit_run.receipt.thread_id == source.thread_id
+        if active_run is not None:
+            assert (await app.wait_root_operation(active_run.receipt_id)).status is RootOperationStatus.cancelled
+        assert (await app.wait_root_operation(edit_run.receipt.receipt_id)).status is RootOperationStatus.completed
+        edited = await app.get_thread(source.thread_id)
+        edit_reply = edited.thread.excerpt.latest_reply
+        assert edit_reply is not None and edited.thread.title == "ACP chat"
+        assert not edit_reply.startswith(f"session={source_session};") and ";mode=plan;" in edit_reply
         assert "echo-prior:turn-one" in edit_reply and "echo-prior:turn-two" not in edit_reply
+        assert "cancel-me" not in edit_reply
+        assert [cmd.name for cmd in await app.acp_commands(source.thread_id)] == ["plan"]
 
         # 3. Bidirectional Agent switching across forks (ACP -> fork -> Native -> fork -> ACP).
         acp_to_native = await app.fork_thread(forked.thread_id)

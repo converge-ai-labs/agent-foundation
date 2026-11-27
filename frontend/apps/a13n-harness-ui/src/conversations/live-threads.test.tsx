@@ -115,7 +115,7 @@ beforeEach(() => {
       expect(watches.has(args[1])).toBe(false);
       watches.set(args[1], { args, close });
       maxConnections = Math.max(maxConnections, watches.size);
-      return close;
+      return Object.assign(close, { reset: vi.fn() });
     });
   vi.stubGlobal(
     "fetch",

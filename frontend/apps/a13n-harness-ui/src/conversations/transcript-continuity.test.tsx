@@ -111,7 +111,9 @@ it("branches from an imported reply without a timestamp", () => {
   render(
     <MessageBranches
       value={{
-        busy: false,
+        active: false,
+        blocked: false,
+        edit: vi.fn(),
         pending: false,
         create,
         points: { "entry:0": { edit: true, branch: true } },

@@ -10,19 +10,23 @@ from pathlib import Path
 
 from a13n_harness import HarnessState
 from a13n_harness import __version__ as harness_version
+from a13n_harness.content import request_input_content
 from a13n_harness.state import AgentContextStateSnapshot
 from anyio import CancelScope, to_thread
 from filelock import AsyncFileLock
+from pydantic_ai.messages import ModelMessage, ModelRequest
 
 from a13n_harness_ui.acp_sessions import AcpOptionSelection, AcpSessionState, acp_options_scope
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
 from a13n_harness_ui.configuration.models import AgentResource
+from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.display_history import (
     DisplayHistoryCollector,
     ordinary_input,
 )
+from a13n_harness_ui.display_projection import display_turns
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_in_environment_profile
 from a13n_harness_ui.errors import ThreadError
@@ -40,7 +44,13 @@ from a13n_harness_ui.storage import (
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
 from a13n_harness_ui.storage.contracts import AcpAgentSource, BotAgentSource, LiveAgentSource, MemoryAgentSource
-from a13n_harness_ui.storage.display import read_display
+from a13n_harness_ui.storage.display import (
+    DisplayArchive,
+    before_display_input,
+    display_input_boundaries,
+    read_display,
+    seal_display,
+)
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
     BranchPoint,
@@ -53,8 +63,46 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationResolution,
     ThreadMetadataMutation,
 )
-from a13n_harness_ui.thread_branch import boundaries, branch_prefix
+from a13n_harness_ui.thread_branch import EditableInput, boundaries, branch_prefix, editable_input
 from a13n_harness_ui.thread_files import ThreadFiles
+
+
+@dataclass(frozen=True, slots=True)
+class MessageBranchSource:
+    thread: Thread
+    receipt_id: str
+    continuing: bool
+    current_input: EditableInput | None
+    run_id: str | None
+
+    @property
+    def base(self) -> ObjectRef:
+        return self.thread.continuation or self.thread.initial_state
+
+    @property
+    def input_keys(self) -> tuple[str, ...]:
+        if self.current_input is None or self.continuing:
+            return ()
+        return tuple(key for key in (self.current_input.source_id, self.run_id) if key is not None)
+
+
+@dataclass(frozen=True, slots=True)
+class MessageEditTarget:
+    thread: Thread
+    history: tuple[ModelMessage, ...]
+    cut: int
+    receipt_id: str | None
+    display: DisplayArchive | None
+
+
+@dataclass(frozen=True, slots=True)
+class MessageRewind:
+    thread: Thread
+    state: HarnessState
+    excerpt: ConversationExcerpt
+    display: DisplayArchive | None
+    prior_composition: ObjectRef | None
+    acp_state: AcpSessionState | None
 
 
 class _CreationDefault(Enum):
@@ -248,7 +296,7 @@ class ThreadService:
             else ref.logical_digest
         )
 
-    async def _branch_boundaries(self, source: Thread, ref: ObjectRef, continuing: bool):
+    async def _branch_boundaries(self, source: Thread, ref: ObjectRef, continuing: bool, *, editing: bool = False):
         terminal_run_id = (
             source.last_execution.run_id
             if ref == source.continuation
@@ -257,7 +305,7 @@ class ThreadService:
             else None
         )
         saved = (
-            await read_continuation(self._store.objects, ref, include_display=terminal_run_id is not None)
+            await read_continuation(self._store.objects, ref, include_display=editing or terminal_run_id is not None)
             if ref.object_kind is ObjectKind.continuation
             else await self._store.objects.read_model(ref, StoredThreadInitialState)
         )
@@ -330,19 +378,203 @@ class ThreadService:
                             and not composer.get("skills")
                         ):
                             result[terminal_key, "before"] = (prior, len(prior))
-        return result
+        return result, saved, display_archive
 
-    async def branch_points(self, thread_id: str, base: ObjectRef | None, continuing: bool) -> BranchPoints:
+    async def branch_points(self, thread_id: str, active: MessageBranchSource | None) -> BranchPoints:
         async with checkpoint_lock(self._store.layout.root, thread_id):
-            source = await self._fork_source(thread_id)
-            ref = base or source.continuation or source.initial_state
-            points = await self._branch_boundaries(source, ref, continuing)
+            thread = await self._fork_source(thread_id)
+            source = active.thread if active else thread
+            ref = source.continuation or source.initial_state
+            can_edit = not thread.archived and (
+                active is not None
+                or thread.last_execution is None
+                or thread.last_execution.status not in {"preparing", "running"}
+            )
+            points, _, archive = await self._branch_boundaries(
+                source, ref, active.continuing if active else False, editing=can_edit
+            )
+            display_keys = None
+            if archive is not None and can_edit and any(side == "before" for _, side in points):
+                display = await read_display(self._store.objects, archive)
+                display_keys = await to_thread.run_sync(display_input_boundaries, display)
+            projected = {
+                key: BranchPoint(
+                    edit=can_edit and (key, "before") in points and (display_keys is None or key in display_keys),
+                    branch=(key, "after") in points,
+                )
+                for key, _ in points
+            }
+            if active and can_edit:
+                for key in active.input_keys:
+                    projected[key] = BranchPoint(edit=key not in projected, branch=False)
         return BranchPoints(
             source=self._source_id(ref),
-            points={
-                key: BranchPoint(edit=(key, "before") in points, branch=(key, "after") in points) for key, _ in points
-            },
+            edit_source=active.receipt_id if active else self._source_id(ref),
+            points=projected,
         )
+
+    async def message_edit_target(
+        self,
+        thread_id: str,
+        *,
+        turn_key: str,
+        expected_source: str,
+        attachment_ids: tuple[str, ...],
+        settled_at: ObjectRef | None,
+        active: MessageBranchSource | None,
+    ) -> MessageEditTarget:
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            thread = await self._fork_source(thread_id)
+            if thread.archived:
+                raise ThreadError("Restore this conversation before editing a message.", code="thread_archived")
+            source = active.thread if active else thread
+            ref = source.continuation or source.initial_state
+            settled_receipt = (
+                active is None
+                and thread.continuation == settled_at
+                and thread.last_execution is not None
+                and thread.last_execution.status in {"completed", "suspended", "failed", "cancelled"}
+                and thread.last_execution.execution_id == expected_source
+            )
+            if not settled_receipt and expected_source != (active.receipt_id if active else self._source_id(ref)):
+                raise ThreadError("Conversation history changed. Reopen the message.", code="thread_branch_stale")
+            if (
+                active is None
+                and thread.last_execution is not None
+                and thread.last_execution.status in {"preparing", "running"}
+            ):
+                raise ThreadError("The active Run is not controlled by this Host session.", code="thread_run_active")
+            points, saved, archive = await self._branch_boundaries(
+                source,
+                ref,
+                active.continuing if active else False,
+                editing=True,
+            )
+            submitted = None
+            if active and turn_key in active.input_keys:
+                if any(key == turn_key for key, _ in points):
+                    raise ThreadError("This message has an ambiguous history boundary.", code="thread_branch_stale")
+                history = saved.harness_state.message_history
+                cut = len(history)
+                submitted = active.current_input
+            elif (selected := points.get((turn_key, "before"))) is not None:
+                history, cut = selected
+                if cut < len(history) and isinstance(message := history[cut], ModelRequest):
+                    submitted = editable_input(request_input_content(message))
+                if archive is not None:
+                    display = await read_display(self._store.objects, archive)
+                    boundary = (await to_thread.run_sync(display_input_boundaries, display)).get(turn_key)
+                    if boundary is None:
+                        raise ThreadError(
+                            "This message has an ambiguous transcript boundary.", code="thread_branch_stale"
+                        )
+                    archive = await to_thread.run_sync(before_display_input, display, boundary)
+            else:
+                raise ThreadError("This message no longer has a usable history boundary.", code="thread_branch_stale")
+            if attachment_ids and (submitted is None or not set(attachment_ids) <= submitted.attachment_ids):
+                raise ThreadError(
+                    "The replacement references an attachment outside this input.", code="run_input_invalid"
+                )
+            return MessageEditTarget(thread, history, cut, active.receipt_id if active else None, archive)
+
+    async def prepare_message_rewind(self, target: MessageEditTarget, stopped_at: ObjectRef | None) -> MessageRewind:
+        thread_id = target.thread.thread_id
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            thread = await self._fork_source(thread_id)
+            if (
+                thread.archived
+                or thread.configuration.version != target.thread.configuration.version
+                or (
+                    target.receipt_id is None
+                    and (
+                        thread.continuation != target.thread.continuation
+                        or thread.last_execution != target.thread.last_execution
+                    )
+                )
+                or (
+                    target.receipt_id is not None
+                    and (
+                        thread.last_execution is None
+                        or thread.last_execution.status not in {"completed", "suspended", "failed", "cancelled"}
+                        or thread.last_execution.execution_id != target.receipt_id
+                        or thread.continuation != stopped_at
+                    )
+                )
+            ):
+                raise ThreadError("Conversation history changed. Reopen the message.", code="thread_branch_stale")
+            stored = (
+                await read_continuation(self._store.objects, thread.continuation)
+                if thread.continuation is not None
+                else await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
+            )
+            if stored.harness_state.thread_id != thread_id:
+                raise ThreadError(
+                    "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
+                )
+            acp_state = None
+            if isinstance(thread.configuration.agent_source, AcpAgentSource):
+                saved_acp = await self._store.threads.acp_state(thread_id)
+                if saved_acp is not None:
+                    prior = AcpSessionState.model_validate_json(saved_acp)
+                    acp_state = AcpSessionState(
+                        digest=prior.digest,
+                        thread_id=thread_id,
+                        prompted=False,
+                        commands=prior.commands,
+                        options=prior.options,
+                        explicit_options=prior.explicit_options,
+                    )
+        state, excerpt, _ = await to_thread.run_sync(branch_prefix, target.history, target.cut, stored.harness_state)
+        if target.display is not None:
+            display = await read_display(self._store.objects, target.display)
+            turns = await to_thread.run_sync(display_turns, display)
+            if turns:
+                last = turns[-1]
+                excerpt = ConversationExcerpt(
+                    first_input=turns[0].preview,
+                    latest_input=last.preview,
+                    latest_reply=last.output_preview or "",
+                    reply_kind="none"
+                    if not last.output_preview
+                    else "final"
+                    if last.final_position is not None
+                    else "progress",
+                )
+        return MessageRewind(
+            thread,
+            state,
+            excerpt,
+            target.display,
+            stored.run_composition if isinstance(stored, Continuation) else None,
+            acp_state,
+        )
+
+    async def select_message_rewind(self, rewind: MessageRewind, composition: ObjectRef) -> Thread:
+        replacement = Continuation(
+            harness_release=harness_version,
+            run_composition=composition,
+            harness_state=rewind.state,
+            display=rewind.display,
+            excerpt=rewind.excerpt,
+            created_at=datetime.now(UTC),
+        )
+        read_model = await to_thread.run_sync(project_continuation, replacement)
+        thread_id = rewind.thread.thread_id
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            published = await publish_continuation(self._store.objects, replacement)
+            thread = await self._store.threads.select_continuation(
+                thread_id=thread_id,
+                expected=rewind.thread.continuation,
+                replacement=published,
+                read_model=read_model,
+                excerpt=rewind.excerpt,
+                clear_compaction=True,
+                edit_source=rewind.thread,
+                clear_acp_state=True,
+                acp_state_json=rewind.acp_state.model_dump_json() if rewind.acp_state is not None else None,
+            )
+            await self._store.publish_work(thread_id, published, rewind.state)
+            return thread
 
     async def fork(
         self,
@@ -350,13 +582,13 @@ class ThreadService:
         *,
         files: ThreadFiles,
         branch: BranchRequest | None = None,
-        base: ObjectRef | None = None,
-        continuing: bool = False,
+        active: MessageBranchSource | None = None,
     ) -> Thread:
         """Copy the saved continuation, or start fresh from a selected message prefix."""
         async with checkpoint_lock(self._store.layout.root, thread_id):
             source = await self._fork_source(thread_id)
-            ref = base or source.continuation or source.initial_state
+            branch_source = active.thread if active else source
+            ref = branch_source.continuation or branch_source.initial_state
             if branch and self._source_id(ref) != branch.expected_continuation_id:
                 raise ThreadError("Conversation history changed. Reopen the message.", code="thread_branch_stale")
             baseline = await self._store.objects.read_model(source.initial_state, StoredThreadInitialState)
@@ -364,7 +596,7 @@ class ThreadService:
             attachments = None
             stored = None
             if branch:
-                points = await self._branch_boundaries(source, ref, continuing)
+                points, _, _ = await self._branch_boundaries(branch_source, ref, active.continuing if active else False)
                 selected = points.get((branch.turn_key, branch.side))
                 if selected is None:
                     raise ThreadError(
@@ -422,7 +654,7 @@ class ThreadService:
                 copied = await self._store.threads.fork(
                     source=source,
                     excerpt=excerpt,
-                    historical=base is not None,
+                    historical=active is not None,
                     thread_id=state.thread_id,
                     initial_state=initial.ref,
                     continuation=continuation,
@@ -569,8 +801,6 @@ class ThreadService:
         previous = stored.harness_state
         if previous.thread_id != thread_id:
             raise ThreadError("The selected state belongs to another Thread.", code="thread_continuation_incompatible")
-        from a13n_harness_ui.storage.display import DisplayArchive, seal_display
-
         saved = stored.display_history
         display = DisplayHistoryCollector(previous.message_history, saved).capture()
         archive = stored.display if stored.display is not None else DisplayArchive(tail=display)

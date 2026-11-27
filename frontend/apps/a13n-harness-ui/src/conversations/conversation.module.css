@@ -606,7 +606,7 @@
 .messageEditor textarea {
   display: block;
   width: 100%;
-  min-height: 3lh;
+  min-height: 1lh;
   max-height: 36vh;
   field-sizing: content;
   resize: none;
@@ -623,13 +623,49 @@
   box-shadow: none;
 }
 .messageEditor:has(textarea:focus-visible) {
-  border-color: var(--a13n-secondary);
+  border-color: var(--a13n-signal);
 }
-.messageEditor > div {
+.editActions,
+.editAttachments {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+.editActions {
+  justify-content: flex-end;
+}
+.editActions small {
+  margin-inline-end: auto;
+  color: var(--a13n-secondary);
+}
+.editAttachments {
+  flex-wrap: wrap;
+}
+.editAttachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 8px 0;
+  border-radius: var(--harness-radius-control);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+}
+.editAttachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .messageEditor textarea {
+    font-size: max(16px, var(--harness-prose-size));
+  }
+  .messageEditor button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 .userMessage {
   width: fit-content;

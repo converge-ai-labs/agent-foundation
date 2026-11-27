@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useCallback,
   useRef,
   useState,
   type ReactNode,
@@ -13,20 +14,35 @@ import { useTranslation } from "../i18n";
 import { ErrorNotice } from "../shell/ui";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
-import {
-  ComposerDrafts,
-  submitDraft,
-  waitForSynchronization,
-} from "./composer";
+import { ComposerDrafts } from "./composer";
 import { ThreadDraft } from "./draft";
+import type { OrderedInputPart } from "./inline-attachments";
+import { previewInput, type LocalInput } from "./local-input";
+import {
+  MessageEditEditor,
+  type InlineEdit,
+  type SubmitMessageEdit,
+} from "./message-edit";
 import { refreshThreadLists } from "./queries";
-import { loadThreadSkills } from "./skill-references";
+import {
+  hasSkillTrigger,
+  loadThreadSkills,
+  skillReferences,
+} from "./skill-references";
 
 export type BranchActions = {
-  busy: boolean;
+  active: boolean;
   pending: boolean;
+  blocked: boolean;
   points?: Record<string, Schema<"BranchPoint">>;
-  create: (key: string, edit?: string) => Promise<void>;
+  editSource?: string;
+  create: (key: string) => Promise<void>;
+  edit: SubmitMessageEdit;
+  editor?: {
+    draft: InlineEdit | null;
+    setDraft: (draft: InlineEdit | null) => void;
+    register: (anchor: string) => () => void;
+  };
 };
 export const MessageBranches = createContext<BranchActions | undefined>(
   undefined,
@@ -37,16 +53,26 @@ export function MessageBranchProvider({
   continuation,
   active,
   receipt,
+  runId,
   draft,
+  blocked,
   enabled,
+  acpCommands,
+  onEditPending,
+  onRewound,
   children,
 }: {
   thread: string;
   continuation?: string | null;
   active: boolean;
   receipt?: string | null;
+  runId?: string | null;
   enabled: boolean;
+  blocked: boolean;
   draft: ThreadDraft;
+  acpCommands?: Schema<"AcpCommand">[];
+  onEditPending: (pending: boolean) => void;
+  onRewound: (value: Schema<"MessageEditReceipt">, input: LocalInput) => void;
   children: ReactNode;
 }) {
   const transport = useTransport();
@@ -56,27 +82,27 @@ export function MessageBranchProvider({
   const sending = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>();
+  const [editDraft, setEditDraft] = useState<InlineEdit | null>(null);
+  const [editAnchor, setEditAnchor] = useState<string | null>(null);
+  const register = useCallback((anchor: string) => {
+    setEditAnchor(anchor);
+    return () =>
+      setEditAnchor((current) => (current === anchor ? null : current));
+  }, []);
   const points = useQuery({
-    queryKey: [
-      "message-branch-points",
-      thread,
-      active,
-      active ? receipt : continuation,
-    ],
-    enabled: enabled && (!!continuation || active),
+    queryKey: ["thread", thread, "branch-points", continuation, receipt, runId],
+    enabled: enabled && (!!continuation || !!receipt),
     staleTime: Infinity,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       result(
         transport.client.GET("/api/threads/{thread_id}/branch-points", {
-          params: {
-            path: { thread_id: thread },
-          },
+          params: { path: { thread_id: thread } },
+          signal,
         }),
       ),
   });
-  async function create(key: string, edit?: string) {
-    if (sending.current || (edit !== undefined && active) || !points.data)
-      return;
+  async function create(key: string) {
+    if (sending.current || !points.data) return;
     sending.current = true;
     setPending(true);
     setError(undefined);
@@ -87,31 +113,15 @@ export function MessageBranchProvider({
           body: {
             turn_key: key,
             expected_continuation_id: points.data.source,
-            side: edit === undefined ? "after" : "before",
+            side: "after",
           },
         }),
       );
       const target = new ThreadDraft();
       target.modelOptions = draft.modelOptions;
       drafts.set(copy.thread_id, target);
-      if (edit !== undefined) target.doc.getText("text").insert(0, edit);
       void refreshThreadLists(queries);
       navigate(`/threads/${copy.thread_id}`);
-      if (edit !== undefined) {
-        await submitDraft(
-          target,
-          transport,
-          copy.thread_id,
-          "send",
-          undefined,
-          undefined,
-          undefined,
-          () => loadThreadSkills(transport, copy.thread_id, target.environment),
-          undefined,
-          undefined,
-          () => waitForSynchronization(target, new AbortController().signal),
-        );
-      }
     } catch (failure) {
       setError(failure);
     } finally {
@@ -119,20 +129,80 @@ export function MessageBranchProvider({
       setPending(false);
     }
   }
+  async function edit(
+    selection: Schema<"MessageEditSelection">,
+    parts: OrderedInputPart[],
+    attachments: Map<string, Schema<"ThreadAttachment">>,
+  ) {
+    if (sending.current || blocked) return;
+    sending.current = true;
+    setPending(true);
+    onEditPending(true);
+    const id = `input_${crypto.randomUUID().replaceAll("-", "")}`;
+    try {
+      const excludedSlashNames = new Set(acpCommands?.map((item) => item.name));
+      const catalog = hasSkillTrigger(parts, excludedSlashNames)
+        ? await loadThreadSkills(transport, thread)
+        : undefined;
+      const replacement = await result(
+        transport.client.POST("/api/threads/{thread_id}/edit-message", {
+          params: { path: { thread_id: thread } },
+          body: {
+            selection,
+            parts,
+            source_id: id,
+            skill_references: skillReferences(parts, catalog, {
+              excludedSlashNames,
+            }),
+          },
+        }),
+      );
+      onRewound(replacement, {
+        id,
+        action: "send",
+        state: "accepted",
+        parts: previewInput(
+          id,
+          parts,
+          attachments,
+          catalog,
+          excludedSlashNames,
+        ),
+      });
+    } finally {
+      sending.current = false;
+      setPending(false);
+      onEditPending(false);
+    }
+  }
   return (
     <MessageBranches
       value={
         enabled
           ? {
-              busy: active || pending,
+              active,
+              blocked,
               pending,
               points: points.data?.points,
+              editSource: points.data?.edit_source,
               create,
+              edit,
+              editor: { draft: editDraft, setDraft: setEditDraft, register },
             }
           : undefined
       }
     >
       {children}
+      {editDraft && !editAnchor && (
+        <MessageEditEditor
+          draft={editDraft}
+          setDraft={setEditDraft}
+          active={active}
+          blocked
+          pending={pending}
+          submit={edit}
+        />
+      )}
       <ErrorNotice error={enabled && (error ?? points.error)} />
     </MessageBranches>
   );

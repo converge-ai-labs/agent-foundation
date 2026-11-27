@@ -216,6 +216,8 @@ from a13n_harness_ui.surfaces import (
     DecisionResponseBatch,
     MemoryFileEntry,
     MemoryFileText,
+    MessageEditReceipt,
+    MessageEditSelection,
     NewThreadDefaults,
     ProjectDefaultsApply,
     ProjectDefaultsPreview,
@@ -320,6 +322,10 @@ class PromptRequest(SurfaceModel):
             ),
             source_id=self.source_id,
         )
+
+
+class MessageEditRequest(PromptRequest):
+    selection: MessageEditSelection
 
 
 class SteerRequest(SurfaceModel):
@@ -790,7 +796,14 @@ def create_webui(
             "host_git_permission_denied",
         }:
             status = 403
-        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists", "thread_interaction_expired"}:
+        elif code in {
+            "host_files_partial_failure",
+            "thread_run_active",
+            "thread_exists",
+            "thread_interaction_expired",
+            "thread_edit_stop_timeout",
+            "thread_edit_stop_failed",
+        }:
             status = 409
         elif code in {
             "browser_human_control",
@@ -2341,6 +2354,24 @@ def create_webui(
     @server.post("/api/threads/{thread_id}/branch", response_model=ThreadSummary, openapi_extra=_body(BranchRequest))
     async def branch_thread(thread_id: str, request: Request) -> ThreadSummary:
         return await app().branch_thread(thread_id, await _document(request, BranchRequest))
+
+    @server.post(
+        "/api/threads/{thread_id}/edit-message",
+        response_model=MessageEditReceipt,
+        openapi_extra=_body(MessageEditRequest),
+        dependencies=[Depends(browser_submission)],
+    )
+    async def edit_message(thread_id: str, request: Request) -> MessageEditReceipt:
+        document = await _document(request, MessageEditRequest)
+        try:
+            return await app().edit_thread_message(
+                thread_id=thread_id,
+                selection=document.selection,
+                prompt=document.input(),
+                skill_references=document.skill_references,
+            )
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="input_invalid") from exc
 
     @server.post("/api/threads/{thread_id}/fork", response_model=ThreadSummary)
     async def fork_thread(thread_id: str) -> ThreadSummary:

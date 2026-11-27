@@ -2502,6 +2502,62 @@ it("a child checkpoint recovers a trimmed prefix without hiding a later unsaved 
   expect(child.gap).toBe(true);
 });
 
+it("starts a clean focus subscription after rewind and ignores late frames from the discarded suffix", () => {
+  const display = new FocusDisplay();
+  const { socket, transport } = connectedTransport();
+  const close = watchThread(
+    transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    vi.fn(),
+    vi.fn(),
+  );
+  try {
+    socket().open();
+    const channel = () =>
+      socket().sent.findLast((item) => item.kind === "subscribe")!;
+    const previous = channel().channel;
+    const replay = (text: string, current = channel().channel) => {
+      socket().frame(snapshot(1), current);
+      socket().frame(
+        {
+          kind: "root_stream",
+          run_id: "run-one",
+          events: [
+            {
+              index: 0,
+              event_type: "TEXT_MESSAGE_CONTENT",
+              payload_omitted: false,
+              payload: {
+                type: "TEXT_MESSAGE_CONTENT",
+                messageId: "message-one",
+                delta: text,
+              },
+            },
+          ],
+        },
+        current,
+      );
+      socket().frame({ kind: "ready", resume_cursor: "ready" }, current);
+    };
+    replay("discarded suffix");
+    const texts = () => [...display.blocks.values()].map((block) => block.text);
+    expect(texts()).toEqual(["discarded suffix"]);
+    close.reset();
+    expect(channel().channel).not.toBe(previous);
+    expect(channel().after).toBeNull();
+    expect(display.blocks.size).toBe(0);
+    expect(display.presentationFor(null).blocks.size).toBe(0);
+    replay("late discarded frame", previous);
+    expect(display.blocks.size).toBe(0);
+    replay("replacement output");
+    expect(texts()).toEqual(["replacement output"]);
+  } finally {
+    close();
+  }
+});
+
 it("retries an expired focus cursor immediately once with a snapshot bootstrap, then backs off", async () => {
   vi.useFakeTimers();
   const display = new FocusDisplay();

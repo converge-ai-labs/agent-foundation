@@ -3,6 +3,7 @@ import {
   createContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -12,6 +13,7 @@ import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
 import { MessageActionButton, MessageBranches } from "./message-branch";
+import { MessageEditEditor, type InlineEdit } from "./message-edit";
 import { CopyMessage } from "./copy-message";
 import { retainedSkillSpans, skillDisplayName } from "./skill-references";
 import skillStyles from "./skill-chip.module.css";
@@ -39,6 +41,7 @@ export type InputPart = {
   kind: string;
   text?: string | null;
   value?: unknown;
+  text_truncated?: boolean;
   metadata?: Record<string, unknown> | null;
 };
 function object(value: unknown): value is Record<string, unknown> {
@@ -287,10 +290,29 @@ export function inputCopyText(parts: InputPart[]) {
   return inputMessageText(parts, false);
 }
 
-function focusEnd(editor: HTMLTextAreaElement | null) {
-  if (!editor) return;
-  editor.focus();
-  editor.setSelectionRange(editor.value.length, editor.value.length);
+function editContent(
+  parts: InputPart[],
+): Pick<InlineEdit, "text" | "attachments"> | null {
+  const attachments: InlineEdit["attachments"] = [];
+  let text = "";
+  const seen = new Set<string>();
+  for (const part of parts) {
+    if (part.metadata?.display === false) continue;
+    const ui = part.metadata?.harness_ui;
+    if (object(ui) && (ui.long_text || ui.long_text_skipped)) return null;
+    const attachment = inputAttachment(part.metadata);
+    if (attachment) {
+      const id = composerIdentity(part) ?? attachment.attachment_id;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      attachments.push({ id, attachment, offset: text.length });
+    } else if (part.kind === "user" && !part.text_truncated) {
+      text += part.text ?? "";
+    } else {
+      return null;
+    }
+  }
+  return { text, attachments };
 }
 
 export function InputContent({
@@ -354,9 +376,32 @@ export function InputContent({
     : null;
   const copyText = inputCopyText(parts);
   const actions = useContext(MessageBranches);
-  const [edit, setEdit] = useState<string | null>(null);
+  const editor = actions?.editor;
+  const identity =
+    parts
+      .map((part) => part.metadata?.source_id)
+      .find(
+        (value): value is string =>
+          typeof value === "string" && value.startsWith("input_"),
+      ) ?? branchKey;
+  const edit =
+    identity && editor?.draft?.identity === identity ? editor.draft : null;
+  const register = editor?.register;
+  const hasEdit = !!edit;
+  useLayoutEffect(() => {
+    if (hasEdit) return register?.(contentId);
+  }, [contentId, hasEdit, register]);
   const editable =
-    branchKey && actions?.points?.[branchKey]?.edit && !actions.busy;
+    identity &&
+    branchKey &&
+    editor &&
+    !editor.draft &&
+    actions.editSource &&
+    actions.points?.[branchKey]?.edit &&
+    !actions.blocked &&
+    !actions.pending
+      ? editContent(parts)
+      : null;
 
   const showActions = copyText.trim() || timestamp != null || editable;
 
@@ -430,46 +475,18 @@ export function InputContent({
         </div>
       );
     });
-  if (edit !== null && actions)
+  if (edit && actions?.editor) {
     return (
-      <form
-        className={styles.messageEditor}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (editable && branchKey && edit.trim())
-            void actions.create(branchKey, edit);
-        }}
-      >
-        <textarea
-          ref={focusEnd}
-          aria-label={t("Edit message")}
-          value={edit}
-          onChange={(e) => setEdit(e.target.value)}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Escape" &&
-              !actions.pending &&
-              !e.nativeEvent.isComposing
-            )
-              setEdit(null);
-          }}
-        />
-        <div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={actions.pending}
-            onClick={() => setEdit(null)}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button type="submit" size="sm" disabled={!editable || !edit.trim()}>
-            {t("Send")}
-          </Button>
-        </div>
-      </form>
+      <MessageEditEditor
+        {...actions.editor}
+        draft={edit}
+        active={actions.active}
+        blocked={actions.blocked}
+        pending={actions.pending}
+        submit={actions.edit}
+      />
     );
+  }
   return (
     <div className={styles.userInput}>
       {(source || status || (body && body.some(Boolean))) && (
@@ -558,7 +575,17 @@ export function InputContent({
               <MessageActionButton
                 kind="edit"
                 disabled={!editable}
-                onClick={() => setEdit(inputMessageText(parts, true))}
+                onClick={() => {
+                  if (editable && identity && actions.editSource)
+                    editor?.setDraft({
+                      ...editable,
+                      identity,
+                      selection: {
+                        turn_key: branchKey,
+                        expected_source: actions.editSource,
+                      },
+                    });
+                }}
               />
             )
           }

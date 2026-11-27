@@ -127,3 +127,56 @@ async def read_display_windows(objects: ImmutableObjectStore, archive: DisplayAr
 
 async def read_display(objects: ImmutableObjectStore, archive: DisplayArchive) -> DisplayHistory:
     return _join_display(await read_display_windows(objects, archive))
+
+
+def display_input_boundaries(display: DisplayHistory) -> dict[str, int]:
+    """Match archived input-group identities and their authored source aliases."""
+    keys: dict[str, int] = {}
+    ambiguous: set[str] = set()
+    groups: dict[str, int] = {}
+    for index, item in enumerate(display.items):
+        if not ordinary_input(item):
+            continue
+        group = str(item.content.get("input_group") or item.id)
+        group_start = groups.setdefault(group, index)
+        imported = item.content.get("turn")
+        key = group
+        if isinstance(imported, dict):
+            key = str(imported["turn_id"])
+            if key.startswith("entry:") and imported.get("timestamp") is not None:
+                key = f"{key}@{imported['timestamp']}"
+        metadata = item.content.get("metadata")
+        source_id = metadata.get("source_id") if isinstance(metadata, dict) else None
+        for alias in (key, source_id):
+            if isinstance(alias, str) and keys.setdefault(alias, group_start) != group_start:
+                ambiguous.add(alias)
+    return {key: index for key, index in keys.items() if key not in ambiguous}
+
+
+def before_display_input(display: DisplayHistory, boundary: int) -> DisplayArchive:
+    """Crop an archived transcript before the selected input group."""
+    group = display.items[boundary].content.get("input_group")
+    # The composer can emit hidden parts before its first visible part. Keep
+    # the Run header with those parts, but never cross the prior Run's end.
+    for index in range(boundary - 1, -1, -1):
+        item = display.items[index]
+        if item.content.get("type") == "RUN_STARTED":
+            boundary = index
+            break
+        if (group is not None and item.content.get("input_group") == group) or (
+            item.kind == "observation"
+            and "entry" not in item.content
+            and item.content.get("type") not in {"RUN_FINISHED", "RUN_ERROR"}
+        ):
+            boundary = index
+            continue
+        break
+    items = display.items[:boundary]
+    ids = {item.id for item in items}
+    return DisplayArchive(
+        tail=DisplayHistory(
+            items=items,
+            position=display.position,
+            completed=tuple(key for key in display.completed if key in ids),
+        )
+    )

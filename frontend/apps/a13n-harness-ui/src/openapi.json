@@ -7654,6 +7654,72 @@
         }
       }
     },
+    "/api/threads/{thread_id}/edit-message": {
+      "post": {
+        "summary": "Edit Message",
+        "operationId": "edit_message_api_threads__thread_id__edit_message_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-harness-browser",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^browser_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Harness-Browser"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageEditReceipt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageEditRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/fork": {
       "post": {
         "summary": "Fork Thread",
@@ -13285,6 +13351,10 @@
             "type": "string",
             "title": "Source"
           },
+          "edit_source": {
+            "type": "string",
+            "title": "Edit Source"
+          },
           "points": {
             "additionalProperties": {
               "$ref": "#/components/schemas/BranchPoint"
@@ -13297,6 +13367,7 @@
         "type": "object",
         "required": [
           "source",
+          "edit_source",
           "points"
         ],
         "title": "BranchPoints"
@@ -20870,6 +20941,24 @@
           "availability"
         ],
         "title": "MemoryOrganizationStatus"
+      },
+      "MessageEditReceipt": {
+        "properties": {
+          "receipt": {
+            "$ref": "#/components/schemas/RootRunReceipt"
+          },
+          "continuation_id": {
+            "type": "string",
+            "title": "Continuation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt",
+          "continuation_id"
+        ],
+        "title": "MessageEditReceipt"
       },
       "MetricsSample": {
         "properties": {
@@ -33750,10 +33839,7 @@
             "type": "string"
           },
           "side": {
-            "enum": [
-              "before",
-              "after"
-            ],
+            "const": "after",
             "title": "Side",
             "type": "string"
           }
@@ -33764,6 +33850,106 @@
           "side"
         ],
         "title": "BranchRequest",
+        "type": "object"
+      },
+      "MessageEditSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_source": {
+            "pattern": "^(?:(?:initial:)?[0-9a-f]{64}|receipt-[0-9a-f]{32})$",
+            "title": "Expected Source",
+            "type": "string"
+          },
+          "turn_key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Turn Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_source",
+          "turn_key"
+        ],
+        "title": "MessageEditSelection",
+        "type": "object"
+      },
+      "SkillReference": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Catalog Id",
+            "type": "string"
+          },
+          "item_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_id",
+          "item_id",
+          "name"
+        ],
+        "title": "SkillReference",
+        "type": "object"
+      },
+      "MessageEditRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/InputAttachmentReference"
+                }
+              ]
+            },
+            "maxItems": 1024,
+            "title": "Parts",
+            "type": "array"
+          },
+          "skill_references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillReference"
+            },
+            "maxItems": 512,
+            "title": "Skill References",
+            "type": "array"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "pattern": "^input[-_][0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/MessageEditSelection"
+          }
+        },
+        "required": [
+          "parts",
+          "selection"
+        ],
+        "title": "MessageEditRequest",
         "type": "object"
       },
       "ApprovalDecision": {
@@ -34191,34 +34377,6 @@
           "pro"
         ],
         "type": "string"
-      },
-      "SkillReference": {
-        "additionalProperties": false,
-        "properties": {
-          "catalog_id": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Catalog Id",
-            "type": "string"
-          },
-          "item_id": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Item Id",
-            "type": "string"
-          },
-          "name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "catalog_id",
-          "item_id",
-          "name"
-        ],
-        "title": "SkillReference",
-        "type": "object"
       },
       "SubmitRequest": {
         "additionalProperties": false,
