@@ -10570,6 +10570,54 @@
         }
       }
     },
+    "/api/shared/{share_id}/threads/{thread_id}/usage": {
+      "get": {
+        "summary": "Usage",
+        "operationId": "usage_api_shared__share_id__threads__thread_id__usage_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadUsageView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/shared/{share_id}/threads/{thread_id}/work": {
       "get": {
         "summary": "Work",
@@ -18432,13 +18480,13 @@
         "title": "FastControl"
       },
       "FastState": {
-        "type": "string",
         "enum": [
           "on",
           "off",
           "ultrafast",
           "default"
-        ]
+        ],
+        "type": "string"
       },
       "FileCapture": {
         "properties": {
@@ -27408,6 +27456,17 @@
             },
             "title": "Available Actions",
             "type": "array"
+          },
+          "model_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadModelDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -27528,6 +27587,66 @@
           "submitted_at"
         ],
         "title": "ThreadExecution",
+        "type": "object"
+      },
+      "ThreadModelDisplay": {
+        "additionalProperties": false,
+        "description": "Read-only display summary of a Thread's effective Agent and Model.",
+        "properties": {
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent Name"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Name"
+          },
+          "model_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Identity"
+          },
+          "thinking_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Thinking Summary"
+          },
+          "fast": {
+            "$ref": "#/components/schemas/FastState",
+            "default": "default"
+          }
+        },
+        "title": "ThreadModelDisplay",
         "type": "object"
       },
       "ThreadPage": {

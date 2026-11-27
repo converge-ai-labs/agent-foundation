@@ -153,3 +153,55 @@ async def test_expiry_and_missing_target_stop_access(tmp_path):
         with pytest.raises(HarnessUiError):
             await app.sharing.authenticate(created.grant.share_id, created.key)
         assert await app.sharing.list("project", "project-main") == ()
+
+
+async def test_sharing_thread_model_display_is_opt_in_and_summarizes_native_and_acp(tmp_path):
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.configuration.models import AcpAgentResource
+
+    path = _write_configuration(tmp_path)
+    acp_dir = tmp_path / "acp_agents"
+    acp_dir.mkdir(exist_ok=True)
+    (acp_dir / "claude.yaml").write_text(
+        AcpAgentResource(
+            schema_version="1",
+            kind="acp_agent",
+            id="acp-claude",
+            name="Claude Code",
+            preset="claude_code",
+            command="claude",
+        ).model_dump_json(exclude_none=True),
+        encoding="utf-8",
+    )
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    async with open_harness_ui_app(settings, configuration_path=path, host_mode="webui", instrumentation=None) as app:
+        native = await app.create_thread(title="Native thread")
+        acp = await app.create_thread(defaults=NewThreadDefaults(agent_id="acp-claude"), title="ACP thread")
+        await app._store.threads.save_acp_state(
+            acp.thread_id,
+            AcpSessionState(
+                digest="digest-1",
+                options={"model": "sonnet", "thought_level": "high"},
+            ).model_dump_json(),
+        )
+        share = await app.sharing.create(ShareCreate(scope="project", target_id="project-main"))
+        share_id = share.grant.share_id
+
+        # Default authorization checks stay cheap and omit display enrichment.
+        assert (await app.sharing.thread(share_id, native.thread_id)).model_display is None
+
+        native_detail = await app.sharing.thread(share_id, native.thread_id, include_display=True)
+        assert native_detail.model_display is not None
+        assert native_detail.model_display.agent_name == "Assistant"
+        assert native_detail.model_display.model_name == "Primary"
+        assert native_detail.model_display.model_identity == "openai:gpt-5"
+        assert native_detail.model_display.thinking_summary is None
+        assert native_detail.model_display.fast == "default"
+
+        acp_detail = await app.sharing.thread(share_id, acp.thread_id, include_display=True)
+        assert acp_detail.model_display is not None
+        assert acp_detail.model_display.agent_name == "Claude Code"
+        assert acp_detail.model_display.model_name == "sonnet"
+        assert acp_detail.model_display.model_identity == "claude_code"
+        assert acp_detail.model_display.thinking_summary == "high"
+        assert acp_detail.model_display.fast == "default"

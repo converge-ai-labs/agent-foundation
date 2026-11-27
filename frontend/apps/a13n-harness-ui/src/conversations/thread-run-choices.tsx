@@ -171,6 +171,69 @@ type RunChoiceProps = ModelControlProps & {
   onExternalOptionsOpen?: () => void;
 };
 
+export function GuestModelBadge({
+  model,
+  external = false,
+}: {
+  model?: Schema<"ThreadModelDisplay"> | null;
+  external?: boolean;
+}) {
+  const { t } = useTranslation();
+  if (!model) return null;
+  const agentName = model.agent_name || t("Default agent");
+  const modelName =
+    model.model_name ?? (external ? t("External ACP agent") : undefined);
+  if (!modelName && !model.agent_name) return null;
+  const displayName = external
+    ? model.model_name && model.agent_name
+      ? `${model.agent_name} · ${model.model_name}`
+      : (model.agent_name ?? modelName ?? t("External ACP agent"))
+    : (modelName ?? agentName);
+  const thinking = model.thinking_summary
+    ? modelControlMessage(model.thinking_summary, t)
+    : undefined;
+  const speed = model.fast;
+  const speedDescription =
+    speed === "on" || speed === "ultrafast"
+      ? modelControlMessage(speedLabel(speed), t)
+      : undefined;
+  const label = t("Agent: {{agent}}. Model: {{model}}", {
+    agent: agentName,
+    model: modelName ?? agentName,
+  });
+  const title = [
+    `${agentName} - ${modelName ?? agentName}`,
+    thinking,
+    speedDescription,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div
+      className={`${panelStyles.identity} ${panelStyles.readOnlyModel}`}
+      aria-label={label}
+      title={title}
+    >
+      <span className={panelStyles.modelSummary}>
+        <ModelIdentity
+          name={displayName}
+          modelIdentity={
+            external
+              ? acpModelIdentity(
+                  model.model_name ?? undefined,
+                  undefined,
+                  model.model_identity ?? undefined,
+                )
+              : (model.model_identity ?? undefined)
+          }
+        />
+        {thinking && <small>{thinking}</small>}
+        {!external && <SpeedIndicator speed={speed} />}
+      </span>
+    </div>
+  );
+}
+
 export function ThreadRunChoices(props: RunChoiceProps) {
   const { t } = useTranslation();
   const { catalog, agentId, defaultAgentId, defaultModelId, modelId } = props;

@@ -1087,6 +1087,15 @@ summary:is(:hover, :focus-visible) > .logCaret {
   border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent);
 }
+.composerInput[data-readonly] {
+  border-color: var(--a13n-border-soft);
+  background: var(--a13n-surface);
+  box-shadow: none;
+}
+.composerInput[data-readonly]:focus-within {
+  border-color: var(--a13n-border-soft);
+  box-shadow: none;
+}
 @media (max-width: 640px) {
   .reading {
     padding: 16px 12px;
@@ -1098,6 +1107,7 @@ summary:is(:hover, :focus-visible) > .logCaret {
 @media (prefers-reduced-motion: reduce) {
   .messageActions,
   .composerInput,
+  a.workerIdentity,
   .messageEditor,
   .activity > summary,
   .logCaret,
@@ -1185,6 +1195,20 @@ summary:is(:hover, :focus-visible) > .logCaret {
   color: var(--harness-log-text);
   font-size: var(--a13n-text-body);
 }
+a.workerIdentity {
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+a.workerIdentity:is(:hover, :focus-visible) {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+a.workerIdentity:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
 .coordinatorIdentity > span,
 .workerIdentity > span {
   overflow: hidden;
@@ -1212,6 +1236,17 @@ summary:is(:hover, :focus-visible) > .logCaret {
   grid-area: editor;
   flex: 1;
   min-width: 0;
+}
+.readOnlyInput {
+  grid-area: editor;
+  display: flex;
+  align-items: center;
+  min-height: var(--composer-content-height, 32px);
+  margin: 0;
+  padding: 4px var(--composer-text-inset, 8px);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 24px;
 }
 /* Submitting hands the message to the transcript. The editor keeps its box so
    the composer does not resize, and shows one quiet line instead of the text

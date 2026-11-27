@@ -26,6 +26,7 @@ Guest access reports `target_role` for a Thread target and null for a Project ta
 | ------------------------------------------------------------------------------------------------- | ---- | ------ |
 | Saved transcript and live output within scope                                                     | Yes  | Yes    |
 | Conversation attachments                                                                          | Yes  | Yes    |
+| Thread context occupancy, usage totals and read-only effective Agent/Model display                | Yes  | Yes    |
 | Same-conversation presence                                                                        | Yes  | Yes    |
 | Unsent shared draft and editor presence                                                           | No   | Yes    |
 | Upload, coedit, send and steer                                                                    | No   | Yes    |
@@ -44,4 +45,4 @@ The owner conversation header exposes **Share**, selecting the current conversat
 
 Thread links open at the target conversation. A Coordinator link adds a compact list with the Coordinator pinned above its workers when workers exist or a worker is selected. Project links add a Project-local list, search, and (for prompt guests) New chat. The unfiltered Project list nests workers under expandable Coordinator rows; search includes matching workers directly. Guests can follow transcript links to known in-scope conversations. A missing conversation under a valid grant keeps its conversation-level recovery and navigation.
 
-View mode shows a read-only footer; Prompt mode reuses the shared composer and submission/reconnect rules, noting that the instance owner must answer approval waits. Expired or revoked links show a dedicated sharing-unavailable state distinct from a missing conversation or connectivity loss. Guest auth, query state, and navigation stay isolated from any existing owner session so owners can preview guest links without signing out.
+View mode shows a non-editable read-only composer shell with disabled input controls and no shared draft connection, keeping the Thread's Coordinator or worker identity, Tasks/Notes, context and usage status, and read-only effective Agent/Model summary visible. Prompt mode reuses the shared composer and submission/reconnect rules with the same read-only identity, status, and Model display, noting that the instance owner must answer approval waits. Expired or revoked links show a dedicated sharing-unavailable state distinct from a missing conversation or connectivity loss. Guest auth, query state, and navigation stay isolated from any existing owner session so owners can preview guest links without signing out.

@@ -141,6 +141,17 @@
   font-weight: 400;
   gap: 8px;
 }
+.readOnlyModel {
+  max-width: min(360px, 100%);
+  min-height: 28px;
+  padding-inline: 6px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  font-weight: 400;
+}
+.readOnlyModel .modelSummary {
+  min-width: 0;
+}
 .modelTrigger > span {
   overflow: hidden;
   text-overflow: ellipsis;

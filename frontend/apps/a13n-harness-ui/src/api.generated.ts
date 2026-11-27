@@ -3531,6 +3531,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shared/{share_id}/threads/{thread_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Usage */
+        get: operations["usage_api_shared__share_id__threads__thread_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shared/{share_id}/threads/{thread_id}/work": {
         parameters: {
             query?: never;
@@ -9536,6 +9553,8 @@ export interface components {
              * @default []
              */
             available_actions?: ("run" | "respond" | "wait" | "steer" | "cancel" | "archive" | "clear_context")[];
+            /** @default null */
+            model_display?: components["schemas"]["ThreadModelDisplay"] | null;
         };
         /**
          * ThreadExecution
@@ -9581,6 +9600,34 @@ export interface components {
             error_message?: string | null;
             /** @default null */
             main_account?: components["schemas"]["MainAccountSelection"] | null;
+        };
+        /**
+         * ThreadModelDisplay
+         * @description Read-only display summary of a Thread's effective Agent and Model.
+         */
+        ThreadModelDisplay: {
+            /**
+             * Agent Name
+             * @default null
+             */
+            agent_name?: string | null;
+            /**
+             * Model Name
+             * @default null
+             */
+            model_name?: string | null;
+            /**
+             * Model Identity
+             * @default null
+             */
+            model_identity?: string | null;
+            /**
+             * Thinking Summary
+             * @default null
+             */
+            thinking_summary?: string | null;
+            /** @default default */
+            fast?: components["schemas"]["FastState"];
         };
         /** ThreadPage */
         ThreadPage: {
@@ -19285,6 +19332,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContextUsageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    usage_api_shared__share_id__threads__thread_id__usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                share_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadUsageView"];
                 };
             };
             /** @description Validation Error */

@@ -2,7 +2,7 @@ import { reasoningModeLabel } from "./reasoning-mode-picker";
 import { speedLabel } from "./speed-label";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useTransport } from "../transport/context";
+import { useGuestAccess, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import {
   Button,
@@ -51,7 +51,10 @@ export function ComposerStatus({
 }) {
   const { t, i18n } = useTranslation();
   const { enabled: debug } = useDebug();
-  const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
+  const guest = useGuestAccess();
+  const activity = useThreads(threadId, undefined, true, {
+    enabled: !receipt && !guest,
+  });
   const observed = useOperation(threadId, receipt);
   const row = activity.data?.pages
     .flatMap((page) => page.rows)
@@ -66,6 +69,7 @@ export function ComposerStatus({
     operation?.status === "preparing";
   const { client } = useTransport();
   const inspection = useQuery({
+    enabled: !guest,
     queryKey: ["thread", threadId, "configuration"],
     queryFn: ({ signal }) =>
       result(
@@ -261,9 +265,9 @@ export function ComposerStatus({
                     onClick={() => {
                       void usage.refetch();
                       void context.refetch();
-                      void inspection.refetch();
+                      if (!guest) void inspection.refetch();
                       if (receipt) void observed.refetch();
-                      else void activity.refetch();
+                      else if (!guest) void activity.refetch();
                     }}
                   >
                     <ArrowClockwise />

@@ -611,3 +611,46 @@ async def test_prompt_guest_can_read_and_receive_a_prediction_only_in_the_shared
             assert response.status_code == 200 and response.json() == expected
             denied = await client.post(f"{prefix}/threads/{other}/input-prediction", json=request)
             assert denied.status_code == 401, denied.text
+
+
+async def test_guest_can_read_model_display_and_usage_only_within_scope(tmp_path):
+    configuration = coordinator_configuration(tmp_path)
+    model_file = tmp_path / "models" / "primary.yaml"
+    model_doc = yaml.safe_load(model_file.read_text(encoding="utf-8"))
+    model_doc["name"] = "GPT-5.4"
+    model_doc["route"] = "openai:gpt-5.4"
+    model_doc["settings"] = {
+        "openai_reasoning_effort": "high",
+        "openai_service_tier": "priority",
+    }
+    model_file.write_text(yaml.safe_dump(model_doc, sort_keys=False), encoding="utf-8")
+    async with shared_server(tmp_path, configuration=configuration) as (_, app, client):
+        main = NewThreadDefaults(project_id="project-main")
+        lead = await app.create_thread(defaults=main, coordinator=True, title="Release lead")
+        worker = await app.create_thread(defaults=main, coordinator_thread_id=lead.thread_id, title="QA worker")
+        private = await app.create_thread(defaults=NewThreadDefaults(project_id="project-other"), title="Private")
+        prefix, headers = await create_link(client, "thread", lead.thread_id, permission="view")
+
+        lead_detail = await client.get(f"{prefix}/threads/{lead.thread_id}", headers=headers)
+        assert lead_detail.status_code == 200, lead_detail.text
+        display = lead_detail.json()["model_display"]
+        assert display == {
+            "agent_name": "Assistant",
+            "model_name": "GPT-5.4",
+            "model_identity": "openai:gpt-5.4",
+            "thinking_summary": "High",
+            "fast": "on",
+        }
+
+        for thread_id in (lead.thread_id, worker.thread_id):
+            usage = await client.get(f"{prefix}/threads/{thread_id}/usage", headers=headers)
+            assert usage.status_code == 200, usage.text
+            assert "combined" in usage.json() and "root" in usage.json()
+            context = await client.get(f"{prefix}/threads/{thread_id}/context-usage", headers=headers)
+            assert context.status_code == 200, context.text
+
+        assert (await client.get(f"{prefix}/threads/{private.thread_id}/usage", headers=headers)).status_code == 401
+        assert (
+            await client.get(f"{prefix}/threads/{lead.thread_id}/configuration", headers=headers)
+        ).status_code == 404
+        assert (await client.get(f"{prefix}/selectors", headers=headers)).status_code == 404
