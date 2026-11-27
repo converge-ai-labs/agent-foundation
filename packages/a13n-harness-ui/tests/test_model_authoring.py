@@ -196,7 +196,7 @@ def test_terminal_manual_subscription_id_uses_only_offered_defaults() -> None:
     from a13n_harness_ui.interactive.setup import SetupWizard
 
     wizard = SetupWizard(add_model=True)
-    for answer in ("codex", "old-subscription-model", "off", "Custom subscription"):
+    for answer in ("subscription", "codex", "old-subscription-model", "off", "Custom subscription"):
         wizard.accept(answer)
     recipe = wizard.selection("/tmp")["model"]
     assert recipe["route"] == "openai-codex:old-subscription-model"
@@ -214,6 +214,7 @@ def test_terminal_subscription_creation_uses_shared_codex_default(operation: str
     wizard = SetupWizard(add_agent=operation == "add_agent", add_model=operation == "add_model")
     if operation == "add_agent":
         wizard.accept("new")
+    wizard.accept("subscription")
     wizard.accept("codex")
     assert wizard.question.key == "model"
     assert wizard.question.choices == (
@@ -316,6 +317,7 @@ def test_copilot_recipe_and_terminal_use_shared_device_only_declaration():
     assert not options.context_choices
     assert not options.native_tools
     wizard = SetupWizard(add_model=True)
+    wizard.accept("subscription")
     wizard.accept("copilot")
     assert wizard.question.key == "model"
     wizard.accept("custom-chat-model")

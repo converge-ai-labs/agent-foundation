@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from pydantic import JsonValue
 
-from a13n_harness_ui.configuration.models import AcpAgentCandidate
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
 from a13n_harness_ui.model_presets import (
     API_PROVIDER_BY_ROUTE,
@@ -27,7 +26,7 @@ from .selection import Choice, Selection, resolve_choice
 
 if TYPE_CHECKING:
     from a13n_harness_ui.acp_sessions import AcpPresetView
-    from a13n_harness_ui.configuration.models import ModelResource
+    from a13n_harness_ui.configuration.models import AcpAgentCandidate, ModelResource
     from a13n_harness_ui.model_authoring import ModelConnection, ModelRecipe, ModelRecipeRequest
     from a13n_harness_ui.model_catalog import CatalogModel
 
@@ -193,6 +192,8 @@ class SetupWizard:
         )
 
     def acp_candidate(self, *, name: str | None = None) -> AcpAgentCandidate:
+        from a13n_harness_ui.configuration.models import AcpAgentCandidate
+
         return AcpAgentCandidate.model_validate(
             {
                 "preset": self.selected_preset,

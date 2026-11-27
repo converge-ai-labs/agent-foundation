@@ -571,7 +571,7 @@ async def preview_setup(
             subagents = root.setdefault("subagents", {})
             if not isinstance(subagents, dict):
                 raise ConfigurationError("Configuration subagents must be a mapping.", code="configuration_invalid")
-            subagents.setdefault("include", list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else [])
+            subagents["include"] = list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     candidate = dict(baseline)
     candidate.update({name: text.encode() for name, text in files.items()})

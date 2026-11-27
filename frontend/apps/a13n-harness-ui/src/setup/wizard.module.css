@@ -1,18 +1,42 @@
 .wizard {
+  --setup-inset: 24px;
   width: min(680px, calc(100vw - 48px));
   max-width: 680px;
   height: min(720px, calc(100dvh - 48px));
   color: var(--a13n-text);
 }
 .wizard.start {
-  height: min(480px, calc(100dvh - 48px));
+  height: min(410px, calc(100dvh - 48px));
+}
+@media (min-width: 601px) {
+  .wizard {
+    align-self: start;
+    margin-block-start: max(0px, calc((100dvh - 768px) / 2));
+  }
+}
+.header {
+  padding: 24px var(--setup-inset) 16px;
+}
+.title,
+.header > p {
+  padding-inline-end: 32px;
+}
+.progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 12px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--a13n-border-soft);
 }
 .steps {
   display: flex;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 6px 20px;
   list-style: none;
   padding: 0;
-  margin: 16px 0 0;
+  margin: 0;
 }
 .title {
   font-size: calc(var(--a13n-text-body) * 20 / 14);
@@ -35,6 +59,9 @@
   border-radius: 50%;
   background: var(--a13n-hover);
 }
+.steps li[data-complete="true"] > span {
+  background: transparent;
+}
 .steps li[aria-current] {
   color: var(--a13n-text);
 }
@@ -44,16 +71,19 @@
 }
 /* Step content keeps one 16px rhythm; the step heading stays below the
    dialog title in the hierarchy. */
+.panel {
+  padding-inline: var(--setup-inset);
+  padding-bottom: 12px;
+}
 .content {
   display: grid;
   gap: 16px;
-  padding-top: 4px;
 }
 .content h2 {
   margin: 0;
   font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
-  line-height: 22px;
+  line-height: 1.375;
   outline: none;
 }
 .content h3 {
@@ -80,73 +110,130 @@
   display: grid;
   gap: 16px;
 }
-.check {
-  composes: check from "../shell/workbench.module.css";
-}
 .later {
   composes: textAction from "../shell/workbench.module.css";
 }
 .connections,
-.environments {
+.environments,
+.engineGrid {
   display: grid;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-.connections {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.environments {
-  grid-template-columns: repeat(2, 1fr);
-  margin-bottom: 0;
-}
-.connections button,
-.environments button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
   gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--a13n-border);
+}
+.connections,
+.environments {
+  gap: 12px;
+}
+.choiceCard,
+.engine {
+  min-width: 0;
+  color: var(--a13n-text);
+  border: 1px solid var(--a13n-border-soft);
   border-radius: 8px;
   background: var(--a13n-surface);
-  color: var(--a13n-text);
+  text-align: start;
   cursor: pointer;
-  transition:
-    background-color 120ms ease-out,
-    border-color 120ms ease-out;
 }
-.connections button:hover,
-.environments button:not(:disabled):hover {
+.choiceCard {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 14px;
+}
+.choiceCard:hover:not(:disabled),
+.engine:hover {
   background: var(--a13n-hover);
 }
-@media (prefers-reduced-motion: reduce) {
-  .connections button,
-  .environments button {
-    transition: none;
-  }
+.choiceCard[aria-pressed="true"],
+.engine[aria-pressed="true"] {
+  border-color: var(--a13n-input-border);
+  background: var(--a13n-selected);
 }
-.connections button[aria-pressed="true"],
-.environments button[aria-pressed="true"] {
-  border-color: var(--a13n-text-supporting);
-  background: var(--a13n-hover);
+.choiceCard:focus-visible,
+.engine:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
 }
-.connections button:focus-visible,
-.environments button:focus-visible {
-  outline: 2px solid var(--a13n-text);
-  outline-offset: 3px;
+.choiceCard:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
-.connections strong,
-.environments strong {
+.cardTitle,
+.brandedLabel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.cardTitle strong {
   font-weight: 500;
-  font-size: var(--a13n-text-body);
 }
-.connections span,
-.connections small,
-.environments span {
-  font-size: var(--a13n-text-body);
-  color: var(--a13n-text-supporting);
-  line-height: 1.5;
+.cardTitle > svg,
+.cardTitle > img,
+.brandedLabel > img,
+.brandedLabel > svg,
+.engine > :first-child,
+.comparison > svg {
+  flex: none;
+}
+.badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--a13n-hover);
+  color: var(--a13n-secondary);
+  font-size: 0.82em;
+  line-height: 1.35;
+}
+.cardDescription,
+.detection {
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.detection {
+  display: grid;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.detection small {
+  font-size: 0.88em;
+}
+.featured .cardDescription {
+  padding-inline-start: 24px;
+}
+.engine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 10px;
+  line-height: 1.25;
+}
+.engineText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.engineText small {
+  color: var(--a13n-secondary);
+  font-size: 0.82em;
+}
+.comparison {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.comparison > svg {
+  margin-top: 2px;
+}
+.editor {
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border-soft);
+  min-width: 0;
 }
 /* Optional groups use the shared disclosure. */
 .advanced {
@@ -163,54 +250,6 @@
 }
 .stepCount {
   color: var(--a13n-secondary);
-}
-.engineGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 4px 12px;
-}
-.engine {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  min-height: 32px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--a13n-text);
-  text-align: start;
-  cursor: pointer;
-}
-.engine:hover {
-  background: var(--a13n-hover);
-}
-.engine[aria-pressed="true"] {
-  background: var(--a13n-selected);
-}
-.engine:focus-visible {
-  outline: 2px solid var(--a13n-signal);
-  outline-offset: 2px;
-}
-.engine small {
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-}
-.capabilities {
-  display: grid;
-  gap: 8px;
-}
-.environments button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-@media (pointer: coarse) {
-  .engine,
-  .check {
-    min-height: 44px;
-  }
 }
 .runtimeStatus {
   display: grid;
@@ -261,6 +300,7 @@
   font-size: var(--a13n-text-body);
 }
 .footer {
+  padding-inline: var(--setup-inset);
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
@@ -289,29 +329,37 @@
     background-clip: border-box;
     border-radius: 0;
   }
+  .wizard {
+    --setup-inset: 16px;
+  }
+  .progress {
+    flex-wrap: wrap;
+    column-gap: 8px;
+  }
   .steps {
-    gap: 12px;
+    gap: 4px 8px;
   }
   .steps li {
     gap: 4px;
+    font-size: calc(var(--a13n-text-body) * 13 / 14);
   }
-  .connections {
-    gap: 8px;
+  .steps li > span {
+    width: 18px;
+    height: 18px;
   }
-  .connections button {
-    padding: 12px 12px;
-  }
-  .connections span {
-    font-size: var(--a13n-text-body);
-  }
+  .connections,
   .environments {
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .choiceCard {
+    padding: 12px;
   }
   .stepCount {
     display: none;
   }
   .footer {
-    padding: 16px 24px max(16px, env(safe-area-inset-bottom));
+    padding: 12px var(--setup-inset) max(12px, env(safe-area-inset-bottom));
   }
   .footer > div {
     gap: 8px;

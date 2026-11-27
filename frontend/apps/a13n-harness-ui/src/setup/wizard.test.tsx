@@ -1023,9 +1023,9 @@ it("keeps discovery inert and offers only non-redundant CLI imports for Codex", 
   expect(screen.getByText(/choose the native Codex subscription/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /Codex subscription/ }));
   await continueStep();
-  const gemini = screen.getByRole("checkbox", { name: "Gemini CLI" });
-  expect(screen.queryByRole("checkbox", { name: "Codex" })).toBeNull();
-  expect(screen.queryByRole("checkbox", { name: "Claude Code" })).toBeNull();
+  const gemini = screen.getByRole("switch", { name: "Gemini CLI" });
+  expect(screen.queryByRole("switch", { name: "Codex" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Claude Code" })).toBeNull();
   fireEvent.click(gemini);
   await waitFor(() =>
     expect(

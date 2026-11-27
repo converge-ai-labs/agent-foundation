@@ -16,12 +16,14 @@ from prompt_toolkit.output import DummyOutput
 
 def _wizard(provider="codex", model="gpt-5.6-sol"):
     wizard = SetupWizard()
-    wizard.accept(provider)
+    wizard.accept("api" if provider == "api" else "subscription")
     if provider == "api":
         wizard.accept("openai-responses")
         wizard.accept("")
         wizard.accept("new")
         wizard.accept("env:TEST_KEY")
+    else:
+        wizard.accept(provider)
     wizard.accept(model)
     while wizard.question.key != "tools":
         wizard.accept("")
@@ -136,13 +138,15 @@ async def test_add_model_handoff_publishes_resources_and_native_tools_on_new_age
 
     async def ask(question, selection):
         asked.append((phase, question.key))
-        if question.key == "provider":
+        if question.key == "action" and "retry" in question.choices:
+            pytest.fail(f"Unexpected retry during {phase}: {question}")
+        if question.key == "track":
             return "api"
         if question.key == "api_provider":
             return "xai" if phase == "model" else "openai-responses"
         if question.key == "credential":
             return "env:TEST_KEY"
-        if phase == "model" and question.key == "action":
+        if phase == "model" and question.text == "Model saved. Configure tools on a new Agent?":
             if followup == "back":
                 raise SetupBack()
             if followup == "cancel":
@@ -226,8 +230,10 @@ def test_wizard_progress_counts_only_visible_steps(mode, advanced, provider):
         visited.append(question.key)
         totals.append(total)
         answer = question.default
-        if question.key == "provider":
-            answer = provider if provider in {"codex", "grok"} else "api"
+        if question.key == "track":
+            answer = "subscription" if provider in {"codex", "grok"} else "api"
+        elif question.key == "provider":
+            answer = provider
         elif question.key == "api_provider":
             answer = provider
         elif question.key == "credential":
@@ -276,8 +282,10 @@ async def test_custom_api_setup_and_existing_model_agent_publish_selected_search
 
     async def ask(question, selection):
         asked.append(question.key)
+        if question.key == "action" and "retry" in question.choices:
+            pytest.fail(f"Unexpected retry: {question}")
         answers = {
-            "provider": "api",
+            "track": "api",
             "api_provider": "openai-responses",
             "base_url": "https://gateway.example/v1",
             "credential": "env:TEST_KEY",

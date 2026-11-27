@@ -1,4 +1,6 @@
 import { FormField, Textarea } from "a13n-ui";
+import { Info, Terminal } from "@phosphor-icons/react";
+import { acpPresetBrand, ModelIcon } from "../shell/model-identity";
 import { AcpAuth } from "../configuration/acp-auth";
 import {
   ModelEditor,
@@ -104,8 +106,8 @@ export function SetupConnections({
   const option = (
     key: string,
     label: string,
-    kind: string,
-    detail?: string,
+    identity: string,
+    detail: string,
     preset?: Candidate["preset"],
   ) => (
     <button
@@ -115,8 +117,15 @@ export function SetupConnections({
       aria-pressed={engine === key}
       onClick={() => onEngine(key, preset)}
     >
-      <span>{label}</span>
-      <small>{detail || kind}</small>
+      {preset === "custom" ? (
+        <Terminal size={16} aria-hidden />
+      ) : (
+        <ModelIcon modelIdentity={identity} />
+      )}
+      <span className={styles.engineText}>
+        <span>{label}</span>
+        <small>{detail}</small>
+      </span>
     </button>
   );
   if (track === "api") {
@@ -133,11 +142,11 @@ export function SetupConnections({
               option(
                 item.id,
                 item.label,
-                t("API Key"),
+                item.provider,
                 item.credential_env &&
                   detectedEnvKeys.includes(item.credential_env)
                   ? t("Server key detected")
-                  : undefined,
+                  : t("API Key"),
               ),
             )}
         </div>
@@ -145,10 +154,14 @@ export function SetupConnections({
           label={t("All API providers")}
           placeholder={t("Search connections…")}
           value={selected?.id ?? ""}
-          options={native.map(({ id, label }) => ({ value: id, label }))}
+          options={native.map(({ id, label, provider }) => ({
+            value: id,
+            label,
+            icon: <ModelIcon modelIdentity={provider} />,
+          }))}
           onValueChange={onEngine}
         />
-        {editor}
+        {editor && <div className={styles.editor}>{editor}</div>}
       </div>
     );
   }
@@ -165,15 +178,20 @@ export function SetupConnections({
     ({ id }) => !MAJOR_ACP.includes(id) && id !== "custom",
   );
   const nativeOption = (item: Connection) =>
-    option(item.id, item.label, t("Native subscription"));
+    option(
+      item.id,
+      item.label,
+      item.account?.provider ?? item.provider,
+      t("Native subscription"),
+    );
   const acpOption = (item: Preset) =>
     option(
       `acp:${item.id}`,
       ["codex", "github_copilot"].includes(item.id)
         ? `${item.name} CLI (ACP)`
         : item.name,
-      t("Local CLI"),
-      item.detected_path ? t("Local CLI · Installed") : undefined,
+      acpPresetBrand(item.id) ?? item.id,
+      item.detected_path ? t("Local CLI · Installed") : t("Local CLI"),
       item.id,
     );
   const compareCodex =
@@ -190,20 +208,23 @@ export function SetupConnections({
   return (
     <div className={styles.stack}>
       {featured && (
-        <div className={styles.stack}>
-          {option(
-            featured.id,
-            featured.label,
-            t("Native subscription"),
-            t("Recommended"),
-          )}
-          <p>
+        <button
+          type="button"
+          className={`${styles.choiceCard} ${styles.featured}`}
+          aria-pressed={engine === featured.id}
+          onClick={() => onEngine(featured.id)}
+        >
+          <span className={styles.cardTitle}>
+            <ModelIcon modelIdentity="codex" />
+            <strong>{featured.label}</strong>
+            <small className={styles.badge}>{t("Recommended")}</small>
+          </span>
+          <span className={styles.cardDescription}>
             {t(
               "Live Voice, Guardian Shell Review, Dictation, Sandbox, and usage tracking.",
             )}
-          </p>
-          {selected?.id === featured.id && editor}
-        </div>
+          </span>
+        </button>
       )}
       <div className={styles.stack}>
         <h3>{t("Other subscriptions & local CLIs")}</h3>
@@ -229,68 +250,70 @@ export function SetupConnections({
             option(
               chatgpt.id,
               t("Sign in with ChatGPT"),
+              "openai",
               t("Native subscription"),
             )}
           {more.map(acpOption)}
-          {option(
-            "acp:custom",
-            t("Custom ACP"),
-            t("Local CLI"),
-            undefined,
-            "custom",
-          )}
+          {option("acp:custom", t("Custom ACP"), "", t("Local CLI"), "custom")}
         </div>
       </details>
       {compareCodex && (
-        <p>
-          {t(
-            "For Live Voice, Guardian Shell Review, Dictation, Sandbox, and usage tracking, choose the native Codex subscription.",
-          )}
+        <p className={styles.comparison}>
+          <Info size={16} aria-hidden />
+          <span>
+            {t(
+              "For Live Voice, Guardian Shell Review, Dictation, Sandbox, and usage tracking, choose the native Codex subscription.",
+            )}
+          </span>
         </p>
       )}
-      {selected && selected !== featured && editor}
-      {custom && candidate && (
-        <>
-          <TextField
-            label={t("Executable")}
-            value={candidate.command ?? ""}
-            onChange={(command) => {
-              onReady(false);
-              onCandidate({ ...candidate, command });
-            }}
-          />
-          <FormField label={t("Arguments (one per line)")}>
-            <Textarea
-              rows={3}
-              value={candidate.args?.join("\n") ?? ""}
-              onChange={(event) => {
-                onReady(false);
-                const args = event.target.value;
-                onCandidate({
-                  ...candidate,
-                  args: args ? args.split("\n") : [],
-                });
-              }}
+      {(editor || (custom && candidate) || (external && selectedCandidate)) && (
+        <div className={`${styles.editor} ${styles.stack}`}>
+          {editor}
+          {custom && candidate && (
+            <>
+              <TextField
+                label={t("Executable")}
+                value={candidate.command ?? ""}
+                onChange={(command) => {
+                  onReady(false);
+                  onCandidate({ ...candidate, command });
+                }}
+              />
+              <FormField label={t("Arguments (one per line)")}>
+                <Textarea
+                  rows={3}
+                  value={candidate.args?.join("\n") ?? ""}
+                  onChange={(event) => {
+                    onReady(false);
+                    const args = event.target.value;
+                    onCandidate({
+                      ...candidate,
+                      args: args ? args.split("\n") : [],
+                    });
+                  }}
+                />
+              </FormField>
+              <p>
+                {t(
+                  "Keep credentials in the CLI's account store or environment, not in command arguments.",
+                )}
+              </p>
+            </>
+          )}
+          {(external || custom) && selectedCandidate && (
+            <AcpAuth
+              key={JSON.stringify(selectedCandidate)}
+              candidate={selectedCandidate}
+              detected={!!external?.detected_path}
+              installUrl={external?.install_url}
+              onReady={onReady}
             />
-          </FormField>
-          <p>
-            {t(
-              "Keep credentials in the CLI's account store or environment, not in command arguments.",
-            )}
-          </p>
-        </>
-      )}
-      {(external || custom) && selectedCandidate && (
-        <AcpAuth
-          key={JSON.stringify(selectedCandidate)}
-          candidate={selectedCandidate}
-          detected={!!external?.detected_path}
-          installUrl={external?.install_url}
-          onReady={onReady}
-        />
-      )}
-      {custom && !selectedCandidate && candidate?.command && (
-        <p role="alert">{t("Enter a valid executable and arguments.")}</p>
+          )}
+          {custom && !selectedCandidate && candidate?.command && (
+            <p role="alert">{t("Enter a valid executable and arguments.")}</p>
+          )}
+        </div>
       )}
     </div>
   );

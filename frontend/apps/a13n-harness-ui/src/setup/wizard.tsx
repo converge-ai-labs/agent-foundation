@@ -1,6 +1,6 @@
 import { LanguageChoice } from "../i18n/language";
 import { useTranslation } from "../i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,11 +16,19 @@ import {
   Textarea,
   Switch,
 } from "a13n-ui";
-import { ArrowRight, Check, ShieldCheck, Desktop } from "@phosphor-icons/react";
+import {
+  ArrowRight,
+  Check,
+  Desktop,
+  Key,
+  ShieldCheck,
+  Sparkle,
+} from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
-import { SettingsRow } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
+import { acpPresetBrand, ModelIcon } from "../shell/model-identity";
 import {
   connectionId,
   type ModelEditorDraft,
@@ -474,30 +482,32 @@ export function SetupWizard({
           disabled: busy,
         }}
       >
-        <DialogHeader>
+        <DialogHeader className={styles.header}>
           <DialogTitle className={styles.title}>
             {t("Set up Harness")}
           </DialogTitle>
           <DialogDescription>
             {t("Connect a model or local agent and choose where it can work.")}
           </DialogDescription>
-          {!draft.returnTo && <LanguageChoice />}
-          <ol className={styles.steps} aria-label={t("Setup progress")}>
-            {steps.map((step, index) => (
-              <li
-                key={index}
-                aria-current={index === draft.step ? "step" : undefined}
-                data-complete={index < draft.step}
-              >
-                <span>
-                  {index < draft.step ? <Check size={14} /> : index + 1}
-                </span>
-                {step}
-              </li>
-            ))}
-          </ol>
+          <div className={styles.progress}>
+            <ol className={styles.steps} aria-label={t("Setup progress")}>
+              {steps.map((step, index) => (
+                <li
+                  key={index}
+                  aria-current={index === draft.step ? "step" : undefined}
+                  data-complete={index < draft.step}
+                >
+                  <span>
+                    {index < draft.step ? <Check size={14} /> : index + 1}
+                  </span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            {!draft.returnTo && <LanguageChoice compact />}
+          </div>
         </DialogHeader>
-        <DialogPanel scrollFade={false}>
+        <DialogPanel className={styles.panel}>
           <div className={styles.content}>
             <h2 ref={heading} tabIndex={-1}>
               {draft.step === 0
@@ -564,6 +574,7 @@ export function SetupWizard({
                       <button
                         key={track}
                         type="button"
+                        className={styles.choiceCard}
                         aria-pressed={draft.track === track}
                         onClick={() => {
                           if (draft.track !== track) {
@@ -576,50 +587,59 @@ export function SetupWizard({
                           }
                         }}
                       >
-                        <strong>
+                        <span className={styles.cardTitle}>
+                          {track === "subscription" ? (
+                            <Sparkle size={18} aria-hidden />
+                          ) : (
+                            <Key size={18} aria-hidden />
+                          )}
+                          <strong>
+                            {track === "subscription"
+                              ? t("Subscription")
+                              : t("API Key")}
+                          </strong>
+                          {track === "subscription" && (
+                            <small className={styles.badge}>
+                              {t("Recommended")}
+                            </small>
+                          )}
+                        </span>
+                        <span className={styles.cardDescription}>
                           {track === "subscription"
-                            ? t("Subscription")
-                            : t("API Key")}
-                        </strong>
-                        {track === "subscription" ? (
-                          <>
-                            <small>{t("Recommended")}</small>
-                            <span>
-                              {t(
-                                "Use a subscription account or a local AI CLI.",
-                              )}
-                            </span>
-                            {!!detectedAccounts.length && (
-                              <small>
-                                {t("Accounts found: {{names}}", {
-                                  names: detectedAccounts.join(", "),
-                                })}
-                              </small>
+                            ? t("Use a subscription account or a local AI CLI.")
+                            : t("Connect to an API provider with a key.")}
+                        </span>
+                        {track === "subscription"
+                          ? (detectedAccounts.length > 0 ||
+                              detectedClis.length > 0) && (
+                              <span className={styles.detection}>
+                                {!!detectedAccounts.length && (
+                                  <small>
+                                    {t("Accounts found: {{names}}", {
+                                      names: detectedAccounts.join(", "),
+                                    })}
+                                  </small>
+                                )}
+                                {!!detectedClis.length && (
+                                  <small>
+                                    {t("Local CLIs found: {{names}}", {
+                                      names: detectedClis
+                                        .map(({ name }) => name)
+                                        .join(", "),
+                                    })}
+                                  </small>
+                                )}
+                              </span>
+                            )
+                          : detectedEnvKeys.length > 0 && (
+                              <span className={styles.detection}>
+                                <small>
+                                  {t("Server keys found: {{names}}", {
+                                    names: detectedEnvKeys.join(", "),
+                                  })}
+                                </small>
+                              </span>
                             )}
-                            {!!detectedClis.length && (
-                              <small>
-                                {t("Local CLIs found: {{names}}", {
-                                  names: detectedClis
-                                    .map(({ name }) => name)
-                                    .join(", "),
-                                })}
-                              </small>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <span>
-                              {t("Connect to an API provider with a key.")}
-                            </span>
-                            {!!detectedEnvKeys.length && (
-                              <small>
-                                {t("Server keys found: {{names}}", {
-                                  names: detectedEnvKeys.join(", "),
-                                })}
-                              </small>
-                            )}
-                          </>
-                        )}
                       </button>
                     ))}
                   </div>
@@ -658,26 +678,28 @@ export function SetupWizard({
                 {draft.step === workspaceStep && (
                   <div className={styles.stack}>
                     {draft.originalDefault && (
-                      <SetupToggle
-                        label={t("Set as default agent")}
-                        description={t("Current default: {{agent}}", {
-                          agent:
-                            status.agents[draft.originalDefault] ??
-                            draft.originalDefault,
-                        })}
-                        checked={configureDefaults}
-                        onChange={(set_as_default) =>
-                          changeSelection({
-                            set_as_default,
-                            configure_workspace: !!(
-                              set_as_default &&
-                              acp &&
-                              status.environment_profile !==
-                                "environment-native"
-                            ),
-                          })
-                        }
-                      />
+                      <SettingsSection variant="grouped">
+                        <SetupToggle
+                          label={t("Set as default agent")}
+                          description={t("Current default: {{agent}}", {
+                            agent:
+                              status.agents[draft.originalDefault] ??
+                              draft.originalDefault,
+                          })}
+                          checked={configureDefaults}
+                          onChange={(set_as_default) =>
+                            changeSelection({
+                              set_as_default,
+                              configure_workspace: !!(
+                                set_as_default &&
+                                acp &&
+                                status.environment_profile !==
+                                  "environment-native"
+                              ),
+                            })
+                          }
+                        />
+                      </SettingsSection>
                     )}
                     {acp ? (
                       <p>
@@ -686,8 +708,17 @@ export function SetupWizard({
                         )}
                       </p>
                     ) : (
-                      <div className={styles.capabilities}>
-                        <h3>{t("Auto-configured capabilities")}</h3>
+                      <SettingsSection
+                        variant="grouped"
+                        title={t("Auto-configured capabilities")}
+                        description={
+                          configureDefaults
+                            ? undefined
+                            : t(
+                                "Application defaults stay unchanged when adding a connection.",
+                              )
+                        }
+                      >
                         <SetupToggle
                           label={
                             configureDefaults
@@ -762,45 +793,39 @@ export function SetupWizard({
                               }
                             />
                           </>
-                        ) : (
-                          <p>
-                            {t(
-                              "Application defaults stay unchanged when adding a connection.",
-                            )}
-                          </p>
-                        )}
-                      </div>
+                        ) : null}
+                      </SettingsSection>
                     )}
                     {!!extraClis.length && (
-                      <div className={styles.capabilities}>
-                        <h3>{t("Also add detected local CLI agents")}</h3>
+                      <SettingsSection
+                        variant="grouped"
+                        title={t("Also add detected local CLI agents")}
+                      >
                         {extraClis.map(({ id, name }) => (
-                          <label key={id} className={styles.check}>
-                            <input
-                              type="checkbox"
-                              checked={
-                                selection.additional_acp_presets?.includes(
-                                  id,
-                                ) ?? false
-                              }
-                              onChange={(event) =>
-                                changeSelection({
-                                  additional_acp_presets: event.target.checked
-                                    ? [
-                                        ...(selection.additional_acp_presets ??
-                                          []),
-                                        id,
-                                      ]
-                                    : selection.additional_acp_presets?.filter(
-                                        (preset) => preset !== id,
-                                      ),
-                                })
-                              }
-                            />
-                            {name}
-                          </label>
+                          <SetupToggle
+                            key={id}
+                            label={name}
+                            brand={acpPresetBrand(id)}
+                            checked={
+                              selection.additional_acp_presets?.includes(id) ??
+                              false
+                            }
+                            onChange={(enabled) =>
+                              changeSelection({
+                                additional_acp_presets: enabled
+                                  ? [
+                                      ...(selection.additional_acp_presets ??
+                                        []),
+                                      id,
+                                    ]
+                                  : selection.additional_acp_presets?.filter(
+                                      (preset) => preset !== id,
+                                    ),
+                              })
+                            }
+                          />
                         ))}
-                      </div>
+                      </SettingsSection>
                     )}
                     {configureWorkspace && (
                       <>
@@ -839,6 +864,7 @@ export function SetupWizard({
                             <button
                               type="button"
                               key={value}
+                              className={styles.choiceCard}
                               aria-label={label}
                               aria-pressed={
                                 selection.environment_profile === value
@@ -850,9 +876,13 @@ export function SetupWizard({
                                 changeSelection({ environment_profile: value })
                               }
                             >
-                              <Icon size={22} />
-                              <strong>{label}</strong>
-                              <span>{description}</span>
+                              <span className={styles.cardTitle}>
+                                <Icon size={18} aria-hidden />
+                                <strong>{label}</strong>
+                              </span>
+                              <span className={styles.cardDescription}>
+                                {description}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -1071,17 +1101,38 @@ export function SetupWizard({
 function SetupToggle({
   label,
   description,
+  brand,
   checked,
   onChange,
 }: {
   label: string;
   description?: string;
+  brand?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const id = useId();
   return (
-    <SettingsRow label={label} description={description} stackOnNarrow>
-      <Switch aria-label={label} checked={checked} onCheckedChange={onChange} />
+    <SettingsRow
+      label={
+        brand ? (
+          <span className={styles.brandedLabel}>
+            <ModelIcon modelIdentity={brand} />
+            {label}
+          </span>
+        ) : (
+          label
+        )
+      }
+      description={description}
+      controlId={id}
+    >
+      <Switch
+        id={id}
+        aria-describedby={description ? `${id}-description` : undefined}
+        checked={checked}
+        onCheckedChange={onChange}
+      />
     </SettingsRow>
   );
 }

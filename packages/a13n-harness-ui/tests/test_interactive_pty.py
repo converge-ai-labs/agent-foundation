@@ -58,7 +58,7 @@ def _spawn(script: str, tmp_path: Path) -> tuple[subprocess.Popen[bytes], int]:
     offline = """
 from contextlib import nullcontext
 from pydantic_ai import prices
-from a13n_harness_ui import model_catalog
+from a13n_harness_ui import acp_sessions, model_catalog
 from a13n_harness_ui.interactive import updates
 prices.update_in_background = nullcontext
 async def bundled():
@@ -66,6 +66,7 @@ async def bundled():
 async def no_update(root):
     return None
 model_catalog.fetch_directory = bundled
+acp_sessions.acp_presets = lambda: ()
 updates.check_update = no_update
 """
     try:
@@ -100,11 +101,11 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
     try:
         # A cold subprocess imports the complete runtime before the first screen;
         # this is a readiness guard, not an eight-second startup benchmark.
-        output = _read_until(master, b"Connect a model", timeout=30)
+        output = _read_until(master, b"Choose how to start", timeout=30)
         assert output.count(b"\x1b[?1049h") == 1
         # Select by stable value, not the subscription catalog's changing position.
         os.write(master, b"api\r")
-        output += _read_until(master, b"API provider")
+        output += _read_until(master, "OpenAI · Responses".encode())
         os.write(master, b"\r")
         output += _read_until(master, b"Base URL")
         os.write(master, b"\r")
@@ -168,7 +169,7 @@ main(["setup"])
 """.replace("CHECK_AVAILABLE", repr(available))
     process, master = _spawn(script, tmp_path)
     try:
-        output = _read_until(master, b"Connect a model", timeout=30)
+        output = _read_until(master, b"Choose how to start", timeout=30)
         assert (tmp_path / "update-check-started").exists()
         assert output.count(b"\x1b[?1049h") == 1
         assert b"\x1b[?1049l" not in output
