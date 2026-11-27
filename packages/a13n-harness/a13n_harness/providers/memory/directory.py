@@ -29,8 +29,8 @@ class DirectoryFileStore:
 
     Versions are content hashes. Every mutation holds an exclusive lock on a file
     under `root/.a13n-memory/`, so compare-and-swap holds across tasks and
-    processes, and `move` is one rename under that lock. Symbolic links and
-    junctions are never followed. The store keeps no change journal: its cursor is a digest of the
+    processes, and `move` is one rename under that lock. On Windows, reads of an
+    initialized store use the same lock. Symbolic links and junctions are never followed. The store keeps no change journal: its cursor is a digest of the
     listing, and any change since a cursor answers a full resync. Attribution is
     ignored.
     """
@@ -44,7 +44,7 @@ class DirectoryFileStore:
 
     async def read(self, path: str) -> FileText:
         path = self._validate(path)
-        current = await to_thread.run_sync(self._current, path)
+        current = await to_thread.run_sync(self._read, path)
         if current is None:
             raise MemoryStoreError("not_found", f"{path} does not exist.")
         return current
@@ -97,7 +97,7 @@ class DirectoryFileStore:
         await to_thread.run_sync(self._purge)
 
     def _purge(self) -> None:
-        # Retain the lock inode so writers already waiting on it still serialize.
+        # Leave lock file cleanup to the lock backend so waiting writers stay serialized.
         with self._locked():
             for child in self.root.iterdir():
                 if child.name == _BOOKKEEPING:
@@ -115,19 +115,24 @@ class DirectoryFileStore:
             raise MemoryStoreError("invalid_path", f"{_BOOKKEEPING}/ is reserved for the store's bookkeeping.")
         return path
 
+    def _read(self, path: str) -> FileText | None:
+        with self._reading():
+            return self._current(path)
+
     def _list(self) -> list[FileEntry]:
         entries: list[FileEntry] = []
-        for directory, directories, names in os.walk(self.root):
-            parent = Path(directory)
-            directories[:] = [
-                name
-                for name in directories
-                if (parent != self.root or name != _BOOKKEEPING) and not _is_link(parent / name)
-            ]
-            for name in names:
-                entry = self._entry(Path(directory, name))
-                if entry is not None:
-                    entries.append(entry)
+        with self._reading():
+            for directory, directories, names in os.walk(self.root):
+                parent = Path(directory)
+                directories[:] = [
+                    name
+                    for name in directories
+                    if (parent != self.root or name != _BOOKKEEPING) and not _is_link(parent / name)
+                ]
+                for name in names:
+                    entry = self._entry(Path(directory, name))
+                    if entry is not None:
+                        entries.append(entry)
         return sorted(entries, key=lambda entry: entry.path)
 
     def _entry(self, file: Path) -> FileEntry | None:
@@ -233,8 +238,21 @@ class DirectoryFileStore:
             directory = directory.parent
 
     @contextmanager
+    def _reading(self) -> Iterator[None]:
+        bookkeeping = self.root / _BOOKKEEPING
+        # Windows read handles can block replacement. Use the existing writers' lock
+        # without initializing bookkeeping in directories opened only for reading.
+        if os.name == "nt" and not _is_link(bookkeeping) and bookkeeping.is_dir():
+            with self._locked():
+                yield
+        else:
+            yield
+
+    @contextmanager
     def _locked(self) -> Iterator[None]:
         bookkeeping = self.root / _BOOKKEEPING
+        if _is_link(bookkeeping):
+            raise MemoryStoreError("invalid_path", "The memory bookkeeping directory cannot be a link.")
         bookkeeping.mkdir(parents=True, exist_ok=True)
         with FileLock(bookkeeping / "lock"):
             yield

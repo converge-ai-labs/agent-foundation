@@ -99,21 +99,27 @@ function useInboxUnread() {
   });
 }
 
-function useInboxUpdate(group: Group) {
+function useInboxUpdate(
+  group: Group,
+  beforeMarkUnread?: (itemId: string) => Promise<void> | void,
+) {
   const { client } = useTransport();
   const queries = useQueryClient();
   return useMutation({
     mutationKey: [...UPDATE_ITEM, group],
-    mutationFn: ({
+    mutationFn: async ({
       itemId,
       ...body
-    }: { itemId: string } & Schema<"InboxItemMutation">) =>
-      result(
+    }: { itemId: string } & Schema<"InboxItemMutation">) => {
+      if (body.read === false && beforeMarkUnread)
+        await beforeMarkUnread(itemId);
+      return result(
         client.PATCH("/api/inbox/{item_id}", {
           params: { path: { item_id: itemId } },
           body,
         }),
-      ),
+      );
+    },
     onSettled: () => queries.invalidateQueries({ queryKey: ["inbox"] }),
   });
 }
@@ -535,17 +541,108 @@ export const isInboxPost = (tool: ToolView) =>
   tool.name === "post_to_inbox" &&
   (!tool.provider || tool.provider === "function");
 
-export const UnreadInboxPosts = createContext<ReadonlySet<string> | undefined>(
-  undefined,
-);
+type ThreadInboxPost = Schema<"ThreadInboxPost">;
+
+export const ThreadInboxContext = createContext<
+  | {
+      posts: ReadonlyMap<string, ThreadInboxPost>;
+      fenceUnread: (itemId: string, fenced: boolean) => Promise<void> | void;
+    }
+  | undefined
+>(undefined);
+
+function InboxPostActions({
+  post,
+  kind,
+  fenceUnread,
+}: {
+  post: ThreadInboxPost;
+  kind: Kind;
+  fenceUnread: (itemId: string, fenced: boolean) => Promise<void> | void;
+}) {
+  const { t } = useTranslation();
+  const update = useInboxUpdate(
+    kind === "needs_human" ? "needs_you" : "updates",
+    (itemId) => fenceUnread(itemId, true),
+  );
+  const done = !!post.done_at;
+  const unread = !post.read_at;
+  const readLabel = unread ? t("Mark as read") : t("Mark as unread");
+  const doneLabel = done ? t("Move back to Open") : t("Mark as done");
+  return (
+    <>
+      <div className={styles.postActions}>
+        {!done && (
+          <button
+            type="button"
+            aria-label={readLabel}
+            title={readLabel}
+            disabled={update.isPending}
+            onClick={() => {
+              update.mutate(
+                { itemId: post.item_id, read: unread },
+                {
+                  onSuccess: () => {
+                    if (unread) fenceUnread(post.item_id, false);
+                  },
+                  onError: () => {
+                    if (!unread) fenceUnread(post.item_id, false);
+                  },
+                },
+              );
+            }}
+          >
+            {unread ? (
+              <EnvelopeSimpleOpen aria-hidden="true" />
+            ) : (
+              <EnvelopeSimple aria-hidden="true" />
+            )}
+          </button>
+        )}
+        <button
+          type="button"
+          className={styles.postDoneAction}
+          aria-label={doneLabel}
+          title={doneLabel}
+          disabled={update.isPending}
+          onClick={() =>
+            update.mutate(
+              { itemId: post.item_id, done: !done },
+              {
+                onSuccess: () => {
+                  if (!done) fenceUnread(post.item_id, false);
+                },
+              },
+            )
+          }
+        >
+          {done ? (
+            <ArrowCounterClockwise aria-hidden="true" />
+          ) : (
+            <Check aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      {update.error && (
+        <div className={styles.postError}>
+          <ErrorNotice error={update.error} inline />
+        </div>
+      )}
+    </>
+  );
+}
 
 /** The transcript receipt for one post_to_inbox call; Inbox jumps land here. */
 export function InboxPost({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const shareId = useContext(TransportContext)?.shareId;
-  const unreadPosts = useContext(UnreadInboxPosts);
-  const unread = tool.toolCallId && unreadPosts?.has(tool.toolCallId);
+  const inbox = useContext(ThreadInboxContext);
   const { args, phase } = describeTool(tool);
+  const post =
+    !shareId && phase === "Result received" && tool.toolCallId
+      ? inbox?.posts.get(tool.toolCallId)
+      : undefined;
+  const unread = post && !post.read_at && !post.done_at;
   const source = (
     <>
       <Tray aria-hidden="true" />
@@ -568,21 +665,38 @@ export function InboxPost({ tool }: { tool: ToolView }) {
       aria-label={t("Inbox post")}
     >
       <header className={styles.postHeader}>
-        {shareId ? (
-          <span className={styles.postSource}>{source}</span>
-        ) : (
-          <Link to="/inbox" className={styles.postSource}>
-            {source}
-            {unread && (
-              <span
-                className={styles.postUnread}
-                role="img"
-                aria-label={t("Unread")}
-              />
-            )}
-          </Link>
-        )}
+        <div className={styles.postLeading}>
+          {shareId ? (
+            <span className={styles.postSource}>{source}</span>
+          ) : (
+            <Link to="/inbox" className={styles.postSource}>
+              {source}
+              {unread && (
+                <span
+                  className={styles.postUnread}
+                  role="img"
+                  aria-label={t("Unread")}
+                />
+              )}
+            </Link>
+          )}
+          {post?.done_at && (
+            <span className={styles.postDone}>
+              <span className={styles.postDoneSeparator} aria-hidden="true">
+                ·
+              </span>
+              {t("Done", { context: "inbox" })}
+            </span>
+          )}
+        </div>
         <KindLabel kind={kind} />
+        {post && inbox && (
+          <InboxPostActions
+            post={post}
+            kind={kind}
+            fenceUnread={inbox.fenceUnread}
+          />
+        )}
       </header>
       {typeof args.title === "string" && args.title && (
         <strong className={styles.postTitle}>{args.title}</strong>

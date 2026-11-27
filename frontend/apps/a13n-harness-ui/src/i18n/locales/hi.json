@@ -3792,6 +3792,8 @@
   "Dismiss suggestion (Esc)": "सुझाव हटाएँ (Esc)",
   "Let agents post to Inbox": "Agents को Inbox में पोस्ट करने दें",
   "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents परिणाम, प्रश्न और मुख्य प्रगति आपके Inbox में पोस्ट करते हैं और उन्हें इसकी याद दिलाई जाती है। इसे बंद करने पर नए Runs को Inbox टूल या रिमाइंडर नहीं मिलते; मौजूदा आइटम बने रहते हैं।",
+  "Automatically mark Inbox items as read in chats": "चैट में Inbox आइटम अपने-आप पढ़े हुए चिह्नित करें",
+  "Mark Inbox items as read when you view the latest messages in a focused chat, send a message, or respond to a decision. You can always open or mark an item yourself.": "जब आप सक्रिय चैट में सबसे नए संदेश देखें, संदेश भेजें या किसी निर्णय का जवाब दें, तो Inbox आइटम पढ़े हुए चिह्नित हों। आप किसी भी आइटम को खुद खोल या चिह्नित कर सकते हैं।",
   "Open provider sign-in": "प्रदाता का साइन-इन खोलें",
   "Loads models available to the connected account.": "कनेक्ट किए गए खाते के उपलब्ध मॉडल लोड करता है।",
   "Account catalog": "खाते की मॉडल सूची",

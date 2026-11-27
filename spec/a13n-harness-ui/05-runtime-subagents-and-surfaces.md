@@ -500,7 +500,8 @@ Owner Inbox APIs:
 
 - `GET /api/inbox`, `PATCH /api/inbox/{item_id}`, and `GET /api/inbox/{item_id}/location` list, update, and locate items.
 - `POST /api/inbox/mark-read` and `POST /api/inbox/mark-done` update an Open section across pages.
-- `GET /api/inbox/threads/{thread_id}/unread` returns unread item and tool-call IDs, creation time, and whether each item has a transcript source. `POST /api/inbox/threads/{thread_id}/mark-read` sets `read_at` on the specified items (`item_ids`) still unread in that Thread. `done_at` stays unchanged. A changed write publishes an `inbox` summary event.
+- `GET /api/inbox/threads/{thread_id}` returns each item's `item_id`, `tool_call_id`, `has_transcript`, `created_at`, nullable `read_at`, and nullable `done_at`, including read and Done items.
+- `POST /api/inbox/threads/{thread_id}/mark-read` sets `read_at` on the supplied `item_ids` still unread in that Thread, leaving `done_at` unchanged. Accepted owner chat input also reads prior items in that Thread. Both automatic paths honor the current accepted [`inbox.auto_mark_read`](01-configuration-and-resource-catalog.md#inbox) value and publish an `inbox` summary event when they change state. Explicit item mutations remain available independently.
 
 ### Coordinator instructions
 

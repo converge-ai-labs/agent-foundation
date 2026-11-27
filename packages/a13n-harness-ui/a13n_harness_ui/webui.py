@@ -134,8 +134,8 @@ from a13n_harness_ui.inbox_models import (
     InboxMarkDoneRequest,
     InboxMarkReadRequest,
     InboxPage,
-    InboxUnreadPost,
     ThreadInboxMarkReadRequest,
+    ThreadInboxPost,
 )
 from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
@@ -737,9 +737,9 @@ def create_webui(
     ) -> InboxPage:
         return await app().inbox().page(state=state, before=before, limit=limit)
 
-    @server.get("/api/inbox/threads/{thread_id}/unread", response_model=tuple[InboxUnreadPost, ...])
-    async def thread_inbox_unread(thread_id: str) -> tuple[InboxUnreadPost, ...]:
-        return await app().inbox().thread_unread(thread_id)
+    @server.get("/api/inbox/threads/{thread_id}", response_model=tuple[ThreadInboxPost, ...])
+    async def thread_inbox_posts(thread_id: str) -> tuple[ThreadInboxPost, ...]:
+        return await app().inbox().thread_posts(thread_id)
 
     @server.post(
         "/api/inbox/threads/{thread_id}/mark-read", status_code=204, openapi_extra=_body(ThreadInboxMarkReadRequest)

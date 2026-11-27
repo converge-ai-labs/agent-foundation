@@ -295,12 +295,12 @@ async def test_ranges_use_one_raw_download_and_close_early(peer, tmp_path):
     assert peer.streams[0].closed
 
 
-async def test_path_and_read_permission_checks_precede_privileged_transport(peer, tmp_path):
+async def test_path_and_read_permission_checks_precede_privileged_transport(peer, tmp_path, symlink):
     with pytest.raises(EnvironmentError):
         await peer.files.read_bytes("/../outside")
     outside = tmp_path.parent / "outside"
     outside.write_bytes(b"secret")
-    (tmp_path / "link").symlink_to(outside)
+    symlink(tmp_path / "link", outside)
     with pytest.raises(EnvironmentError):
         await peer.files.read_bytes("/link")
     (tmp_path / "denied").write_bytes(b"secret")

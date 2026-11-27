@@ -944,6 +944,19 @@ it("keeps Inbox posting enabled by default and writes the opt-out", () => {
   expect(inbox.getAttribute("aria-checked")).toBe("false");
 });
 
+it("toggles automatic Inbox reads independently of agent posting", () => {
+  renderFields('schema_version: "1"\ninbox: {enabled: false}\n');
+  const automatic = screen.getByRole("switch", {
+    name: "Automatically mark Inbox items as read in chats",
+  });
+  expect(automatic.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(automatic);
+  expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
+    inbox: { enabled: false, auto_mark_read: false },
+  });
+  expect(automatic.getAttribute("aria-checked")).toBe("false");
+});
+
 it("auto-fills ACP preset defaults and toggles Antigravity unattended permissions without manual command edits", async () => {
   renderFields(
     'schema_version: "1"\nkind: acp_agent\nid: acp-one\nname: Antigravity\npreset: antigravity\nargs:\n  - acp\n  - --dangerously-skip-permissions\n',

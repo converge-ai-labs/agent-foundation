@@ -470,6 +470,7 @@ class AppStatus(BaseModel):
     send_shortcut: ComposerSendShortcut = "enter"
     shortcuts: WebUiShortcutsConfiguration = Field(default_factory=WebUiShortcutsConfiguration)
     coordinator_by_default: bool = False
+    inbox_auto_mark_read: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -674,6 +675,10 @@ class HarnessUiApp:
         if self._inbox is None:
             raise HarnessUiError("Inbox is available only in WebUI.", code="inbox_unavailable")
         return self._inbox
+
+    async def _inbox_auto_mark_read(self) -> bool:
+        configuration = await self._configurations.current()
+        return configuration is None or configuration.document.inbox.auto_mark_read
 
     def voice(self) -> VoiceController:
         if self._voice is None:
@@ -1001,6 +1006,7 @@ class HarnessUiApp:
                 ),
                 coordinator_by_default=configuration is not None
                 and configuration.document.webui.coordinator_by_default,
+                inbox_auto_mark_read=configuration is None or configuration.document.inbox.auto_mark_read,
                 state=self._state,
                 object_count=await self._store.object_count(),
                 accepted_generation_digest=current_digest,
@@ -5073,6 +5079,7 @@ async def open_harness_ui_app(
                     store=store,
                     projections=projections,
                     summaries=summary_hub,
+                    auto_mark_read=app._inbox_auto_mark_read,
                     notify=web_push.enqueue if web_push is not None else None,
                 )
                 thread_tools = ThreadToolController(

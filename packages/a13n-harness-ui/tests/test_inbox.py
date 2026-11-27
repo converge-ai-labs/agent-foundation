@@ -15,6 +15,7 @@ from a13n_harness.model_context import (
 )
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
+from a13n_harness_ui.configuration.models import HarnessUiDocument
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.inbox_models import InboxItemMutation
 from a13n_harness_ui.live import InboxNotice, RootOperationNotice
@@ -179,6 +180,55 @@ async def test_disabled_setting_removes_tool_guidance_and_reminders(tmp_path: Pa
         assert (await tools.wrap_model_context(context, request, _no_context)).blocks == ()
 
 
+def test_auto_mark_read_serializes_independently_of_posting() -> None:
+    default = HarnessUiDocument()
+    assert default.inbox.auto_mark_read is True
+    assert "inbox" not in default.model_dump(mode="json")
+    for posting in (False, True):
+        document = HarnessUiDocument.model_validate({"inbox": {"enabled": posting, "auto_mark_read": False}})
+        dumped = yaml.safe_dump(document.model_dump(mode="json"))
+        assert yaml.safe_load(dumped)["inbox"] == {"enabled": posting, "auto_mark_read": False}
+        assert HarnessUiDocument.model_validate(yaml.safe_load(dumped)).inbox == document.inbox
+
+
+async def test_auto_mark_read_uses_live_accepted_config_without_blocking_explicit_read(tmp_path: Path) -> None:
+    from a13n_harness_ui.webui import create_webui
+    from httpx import ASGITransport, AsyncClient
+
+    root = _write_configuration(tmp_path)
+    document = yaml.safe_load(root.read_text())
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        item = await app.inbox().post_from_mcp(
+            thread_id=thread.thread_id, kind="result", title="Ready", message="See diff."
+        )
+
+        @asynccontextmanager
+        async def factory():
+            yield app
+
+        server = create_webui(factory, api_key="test-only-key")
+        path = f"/api/inbox/threads/{thread.thread_id}"
+        async with (
+            server.router.lifespan_context(server),
+            AsyncClient(transport=ASGITransport(app=server), base_url="http://localhost") as client,
+        ):
+            assert (await client.get("/api/status")).status_code == 401
+            client.headers["Authorization"] = "Bearer test-only-key"
+            assert (await client.get("/api/status")).json()["app"]["inbox_auto_mark_read"] is True
+
+            document["inbox"] = {"auto_mark_read": False}
+            root.write_text(yaml.safe_dump(document))
+            await app.reload_configuration()
+            assert (await client.get("/api/status")).json()["app"]["inbox_auto_mark_read"] is False
+
+            mark = {"item_ids": [item.item_id]}
+            assert (await client.post(path + "/mark-read", json=mark)).status_code == 204
+            assert (await client.get(path)).json()[0]["read_at"] is None
+            explicit = await client.patch(f"/api/inbox/{item.item_id}", json={"read": True})
+            assert explicit.status_code == 200 and explicit.json()["read_at"] is not None
+
+
 async def test_http_routes_list_update_and_locate_items(tmp_path: Path) -> None:
     from a13n_harness_ui.webui import create_webui
     from httpx import ASGITransport, AsyncClient
@@ -245,17 +295,21 @@ async def test_thread_mark_read_is_owner_only_scoped_and_bounded(tmp_path: Path)
             server.router.lifespan_context(server),
             AsyncClient(transport=ASGITransport(app=server), base_url="http://localhost") as client,
         ):
-            assert (await client.get(path + "/unread")).status_code == 401
+            assert (await client.get(path)).status_code == 401
             assert (await client.post(path + "/mark-read", json={})).status_code == 401
             client.headers["Authorization"] = "Bearer test-only-key"
-            snapshot = (await client.get(path + "/unread")).json()
-            assert {post["item_id"]: post["has_transcript"] for post in snapshot} == {
+            snapshot = {post["item_id"]: post for post in (await client.get(path)).json()}
+            assert {item_id: post["has_transcript"] for item_id, post in snapshot.items()} == {
                 call.item_id: True,
                 mcp.item_id: False,
+                done.item_id: True,
             }
-            assert {post["tool_call_id"] for post in snapshot} == {call.tool_call_id, mcp.tool_call_id}
+            assert snapshot[call.item_id]["tool_call_id"] == call.tool_call_id
+            assert snapshot[call.item_id]["created_at"] == call.model_dump(mode="json")["created_at"]
+            assert snapshot[call.item_id]["read_at"] is snapshot[call.item_id]["done_at"] is None
+            assert snapshot[done.item_id]["done_at"] == done.model_dump(mode="json")["done_at"]
             late = await inbox.post_from_mcp(thread_id=thread.thread_id, kind="result", title="Later", message="New")
-            mark = {"item_ids": [*(post["item_id"] for post in snapshot), unrelated.item_id]}
+            mark = {"item_ids": [*snapshot, unrelated.item_id]}
 
             async with app.summary_events() as events:
                 assert (await client.post(path + "/mark-read", json=mark)).status_code == 204
@@ -274,10 +328,13 @@ async def test_thread_mark_read_is_owner_only_scoped_and_bounded(tmp_path: Path)
             assert by_id[call.item_id]["done_at"] is by_id[mcp.item_id]["done_at"] is None
             assert by_id[late.item_id]["read_at"] is by_id[unrelated.item_id]["read_at"] is None
             assert (await inbox.page(state="done", before=None, limit=1)).items == (done,)
-            assert [post["item_id"] for post in (await client.get(path + "/unread")).json()] == [late.item_id]
+            snapshot = {post["item_id"]: post for post in (await client.get(path)).json()}
+            assert set(snapshot) == {call.item_id, mcp.item_id, late.item_id, done.item_id}
+            assert snapshot[call.item_id]["read_at"] == by_id[call.item_id]["read_at"]
+            assert snapshot[done.item_id]["done_at"] == done.model_dump(mode="json")["done_at"]
             assert (await client.patch(f"/api/inbox/{call.item_id}", json={"read": False})).status_code == 200
-            unread = (await client.get(path + "/unread")).json()
-            assert {post["item_id"] for post in unread} == {call.item_id, late.item_id}
+            unread = (await client.get(path)).json()
+            assert {post["item_id"] for post in unread if post["read_at"] is None} == {call.item_id, late.item_id}
 
 
 async def test_mark_read_is_scoped_to_one_open_group_across_pages(tmp_path: Path) -> None:
