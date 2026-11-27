@@ -472,3 +472,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 - `thread-stream.schema.json`, the JSON Schema of each thread-stream frame's `data`, keyed by SSE event name (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 `make service-contract-generate` exports both and regenerates the Console's typed client; `make service-contract-check` fails when either export or the client differs from the code. A change to a route, schema or frame updates these exports in the same change.
+
+## Connector event routes
+
+[Connector events](16-connector-events.md#http-surface) owns event directory, callback setup, subscriptions and history routes. Only the exact `POST /connector-webhooks/{provider_id}` uses provider signatures in place of Service credentials; other paths keep ordinary authentication.

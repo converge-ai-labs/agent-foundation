@@ -450,3 +450,7 @@ Severity describes potential impact: `critical` for material harm or broad task 
 - A transition and its webhook deliveries commit together; a delivery is settled only by its current claim.
 - A pending outbox row is never purged.
 - Every span a trace query returns carries the caller's organization and workspace correlation.
+
+## Connector input events
+
+[Connector events](16-connector-events.md#durable-receipt) owns signed inbound source facts and their retention. Native Inbox creation and the saved event receipt commit in one transaction; the existing outbound lifecycle-webhook outbox retains its purpose.

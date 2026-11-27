@@ -49,6 +49,7 @@ a13n_service/
 
   runs/               how input becomes sealed runs
     tables.py         sessions, threads, inbox_entries, runs, run_attempts, usage_records
+    connector_events/ signed receipt, subscription configuration, remote operations and native Inbox handoff
     schedules/        recurring configuration, calendar, occurrence persistence and input submission
     sessions.py  threads.py  archive.py  inbox.py  entries.py  inputs.py  attachments.py  placement.py
     submit.py  accept.py  admission.py  resume.py  claim.py  worker.py  attempts.py  execute.py  seal.py
@@ -124,6 +125,8 @@ skills, assets  ->  uploads
 ```
 
 A package uses another's service functions, schemas and focused queries, and may import its row class where a query needs it. Cross-package references are IDs and detached values, never live ORM rows held across a session.
+
+`runs/connector_events/` owns built-in event subscription configuration and admission, like Schedules; `resources/connector_providers/` owns shared Provider callback configuration and discovery. Event and Trigger IDs use `cevt_` and `ctrig_`; remote-operation IDs use `ceop_` and `ctop_`.
 
 `runs/schedules/` owns recurring input submission and its configuration API; it can reuse Session, Thread and ordinary message operations without reversing the resource-layer dependency. Schedule IDs use `sch_` and Occurrence IDs use `occ_`, both with the default 128-bit random suffix.
 

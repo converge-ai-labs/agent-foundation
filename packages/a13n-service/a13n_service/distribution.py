@@ -102,6 +102,11 @@ from a13n_service.runs.children import child_results
 from a13n_service.runs.cloudflare.reconcile import sweep as cloudflare_deployment_sweep
 from a13n_service.runs.cloudflare.routes import router as cloudflare_deployments_router
 from a13n_service.runs.compactions import sweep as compaction_sweep
+from a13n_service.runs.connector_events.maintenance import delivery_sweep as connector_delivery_sweep
+from a13n_service.runs.connector_events.maintenance import subscription_sweep as connector_subscription_sweep
+from a13n_service.runs.connector_events.routes import router as connector_events_router
+from a13n_service.runs.connector_events.tables import EventRow as ConnectorEventRow
+from a13n_service.runs.connector_events.triggers.tables import TriggerRow as ConnectorTriggerRow
 from a13n_service.runs.devices.routes import router as devices_router
 from a13n_service.runs.devices.tables import DeviceRow
 from a13n_service.runs.environments.clients.pairing_routes import router as client_pairing_router
@@ -430,6 +435,8 @@ OSS = Distribution(
         ModelRow,
         WebProviderRow,
         ConnectorProviderRow,
+        ConnectorTriggerRow,
+        ConnectorEventRow,
         EnvironmentProviderRow,
         BrowserProviderRow,
         BrowserRow,
@@ -536,6 +543,7 @@ OSS = Distribution(
         memory_organizations_router,
         connections_router,
         connector_providers_router,
+        connector_events_router,
     ),
     migrations=(Path(__file__).parent / "migrations" / "versions",),
     sweeps=(
@@ -556,6 +564,8 @@ OSS = Distribution(
         partial(cloudflare_deployment_sweep, factory=smoke_gateway),
         renewal_sweep,
         _recover_connection_operations,
+        connector_delivery_sweep,
+        connector_subscription_sweep,
         _deliver_outbox,
         _purge_outbox,
         _report_backlog,

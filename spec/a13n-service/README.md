@@ -32,6 +32,8 @@ Start with [00-overview.md](00-overview.md), [02-layout.md](02-layout.md) and th
 
 [App plugins](15-app-plugins.md) owns installed App registration, independent business persistence, organization enablement, immutable Run activation, guarded business dispatch and packaged frontend assets.
 
+[Connector events](16-connector-events.md) owns built-in signed provider ingress, subscriptions, event history and native Inbox handoff.
+
 ## Rule ownership
 
 A complete rule is defined once, in its owning section. Other chapters describe their own interface or storage contribution and link to that rule instead of copying it. When behavior changes, update the owner and every affected interface together.

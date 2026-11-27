@@ -294,7 +294,7 @@ async def submit_message(
 
 
 @dataclass(frozen=True, slots=True)
-class AppSubmission:
+class Submission:
     """Admission bound to one Service transaction and workspace."""
 
     _session: AsyncSession
@@ -304,16 +304,15 @@ class AppSubmission:
     _provenance: AppProvenance | None = None
 
 
-async def prepare_app_submission(
+async def prepare_submission(
     session: AsyncSession, runtime: Runtime, workspace_id: str, principal_id: str
-) -> AppSubmission:
-    """Lock current App actor authority before taking the target Thread acceptance lock.
+) -> Submission:
+    """Lock current actor authority before taking caller rows or the Thread acceptance lock.
 
-    This takes the organization FOR NO KEY UPDATE lock. Call it before acquiring any App row or Thread
-    acceptance lock (organization → App → Thread), and keep the enclosing transaction short.
+    This takes the organization FOR NO KEY UPDATE lock. Keep the enclosing transaction short.
     """
     if not session.info.get("a13n.transaction") or not session.in_transaction() or session.in_nested_transaction():
-        raise RuntimeError("App submission requires the outer Service transaction")
+        raise RuntimeError("Submission requires the outer Service transaction")
     workspace = await session.get(WorkspaceRow, workspace_id)
     if workspace is None:
         from a13n_service.infra.errors import not_found
@@ -324,9 +323,14 @@ async def prepare_app_submission(
     actor = await principal_for(session, runtime.access, principal_id, confinement=scope, share=True)
     await session.refresh(workspace)
     await workspace_scope(session, actor, workspace_id, "run")
-    admission = AppSubmission(session, runtime, workspace_id, actor)
-    session.info["a13n.app_submission"] = admission
+    admission = Submission(session, runtime, workspace_id, actor)
+    session.info["a13n.submission"] = admission
     return admission
+
+
+# App SDK keeps its existing entry point and ownership checks around native admission.
+AppSubmission = Submission
+prepare_app_submission = prepare_submission
 
 
 async def submit_app_message(
@@ -340,24 +344,24 @@ async def submit_app_message(
         )
 
 
-def submission_actor(session: AsyncSession, runtime: Runtime, admission: AppSubmission, workspace_id: str) -> Principal:
+def submission_actor(session: AsyncSession, runtime: Runtime, admission: Submission, workspace_id: str) -> Principal:
     if (
         not session.info.get("a13n.transaction")
         or not session.in_transaction()
         or session.in_nested_transaction()
-        or session.info.get("a13n.app_submission") is not admission
+        or session.info.get("a13n.submission") is not admission
         or admission._session is not session
         or admission._runtime is not runtime
         or admission._workspace_id != workspace_id
     ):
-        raise RuntimeError("Call prepare_app_submission in the same Service transaction before locking the Thread")
+        raise RuntimeError("Call prepare_submission in the same Service transaction before locking delivery rows")
     return admission._actor
 
 
 async def submit_message_in_transaction(
     session: AsyncSession,
     runtime: Runtime,
-    admission: AppSubmission,
+    admission: Submission,
     workspace_id: str,
     thread_id: str,
     message: Message,
@@ -366,7 +370,7 @@ async def submit_message_in_transaction(
 ) -> tuple[Submitted, bool]:
     """Submit in a caller-owned transaction; abort and retry the whole transaction on contention.
 
-    Call prepare_app_submission before taking the Thread lock. This uses the App principal's current
+    Call prepare_submission before taking the Thread lock. This uses the principal's current
     grants, not a fenced Run's delegation, and must not be used as a delegated Run operation.
     The receipt is committed only if the caller commits; abort and retry the whole transaction on contention.
     """
@@ -454,7 +458,7 @@ async def prepare_thread(
 async def create_thread_in_transaction(
     session: AsyncSession,
     runtime: Runtime,
-    admission: AppSubmission,
+    admission: Submission,
     workspace_id: str,
     body: NewThread,
     *,

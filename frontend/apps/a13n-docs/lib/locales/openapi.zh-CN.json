@@ -708,5 +708,19 @@
   "List Session Usage": "列出会话用量",
   "Sessions ranked by recorded cost for one Agent within the selected window.": "在所选时间范围内，按已记录费用对指定 Agent 的会话排序。",
   "The supplied or generated signing secret is returned only at creation.": "仅在创建时返回传入或自动生成的签名密钥。",
-  "Secret replacement applies only to newly queued deliveries.": "更换密钥仅影响新入队的投递。"
+  "Secret replacement applies only to newly queued deliveries.": "更换密钥仅影响新入队的投递。",
+  "List Connector Events": "列出 Connector 事件",
+  "Get Connector Event": "获取 Connector 事件",
+  "Retry Connector Event": "重试 Connector 事件投递",
+  "List Connector Event Types": "列出 Connector 事件类型",
+  "Get Connector Event Type": "获取 Connector 事件类型",
+  "Get Connector Event Webhook": "获取 Connector 共享事件回调",
+  "Configure Connector Event Webhook": "配置 Connector 共享事件回调",
+  "List Connector Triggers": "列出 Connector 事件订阅",
+  "Create Connector Trigger": "创建 Connector 事件订阅",
+  "Get Connector Trigger": "获取 Connector 事件订阅",
+  "Update Connector Trigger": "更新 Connector 事件订阅",
+  "Transition Connector Trigger": "更改 Connector 事件订阅状态",
+  "Receive Connector Webhook": "接收 Connector 签名回调",
+  "Authenticate the sender's signature; receipt confirms durable storage, not Agent completion.": "验证发送方签名；回执表示事件已保存，Agent 执行结果需另行查询。"
 }

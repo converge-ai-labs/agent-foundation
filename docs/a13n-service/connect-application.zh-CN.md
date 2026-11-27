@@ -65,3 +65,5 @@ curl --fail-with-body -sS "$A13N_URL/api/v1/runs/$RUN_ID" \
 ```
 
 确认该收件箱条目已被 `RUN_ID` 标记为 `consumed`；后续追问使用新 `Idempotency-Key` 发送至 `POST /api/v1/threads/$THREAD_ID/inbox`。如需接收实时输出事件，可订阅[会话 SSE 流](stream-and-read-results.md#follow-a-session-stream)（`$SESSION_ID`）或 [Webhook](webhooks.md)。
+
+可以使用内置的 [Connector 事件](connector-events.md)接收 Composio 账号事件，并直接启动 Agent 对话。

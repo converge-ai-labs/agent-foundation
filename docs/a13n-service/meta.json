@@ -30,6 +30,7 @@
     "---Automate & Debug Runs---",
     "agents-and-runs",
     "schedules",
+    "connector-events",
     "inspect-runs",
     "---Deploy & Operate---",
     "forward-deployed",

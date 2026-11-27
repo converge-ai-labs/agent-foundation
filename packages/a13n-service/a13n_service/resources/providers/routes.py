@@ -115,6 +115,8 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
             if_match=if_match,
             registry=runtime.registry,
             keys=runtime.keys,
+            policy=runtime.endpoint_policy,
+            settings=runtime.settings.providers,
         )
         return tagged(response, result)
 

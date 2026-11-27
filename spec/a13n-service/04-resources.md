@@ -465,6 +465,10 @@ egress_credentials   (ecred_)
 
 Management reads are explicitly admitted to MCP. Credential writes are excluded from management MCP and Run platform tools. Audit actions are `egress_credential.create`, `.update`, `.rotate` and `.revoke`; details contain changed field names or the credential version, never the value. Envd Session references, application evidence and lifecycle are owned by [Environments](06-environments.md).
 
+## Connector event configuration
+
+[Connector events](16-connector-events.md) extends the existing Provider with encrypted shared webhook configuration. Subscriptions bind exact Connections and provider-defined event types to saved execution targets; accepted events retain immutable snapshots. Provider updates preserve event fields, credential replacement proves the existing project identity, and configured callbacks prevent physical Provider deletion.
+
 ## Connections
 
 ```

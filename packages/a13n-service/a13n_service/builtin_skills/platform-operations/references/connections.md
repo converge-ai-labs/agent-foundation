@@ -15,3 +15,11 @@ MCP `configuration.on_error` is `raise` by default; `skip` omits an unavailable 
 MCP `configuration.authority` controls server instructions in subsequent Attempts. `operator` (the default) uses system instructions for direct connections and discovery results for Tool Search. `user` uses framed user-level context, and `none` uses framed untrusted data. An authority change preserves credentials and tool permissions.
 
 `test_connection` can call an external service and requires write-effect review. Unknown outcomes must be reconciled, not automatically repeated. Saved `forward_context_headers` controls the connection's ordinary context forwarding together with deployment policy; it never overrides configured credentials or permits secret input.
+
+## Connector events
+
+Connector events are built into Service. Direct users to the Connection's **Events** tab for shared callback setup, dynamic event selection and subscriptions; no App installation is needed. An administrator configures the Provider callback and can select a service account and Agent for new conversations. Keep signing keys and Provider credentials out of model arguments.
+
+Management MCP exposes `list_connector_event_types`, `get_connector_event_type`, `get_connector_event_webhook`, `list_connector_triggers`, `get_connector_trigger`, `list_connector_events` and `get_connector_event` when that surface is available. These operations are not added to the Agent's platform-tools catalog. Use the documented HTTP API or Console for mutations. Discover actual event names and parameter schemas; do not guess them.
+
+`submitted` means the event reached Inbox; inspect the linked Thread/Run for execution results. Pausing, retiring or changing a target does not cancel already accepted events. An unknown setup outcome requires inspecting operation status before retry; failed remote operations and failed event delivery are separate recovery actions. See the Service documentation's **Connector events** guide.

@@ -25,7 +25,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from a13n_service.api_access import CredentialAccess
+from a13n_service.api_access import CredentialAccess, connector_callback
 from a13n_service.app_definitions import InstalledApp, app_databases, discover_apps
 from a13n_service.app_plugin_runtime import (
     app_environment_events,
@@ -484,7 +484,14 @@ def build_app(
         redoc_url=None,
         generate_unique_id_function=operation_id,
     )
-    app.add_middleware(BodyLimit, max_bytes=config.server.request_bytes, timeout=config.server.request_timeout)
+    app.add_middleware(
+        BodyLimit,
+        max_bytes=config.server.request_bytes,
+        timeout=config.server.request_timeout,
+        limit_for=lambda scope: (
+            config.connector_events.body_bytes if connector_callback(scope) else config.server.request_bytes
+        ),
+    )
     documented = distribution.routers if serves_api and distribution.authenticator is None else ()
     app.openapi = partial(contract, app, locally_authenticated=documented)
 

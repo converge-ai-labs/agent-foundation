@@ -93,6 +93,10 @@ A Connector runtime exposes `tool_catalog(connector_key, *, provider_version=Non
 
 Composio versions use the dated `YYYYMMDD_NN` format. Saved setup options may select a supported older version after current application metadata advances. Setup still validates the live application, enabled authentication configuration, and instance fields; an older version requires matching native tool definitions. Account enrollment does not silently change the saved tool version. Execution supplies its selected version explicitly.
 
+### Connector Events
+
+Connector definitions can declare optional `verify_event` and expose `HasEvents.events` on their runtime. Event adapters dynamically discover schemas/versioned event definitions, manage shared callbacks and account-bound instances, and normalize verified source messages. Existing Connector tool and account interfaces remain unchanged for providers without events. The Host owns persistence, authority, delivery and HTTP serving; [Service Connector events](../a13n-service/16-connector-events.md) uses this optional protocol. Composio implements its V3 signature and v3.1 management APIs with the existing bounded HTTP client.
+
 ### Connector Setup Identity
 
 `SetupStarted.expected_metadata` is a required `dict[str, str]` of provider-resolved identity predicates captured when setup starts. A Provider explicitly returns `{}` when no additional metadata predicates apply. Hosts retain this snapshot with the pending setup and require every key to have the same value in the ready account's `ConnectionInspection.safe_metadata` before granting account authority. Missing or null inspection values do not satisfy a string predicate; extra display metadata is ignored. This check supplements the Provider's account, application, and user identity checks.

@@ -95,6 +95,107 @@ def create_app(database: Path) -> FastAPI:
             ],
         }
 
+    webhooks = []
+    instances = {}
+    event_definition = {
+        "slug": "GITHUB_ISSUE",
+        "toolkit": {"slug": "github"},
+        "name": "New issue",
+        "description": "Receive new issues for a repository.",
+        "version": VERSION,
+        "config": {
+            "type": "object",
+            "properties": {"repo": {"type": "string", "title": "Repository"}},
+            "required": ["repo"],
+        },
+        "payload": {"type": "object", "properties": {"number": {"type": "integer"}}, "required": ["number"]},
+    }
+
+    @app.get("/api/v3.1/triggers_types")
+    async def event_types():
+        return {"items": [event_definition], "next_cursor": None}
+
+    @app.get("/api/v3.1/triggers_types/{slug}")
+    async def event_type(slug: str):
+        return event_definition if slug == event_definition["slug"] else JSONResponse({}, status_code=404)
+
+    @app.get("/api/v3.1/webhook_subscriptions")
+    async def event_webhooks():
+        return {"items": webhooks, "next_cursor": None}
+
+    @app.post("/api/v3.1/webhook_subscriptions")
+    async def create_event_webhook(request: Request):
+        if webhooks:
+            return JSONResponse({}, status_code=409)
+        value = {**await request.json(), "id": "wh_fixture", "secret": "fixture-signing-key"}
+        webhooks.append(value)
+        return value
+
+    @app.post("/api/v3.1/webhook_subscriptions/{webhook_id}/rotate_secret")
+    async def rotate_event_webhook(webhook_id: str):
+        if not webhooks or webhooks[0]["id"] != webhook_id:
+            return JSONResponse({}, status_code=404)
+        webhooks[0]["secret"] = "fixture-signing-key-" + uuid.uuid4().hex
+        return {"id": webhook_id, "secret": webhooks[0]["secret"]}
+
+    @app.get("/api/v3.1/trigger_instances/active")
+    async def event_instances(request: Request):
+        return {
+            "items": [
+                value
+                for value in instances.values()
+                if value["connected_account_id"] == request.query_params["connected_account_ids"]
+                and value["trigger_name"] == request.query_params["trigger_names"]
+            ],
+            "next_cursor": None,
+        }
+
+    @app.post("/api/v3.1/trigger_instances/{slug}/upsert")
+    async def upsert_event_instance(slug: str, request: Request):
+        body = await request.json()
+        with sqlite3.connect(database) as connection:
+            row = connection.execute(
+                "SELECT user_id, status FROM accounts WHERE id = ?", (body["connected_account_id"],)
+            ).fetchone()
+        if row != (body["user_id"], "ACTIVE"):
+            return JSONResponse({}, status_code=403)
+        match = next(
+            (
+                value
+                for value in instances.values()
+                if value["connected_account_id"] == body["connected_account_id"]
+                and value["trigger_name"] == slug
+                and value["trigger_config"] == body["trigger_config"]
+            ),
+            None,
+        )
+        if match is None:
+            identity = "ti_" + uuid.uuid4().hex
+            match = {
+                "id": identity,
+                "connected_account_id": body["connected_account_id"],
+                "user_id": body["user_id"],
+                "trigger_name": slug,
+                "trigger_config": body["trigger_config"],
+                "version": body["toolkit_versions"]["github"],
+                "egress_url": None,
+            }
+            instances[identity] = match
+        match["disabled_at"] = None
+        return {"trigger_id": match["id"]}
+
+    @app.api_route("/api/v3.1/trigger_instances/manage/{instance_id}", methods=["PATCH", "DELETE"])
+    async def change_event_instance(instance_id: str, request: Request):
+        if instance_id not in instances:
+            return JSONResponse({}, status_code=404)
+        if request.method == "DELETE":
+            del instances[instance_id]
+        else:
+            instances[instance_id]["disabled_at"] = (
+                None if (await request.json())["status"] == "enable" else "2026-11-27T00:00:00Z"
+            )
+        return {"ok": True}
+
     @app.get("/api/v3.1/toolkits")
     async def directory():
         return {
