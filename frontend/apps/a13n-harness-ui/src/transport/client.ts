@@ -67,6 +67,7 @@ export function createTransport(
   key: string,
   onUnauthorized: () => void,
   shareId?: string,
+  onGuestScopeUnavailable?: (realtime: boolean) => void,
 ) {
   const apiUrl = (path: string) => {
     const url = new URL(path, apiOrigin());
@@ -90,10 +91,14 @@ export function createTransport(
   const realtime = new Realtime(
     key,
     () => {
-      lifetime.abort();
-      onUnauthorized();
+      if (shareId) onGuestScopeUnavailable?.(true);
+      else {
+        lifetime.abort();
+        onUnauthorized();
+      }
     },
     socketUrl("/api/realtime/connect"),
+    !!shareId,
   );
   lifetime.signal.addEventListener("abort", () => realtime.close(), {
     once: true,
@@ -133,8 +138,15 @@ export function createTransport(
     if (!response.ok) {
       const error = await responseError(response);
       if (response.status === 401) {
-        lifetime.abort();
-        onUnauthorized();
+        if (
+          shareId &&
+          new URL(request.url).pathname !== apiUrl("/api/access").pathname
+        ) {
+          onGuestScopeUnavailable?.(false);
+        } else {
+          lifetime.abort();
+          onUnauthorized();
+        }
       }
       throw error;
     }

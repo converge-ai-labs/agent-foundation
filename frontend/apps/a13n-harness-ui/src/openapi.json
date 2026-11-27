@@ -9569,6 +9569,33 @@
             }
           },
           {
+            "name": "coordinator_thread_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Coordinator Thread Id"
+            }
+          },
+          {
+            "name": "independent_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Independent Only"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -25224,6 +25251,22 @@
           "title": {
             "type": "string",
             "title": "Title"
+          },
+          "target_role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ordinary",
+                  "coordinator",
+                  "worker"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Role"
           }
         },
         "additionalProperties": false,

@@ -230,7 +230,7 @@
   overflow: hidden auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 .threadList > .hint {
   padding: 0 8px;
@@ -241,24 +241,84 @@
   composes: row from "./shell/navigation-row.module.css";
   justify-content: space-between;
 }
-.activeThread {
+.activeThread[aria-current="page"] {
   background: var(--a13n-selected);
   color: var(--a13n-text);
-  font-weight: 500;
 }
-.thread span,
-.activeThread span {
+.threadEntry {
+  position: relative;
+  min-width: 0;
+}
+.threadTitle {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.threadIcon {
+  width: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  color: var(--a13n-secondary);
+}
 .thread small,
 .activeThread small {
   flex-shrink: 0;
-  font-size: var(--a13n-text-body);
-  font-weight: 400;
+  font-size: calc(var(--harness-nav-font, 13px) * 11 / 13);
   color: var(--a13n-secondary);
+}
+.workerDisclosure {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--a13n-secondary);
+  cursor: pointer;
+}
+.workerDisclosure:hover {
+  color: var(--a13n-text);
+}
+.workerDisclosure:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.workers {
+  display: grid;
+  gap: 2px;
+  margin-inline-start: 15px;
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--a13n-border-soft);
+  margin-block-end: 8px;
+}
+.workers :is(.thread, .activeThread) {
+  padding-inline-start: 8px;
+}
+.workers > small,
+.workers > button {
+  justify-self: start;
+  margin-inline-start: 0;
+  padding-inline-start: 8px;
+  color: var(--a13n-secondary);
+}
+@media (pointer: coarse) {
+  .workerDisclosure {
+    width: 44px;
+  }
+  .threadEntry:has(.workerDisclosure) :is(.thread, .activeThread) {
+    padding-inline-start: 20px;
+  }
+  .threadEntry:has(.workerDisclosure) + .workers {
+    margin-inline-start: 21px;
+    padding-inline-start: 14px;
+  }
+}
+.mobileCoordinator {
+  display: none;
 }
 .conversation {
   min-width: 0;
@@ -345,6 +405,11 @@
   }
   .mobileToggle {
     display: inline-flex;
+  }
+  .mobileCoordinator {
+    display: inline-flex;
+    vertical-align: text-bottom;
+    margin-inline-end: 4px;
   }
   .secondaryActions {
     flex-wrap: wrap;

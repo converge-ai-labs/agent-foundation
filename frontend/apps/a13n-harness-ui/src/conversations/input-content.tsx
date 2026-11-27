@@ -16,7 +16,11 @@ import { CopyMessage } from "./copy-message";
 import { retainedSkillSpans, skillDisplayName } from "./skill-references";
 import skillStyles from "./skill-chip.module.css";
 import type { Schema } from "../transport/client";
-import { useGuestAccess, useTransport } from "../transport/context";
+import {
+  useCanLinkThread,
+  useGuestAccess,
+  useTransport,
+} from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
 import { RetainedImagePreview } from "./image-preview";
@@ -312,6 +316,7 @@ export function InputContent({
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const guest = useGuestAccess();
+  const canLink = useCanLinkThread();
   const childLabels = useContext(ChildInputLabels);
   const parentInput = parts.some(
     (part) => part.metadata?.["a13n.steering-source"] === "parent_agent",
@@ -483,7 +488,7 @@ export function InputContent({
                   {parentInput ? t("Main agent") : t("User")}
                 </span>
               )}
-              {source && guest ? (
+              {source && !canLink(source.id) ? (
                 <span className={styles.threadSource}>
                   {t("From thread")} - {source.title || source.id}
                 </span>

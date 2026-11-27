@@ -32,11 +32,13 @@ function renderSharing({
   failList = false,
   holdMethod,
   projectName = "Design studio",
+  role = "ordinary",
 }: {
   failCreate?: boolean;
   failList?: boolean;
   holdMethod?: "POST" | "PATCH" | "DELETE";
   projectName?: string;
+  role?: "ordinary" | "coordinator" | "worker";
 } = {}) {
   let release!: () => void;
   const pending = new Promise<void>((resolve) => {
@@ -84,6 +86,8 @@ function renderSharing({
               : await request.clone().json(),
         });
       if (request.method === holdMethod) await pending;
+      if (path === "/api/threads/thread-one")
+        return json({ thread: { thread_id: "thread-one", role } });
       if (path === "/api/setup") return json({});
       if (path === "/api/projects")
         return json([{ project_id: "project-one", name: projectName }]);
@@ -443,4 +447,30 @@ it("translates retry controls while preserving raw server diagnostics", async ()
     expect(vi.mocked(fetch).mock.calls).toHaveLength(calls + 1),
   );
   expect(writes).toEqual([]);
+});
+
+it("explains Coordinator scope and prompt authority without changing the grant schema", async () => {
+  const { user, writes } = renderSharing({ role: "coordinator" });
+  await screen.findByText("This chat & its workers");
+  expect(screen.getByText(/including new ones/)).toBeTruthy();
+  await user.click(screen.getByRole("combobox", { name: "Link access" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Send messages" }),
+  );
+  expect(
+    screen.getByText(/send messages to this Coordinator and its workers/),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Create link" }));
+  await screen.findByRole("textbox", { name: "Sharing link" });
+  expect(writes).toEqual([
+    {
+      method: "POST",
+      body: {
+        scope: "thread",
+        target_id: "thread-one",
+        permission: "prompt",
+        lifetime_hours: 24,
+      },
+    },
+  ]);
 });

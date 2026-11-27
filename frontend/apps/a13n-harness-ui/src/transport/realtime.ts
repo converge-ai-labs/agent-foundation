@@ -25,6 +25,7 @@ export class Realtime {
     private readonly key: string,
     private readonly unauthorized: () => void,
     private readonly endpoint?: URL,
+    private readonly retryUnauthorized = false,
   ) {}
 
   subscribe(subscription: Subscription) {
@@ -112,9 +113,9 @@ export class Realtime {
       this.socket = undefined;
       clearTimeout(this.heartbeat);
       if (code === 4401) {
-        this.close();
+        if (!this.retryUnauthorized) this.close();
         this.unauthorized();
-        return;
+        if (!this.retryUnauthorized) return;
       }
       for (const channel of this.channels) channel.state("Reconnecting");
       if (this.closed || !this.channels.size) return;

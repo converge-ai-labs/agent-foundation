@@ -11,7 +11,7 @@ import {
 } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "../i18n";
-import { useGuestAccess } from "../transport/context";
+import { useCanLinkThread, useGuestAccess } from "../transport/context";
 import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
@@ -620,8 +620,12 @@ function toolState(phase: string) {
 function ToolActions({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const guest = useGuestAccess();
+  const canLink = useCanLinkThread();
   const info = describeTool(tool);
-  const openFile = useContext(OpenHostFile);
+  const hostFile = useContext(OpenHostFile);
+  const openFile = guest ? undefined : hostFile;
+  const threadId =
+    info.threadId && canLink(info.threadId) ? info.threadId : undefined;
   const paths = [
     ...new Set(
       [info.path, ...acpPaths(tool.acp)]
@@ -629,14 +633,14 @@ function ToolActions({ tool }: { tool: ToolView }) {
         .filter((path): path is string => !!path),
     ),
   ];
-  if (guest || (!info.threadId && !(openFile && paths.length))) return null;
+  if (!threadId && !(openFile && paths.length)) return null;
   return (
     <div className={styles.actions}>
-      {info.threadId && (
+      {threadId && (
         <Link
           className={styles.threadLink}
-          to={`/threads/${encodeURIComponent(info.threadId)}`}
-          title={info.threadId}
+          to={`/threads/${encodeURIComponent(threadId)}`}
+          title={threadId}
         >
           <ArrowSquareOut aria-hidden="true" />
           {info.threadTitle || t("Open chat")}
@@ -665,6 +669,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
 function CollaborationDetails({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const guest = useGuestAccess();
+  const canLink = useCanLinkThread();
   const info = describeTool(tool);
   const { args, result } = info;
   const resources = ["threads", "projects", "agents", "models"].find(
@@ -747,7 +752,7 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
                         : id;
                   return (
                     <li key={id || index}>
-                      {!guest && resources === "threads" && id ? (
+                      {resources === "threads" && id && canLink(id) ? (
                         <Link to={`/threads/${encodeURIComponent(id)}`}>
                           {name || id}
                           <ArrowSquareOut aria-hidden="true" />

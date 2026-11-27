@@ -3866,5 +3866,12 @@
   "Network permission": "नेटवर्क अनुमति",
   "Mode change permission": "मोड बदलने की अनुमति",
   "Locations": "स्थान",
-  "Questions": "प्रश्न"
+  "Questions": "प्रश्न",
+  "This chat & its workers": "यह चैट और इसके वर्कर",
+  "Shares this Coordinator and its managed workers, including new ones.": "यह Coordinator और इसके प्रबंधित वर्कर साझा करता है, जिनमें नए वर्कर भी शामिल हैं।",
+  "People can send messages to this Coordinator and its workers using their agents’ tools and access. Share only with people you trust.": "लोग इस Coordinator और इसके वर्कर को उनके Agent के टूल और पहुँच का इस्तेमाल करके संदेश भेज सकते हैं। सिर्फ़ भरोसेमंद लोगों के साथ साझा करें।",
+  "Shared coordinator": "साझा Coordinator",
+  "Back to shared chat": "साझा चैट पर वापस जाएँ",
+  "Back to shared project": "साझा प्रोजेक्ट पर वापस जाएँ",
+  "Coordinator worker": "Coordinator वर्कर"
 }

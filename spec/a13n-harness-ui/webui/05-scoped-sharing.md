@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A sharing link grants temporary browser access to one Project or one root Thread. Guests participate in the same conversation and execution as the instance owner. The App owns grants, scope checks and existing execution; the browser presents a focused guest experience. Instance API keys retain administrative authority.
+A sharing link grants temporary browser access to a Project or a root Thread scope. Guests participate in the same conversation and execution as the instance owner. The App owns grants, scope checks and existing execution; the browser presents a focused guest experience. Instance API keys retain administrative authority.
 
 Prompt guests are trusted collaborators. Their input uses the Thread's existing Agent, tools, Environment and approvals. A sharing scope limits browser navigation and API access; it does not sandbox Agent execution or constrain cross-Thread tools. The share panel explains this authority before creating a prompt link. [Projects and Environments](../04-projects-threads-and-environments.md) retains execution ownership.
 
@@ -16,7 +16,11 @@ Links use a fragment credential, removed before mounting network consumers. Gues
 
 ## Scope and Permission
 
-Thread access includes the selected root and its child execution lineage, not independent chat or worker roots. Thread-scoped views return `null` for the unarchived worker count. Project access includes roots currently assigned to that Project and their child execution lineage, including roots created after the link. Moving a root out of the Project removes Project-granted access. A missing target is unavailable. Memory-maintenance and Live Threads are not share targets.
+Thread access includes the selected root and its child execution lineage. A Coordinator target also includes its directly owned workers and their child execution lineages. The grant follows the current role and ownership, including workers created later and workers of a target promoted after creation. Directly sharing a worker exposes that worker and its lineage only; its `coordinator_thread_id` is null in guest views, and the Coordinator and sibling workers are out of scope.
+
+Project access includes roots currently assigned to the Project and their child execution lineage, including roots created after the link. Moving a root out of the Project removes Project-granted access. A missing target makes the grant unavailable. Memory-maintenance, Live, and Bot Threads are not share targets.
+
+Guest access reports `target_role` for a Thread target and null for a Project target. The Thread-scoped listing returns the target by default. Filtering by `coordinator_thread_id` pages through a Coordinator's unarchived workers in touch order. Thread grants require the filter to equal the target; Project grants require the filter to be in the Project and constrain the result to that Project. Project listings can use `independent_only` to omit workers; the two filters are mutually exclusive on a worker listing.
 
 | Capability                                                                                        | View | Prompt |
 | ------------------------------------------------------------------------------------------------- | ---- | ------ |
@@ -36,6 +40,8 @@ Realtime subscriptions authorize the requested root and never expose the instanc
 
 ## Browser Experience
 
-The owner conversation header exposes **Share**, selecting the current conversation or its Project, permission, and lifetime, then presenting a copyable link with visible scope, permission, and expiry. Existing links can be edited (with a separate save action) or revoked without generating new keys. The owner Share panel supports English and Simplified Chinese, preserving open dialogs, selections, unsaved edits, and in-flight requests across language switches while keeping Project names, IDs, keys, and raw diagnostics verbatim.
+The owner conversation header exposes **Share**, selecting the current conversation or its Project, permission, and lifetime, then presenting a copyable link with visible scope, permission, and expiry. Existing links can be edited (with a separate save action) or revoked without generating new keys. The Include and Send messages options explain when a Coordinator link covers its workers. Language switching follows the [workbench localization contract](04-workbench-interaction.md#localization).
 
-A single-conversation link opens directly into that conversation; a Project link adds a compact Project-local list, search, and (for prompt guests) New conversation. View mode shows a read-only footer; Prompt mode reuses the shared composer and submission/reconnect rules, noting that the instance owner must answer approval waits. Expired or revoked links show a dedicated sharing-unavailable state distinct from connectivity loss. Guest auth, query state, and navigation stay isolated from any existing owner session so owners can preview guest links without signing out.
+Thread links open at the target conversation. A Coordinator link adds a compact list with the Coordinator pinned above its workers when workers exist or a worker is selected. Project links add a Project-local list, search, and (for prompt guests) New chat. The unfiltered Project list nests workers under expandable Coordinator rows; search includes matching workers directly. Guests can follow transcript links to known in-scope conversations. A missing conversation under a valid grant keeps its conversation-level recovery and navigation.
+
+View mode shows a read-only footer; Prompt mode reuses the shared composer and submission/reconnect rules, noting that the instance owner must answer approval waits. Expired or revoked links show a dedicated sharing-unavailable state distinct from a missing conversation or connectivity loss. Guest auth, query state, and navigation stay isolated from any existing owner session so owners can preview guest links without signing out.

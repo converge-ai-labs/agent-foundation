@@ -7,9 +7,12 @@ import httpx
 import pytest
 import yaml
 from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.surfaces import NewThreadDefaults
 from a13n_harness_ui.webui import create_webui
 
 from .test_app import _settings, _write_configuration
+from .test_coordinators import coordinator_configuration
+from .test_sharing import owned_child
 
 pytestmark = pytest.mark.anyio
 
@@ -191,6 +194,67 @@ async def test_project_guest_creation_scope_and_permission_changes(tmp_path):
         assert (await client.get(prefix + "/access", headers=headers)).status_code == 401
 
 
+async def test_shared_worker_listing_and_scope_filters(tmp_path):
+    configuration = coordinator_configuration(tmp_path)
+    async with shared_server(tmp_path, configuration=configuration) as (_, app, client):
+        main = NewThreadDefaults(project_id="project-main")
+        lead = await app.create_thread(defaults=main, coordinator=True)
+        other = await app.create_thread(defaults=NewThreadDefaults(project_id="project-other"), coordinator=True)
+        worker = await app.create_thread(defaults=main, coordinator_thread_id=lead.thread_id, title="Alpha worker")
+        sibling = await app.create_thread(defaults=main, coordinator_thread_id=lead.thread_id, title="Beta worker")
+        child = await owned_child(app, worker.thread_id)
+        chat, chat_headers = await create_link(client, "thread", lead.thread_id, "prompt")
+        direct, direct_headers = await create_link(client, "thread", worker.thread_id)
+        project, project_headers = await create_link(client, "project", "project-main")
+
+        async def page(path, headers, **params):
+            response = await client.get(path + "/threads", params=params, headers=headers)
+            assert response.status_code == 200, response.text
+            body = response.json()
+            return {row["thread_id"] for row in body["threads"]}, body.get("next_cursor")
+
+        assert (await page(chat, chat_headers))[0] == {lead.thread_id}
+        for path, headers in ((chat, chat_headers), (project, project_headers)):
+            first, cursor = await page(path, headers, coordinator_thread_id=lead.thread_id, limit=1)
+            assert len(first) == 1 and cursor
+            second, end = await page(path, headers, coordinator_thread_id=lead.thread_id, limit=1, cursor=cursor)
+            assert first.isdisjoint(second) and first | second == {worker.thread_id, sibling.thread_id}
+            assert end is None
+            assert (await page(path, headers, coordinator_thread_id=lead.thread_id, query="alpha"))[0] == {
+                worker.thread_id
+            }
+            outside = await client.get(
+                path + "/threads", headers=headers, params={"coordinator_thread_id": other.thread_id}
+            )
+            assert outside.status_code == 401
+            conflicting = await client.get(
+                path + "/threads",
+                headers=headers,
+                params={"coordinator_thread_id": lead.thread_id, "independent_only": True},
+            )
+            assert conflicting.status_code == 400 and conflicting.json()["error"]["code"] == "thread_page_invalid"
+
+        assert (await page(project, project_headers, independent_only=True))[0] == {lead.thread_id}
+        assert (await page(project, project_headers, query="beta"))[0] == {sibling.thread_id}
+        assert (await client.get(project + "/access", headers=project_headers)).json()["target_role"] is None
+        assert (await client.get(chat + "/access", headers=chat_headers)).json()["target_role"] == "coordinator"
+        assert (await client.get(chat + f"/threads/{child.thread_id}", headers=chat_headers)).status_code == 200
+        detail = await client.get(direct + f"/threads/{worker.thread_id}", headers=direct_headers)
+        assert detail.json()["thread"]["coordinator_thread_id"] is None
+        assert (await page(direct, direct_headers, coordinator_thread_id=worker.thread_id))[0] == set()
+        assert (
+            await client.get(
+                direct + "/threads", headers=direct_headers, params={"coordinator_thread_id": lead.thread_id}
+            )
+        ).status_code == 401
+        for thread_id in (lead.thread_id, sibling.thread_id):
+            assert (await client.get(direct + f"/threads/{thread_id}", headers=direct_headers)).status_code == 401
+        assert (
+            await client.post(chat + "/threads", headers=chat_headers, json={"thread_id": f"thread_{uuid4().hex}"})
+        ).status_code == 403
+        assert (await client.get(f"/api/threads/{worker.thread_id}", headers=chat_headers)).status_code == 401
+
+
 async def test_dangerous_owner_bypass_does_not_bypass_guest_authentication(tmp_path):
     async with shared_server(tmp_path, skip_auth=True) as (_, app, client):
         thread = await app.create_thread()
@@ -209,11 +273,13 @@ async def test_guest_realtime_scope_and_revocation_disconnect(tmp_path):
 
     from .test_interactive_protocol import frame_until, listener_with_app
 
-    configuration = _write_configuration(tmp_path)
+    configuration = coordinator_configuration(tmp_path)
     async with listener_with_app(tmp_path, configuration_path=configuration) as (http, ws, app):
-        thread = await app.create_thread()
+        lead = await app.create_thread(coordinator=True)
+        thread = await app.create_thread(coordinator_thread_id=lead.thread_id)
+        child = await owned_child(app, thread.thread_id)
         private = await app.create_thread()
-        created = await app.sharing.create(ShareCreate(scope="thread", target_id=thread.thread_id))
+        created = await app.sharing.create(ShareCreate(scope="thread", target_id=lead.thread_id))
         path = f"/api/shared/{created.grant.share_id}"
         async with connect(ws + path + "/realtime/connect", proxy=None, origin=http) as socket:
             await socket.send(json.dumps({"api_key": created.key}))
@@ -234,6 +300,33 @@ async def test_guest_realtime_scope_and_revocation_disconnect(tmp_path):
             )
             opened = await frame_until(socket, lambda f: f.get("channel") == "shared")
             assert "run" not in opened["frame"]["snapshot"]["thread"]["available_actions"]
+            await socket.send(
+                json.dumps(
+                    {
+                        "kind": "subscribe",
+                        "channel": "lead",
+                        "stream": "focus",
+                        "root_thread_id": lead.thread_id,
+                    }
+                )
+            )
+            lead_frame = (await frame_until(socket, lambda f: f.get("channel") == "lead"))["frame"]
+            assert lead_frame["snapshot"]["thread"]["thread"]["unarchived_worker_count"] == 1
+            # Child execution output rides on its root's stream. A child itself
+            # passes sharing admission but is not a root focus target.
+            await socket.send(
+                json.dumps(
+                    {
+                        "kind": "subscribe",
+                        "channel": "child",
+                        "stream": "focus",
+                        "root_thread_id": child.thread_id,
+                    }
+                )
+            )
+            child_frame = (await frame_until(socket, lambda f: f.get("channel") == "child"))["frame"]
+            assert child_frame["reason"] == "child_thread_scoped"
+            assert opened["frame"]["snapshot"]["thread"]["thread"]["coordinator_thread_id"] == lead.thread_id
             await app.sharing.revoke(created.grant.share_id)
             with fail_after(3), pytest.raises(ConnectionClosed) as failure:
                 while True:
@@ -252,10 +345,11 @@ async def test_guest_draft_permission_downgrade_and_presence_scope(tmp_path):
     from .test_interactive_protocol import frame_until, listener_with_app
     from .test_presence_protocol import report
 
-    configuration = _write_configuration(tmp_path)
+    configuration = coordinator_configuration(tmp_path)
     async with listener_with_app(tmp_path, configuration_path=configuration) as (http, ws, app):
-        thread = await app.create_thread()
-        created = await app.sharing.create(ShareCreate(scope="thread", target_id=thread.thread_id, permission="prompt"))
+        lead = await app.create_thread(coordinator=True)
+        thread = await app.create_thread(coordinator_thread_id=lead.thread_id)
+        created = await app.sharing.create(ShareCreate(scope="thread", target_id=lead.thread_id, permission="prompt"))
         path = f"/api/shared/{created.grant.share_id}"
         async with (
             connect(ws + "/api/presence/connect", proxy=None, origin=http) as owner,
