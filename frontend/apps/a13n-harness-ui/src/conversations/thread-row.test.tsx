@@ -12,6 +12,7 @@ import { MemoryRouter, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { ThreadRow } from "./thread-row";
+import styles from "./conversation.module.css";
 import { ResultTracker, ResultsContext } from "./results";
 import { NewConversationDrafts } from "./new-conversation";
 import { NewDraftStore } from "./new-draft";
@@ -86,6 +87,18 @@ function mount({
   unread = false,
   worker = false,
   activeWorkerCount = 0,
+  showRestore = false,
+}: {
+  archived?: boolean;
+  running?: boolean;
+  selected?: boolean;
+  coordinator?: boolean;
+  live?: boolean;
+  starred?: boolean;
+  unread?: boolean;
+  worker?: boolean;
+  activeWorkerCount?: number;
+  showRestore?: boolean | "compact";
 } = {}) {
   const row = {
     pending_decision: null,
@@ -117,7 +130,11 @@ function mount({
         >
           <NewConversationDrafts value={newDrafts}>
             <ResultsContext value={results}>
-              <ThreadRow row={current} activeWorkerCount={workers} />
+              <ThreadRow
+                row={current}
+                activeWorkerCount={workers}
+                showRestore={showRestore}
+              />
             </ResultsContext>
           </NewConversationDrafts>
           <Location />
@@ -558,3 +575,25 @@ it("hides Mark unread and the unread dot on Coordinator workers while keeping Ma
   );
   await screen.findByRole("menuitem", { name: "Mark unread" });
 });
+
+it.each([true, "compact"] as const)(
+  "marks inline Restore buttons for separate menu placement in both labeled and compact modes (showRestore=%s)",
+  (showRestore) => {
+    mount({ archived: true, showRestore });
+    const restore = screen.getByRole("button", { name: "Restore Example" });
+    expect(restore.classList.contains(styles.threadRestore)).toBe(true);
+    expect(restore.textContent).toBe(
+      showRestore === "compact" ? "" : "Restore",
+    );
+    expect(screen.getByTitle("Archived")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Actions for Example" }),
+    ).toBeTruthy();
+
+    cleanup();
+    mount({ archived: false, showRestore });
+    expect(
+      screen.queryByRole("button", { name: "Restore Example" }),
+    ).toBeNull();
+  },
+);
