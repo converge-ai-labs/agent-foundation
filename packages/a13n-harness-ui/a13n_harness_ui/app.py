@@ -76,7 +76,12 @@ from a13n_harness_ui.browser import (
     HostBrowsers,
 )
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
-from a13n_harness_ui.chat_titles import generate_title
+from a13n_harness_ui.chat_titles import (
+    TitleMessage,
+    generate_title,
+    title_message_from_entry,
+    title_message_from_prompt,
+)
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -316,7 +321,7 @@ from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor
-from a13n_harness_ui.root_input import authored_text, detach_input
+from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_inputs import InputDelivery, StrictRootInputs
 from a13n_harness_ui.root_run import MessageEditAdmission, RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
@@ -737,28 +742,11 @@ class HarnessUiApp:
 
     async def suggest_chat_title(self, thread_id: str, *, model_id: str | None = None) -> str:
         async with self._operation():
-            messages = []
-            for entry in await self._projections.title_entries(thread_id):
-                pieces = []
-                for part in entry.parts:
-                    meta = part.metadata.model_extra or {}
-                    if (
-                        part.kind != "user"
-                        or not part.metadata.display
-                        or meta.get("a13n.steering-source", "user") != "user"
-                    ):
-                        continue
-                    ui = meta.get("harness_ui", {})
-                    if ui.get("long_text"):
-                        _, data = await self._thread_files.read(thread_id, ui["attachment"]["attachment_id"])
-                        pieces.append(data.decode("utf-8"))
-                    elif (
-                        not (ui.get("attachment") or ui.get("long_text_skipped") or ui.get("mcp_app_context"))
-                        and part.text
-                    ):
-                        pieces.append(part.text)
-                if pieces:
-                    messages.append(" ".join(pieces))
+            read_attachment = partial(self._thread_files.read, thread_id)
+            messages = [
+                await title_message_from_entry(entry, read_attachment)
+                for entry in await self._projections.title_entries(thread_id)
+            ]
             source = await self._configurations.current()
             if source is None:
                 raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
@@ -771,13 +759,19 @@ class HarnessUiApp:
             return await self._generate_chat_title(thread_id, messages, source, model_id)
 
     async def _generate_chat_title(
-        self, thread_id: str, messages: list[str], source: LoadedHarnessUiConfiguration, model_id: str
+        self, thread_id: str, messages: list[TitleMessage], source: LoadedHarnessUiConfiguration, model_id: str
     ) -> str:
         try:
             model, recipe = await self._utility_model(source, model_id, thread_id)
         except ModelResolutionError as exc:
             raise HarnessUiError(str(exc), code=exc.code) from None
-        return await generate_title(messages, model, recipe.settings)
+        return await generate_title(
+            messages,
+            model,
+            recipe,
+            configuration=source.document.run_configuration,
+            read_attachment=partial(self._thread_files.read, thread_id),
+        )
 
     async def _title_new_chat(self, admission: RootRunAdmission) -> None:
         if not admission.source.document.auto_chat_title:
@@ -788,10 +782,8 @@ class HarnessUiApp:
         prompt = admission.prompt
         if prompt is None:
             return
-        text = (
-            prompt if isinstance(prompt, str) else " ".join(value for part in prompt if (value := authored_text(part)))
-        )
-        if not text.strip():
+        message = title_message_from_prompt(prompt)
+        if not message.has_input:
             return
         model = admission.published.value.root.model
         title_model_id = admission.source.document.chat_title_model or (model.model_id if model is not None else None)
@@ -801,7 +793,7 @@ class HarnessUiApp:
             try:
                 title = await self._generate_chat_title(
                     thread.thread_id,
-                    [text],
+                    [message],
                     admission.source,
                     title_model_id,
                 )

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from anyio import to_thread
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -259,23 +259,32 @@ class InspectionRepository:
         return values
 
     async def title_entries(self, thread_id: str, source_id: str) -> tuple[str, ...]:
-        """Read the first and last authored entries without loading intervening tool results."""
+        """Read the first and last conversation entries with title context."""
         async with short_session(self._sessions) as session:
             parts = func.json_each(TranscriptEntryRecord.value_json, "$.parts").table_valued("value")
-            user_text = (
+            kind = func.json_extract(parts.c.value, "$.kind")
+            visible = func.coalesce(func.json_extract(parts.c.value, "$.metadata.display"), 1) == 1
+            has_text = func.trim(func.json_extract(parts.c.value, "$.text"), " \t\n\r") != ""
+            attachment = func.json_extract(parts.c.value, "$.metadata.harness_ui.attachment.attachment_id")
+            user_input = and_(
+                kind.in_(("user", "media")),
+                func.coalesce(func.json_extract(parts.c.value, '$.metadata."a13n.steering-source"'), "user") == "user",
+                or_(
+                    and_(visible, or_(has_text, kind == "media")),
+                    attachment.is_not(None),
+                    func.json_array_length(parts.c.value, "$.metadata.harness_ui.selected_skills") > 0,
+                ),
+            )
+            matching_part = (
                 select(1)
                 .select_from(parts)
                 .where(
-                    func.json_extract(parts.c.value, "$.kind") == "user",
-                    func.coalesce(func.json_extract(parts.c.value, "$.metadata.display"), 1) == 1,
-                    func.coalesce(func.json_extract(parts.c.value, '$.metadata."a13n.steering-source"'), "user")
-                    == "user",
-                    func.json_extract(parts.c.value, "$.metadata.harness_ui.mcp_app_context").is_(None),
-                    func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text_skipped").is_(None),
-                    (
-                        func.json_extract(parts.c.value, "$.metadata.harness_ui.attachment").is_(None)
-                        | (func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text") == 1)
+                    or_(user_input, and_(kind == "assistant", has_text)),
+                    func.coalesce(func.json_extract(parts.c.value, '$.metadata."a13n.context"'), "").not_in(
+                        ("handoff", "compaction")
                     ),
+                    func.coalesce(func.json_extract(parts.c.value, "$.metadata.harness_ui.mcp_app_context"), 0) == 0,
+                    func.coalesce(func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text_skipped"), 0) == 0,
                 )
             )
             position = TranscriptEntryRecord.position
@@ -285,11 +294,11 @@ class InspectionRepository:
                 .where(
                     TranscriptEntryRecord.thread_id == thread_id,
                     ThreadInspectionRecord.source_id == source_id,
-                    user_text.exists(),
+                    matching_part.exists(),
                 )
             )
-            first = query.order_by(position).limit(32).subquery()
-            last = query.order_by(position.desc()).limit(32).subquery()
+            first = query.order_by(position).limit(2).subquery()
+            last = query.order_by(position.desc()).limit(24).subquery()
             edges = select(first).union(select(last)).subquery()
             return tuple(await session.scalars(select(edges.c.value_json).order_by(edges.c.position)))
 
