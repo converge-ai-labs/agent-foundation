@@ -226,9 +226,11 @@ afterEach(() => {
 
 it("opens a thread guest directly without owner queries or a draft socket", async () => {
   render(<BrowserApp />);
-  await screen.findByText("View-only link - Following this chat live.");
+  await screen.findByRole("region", { name: "Message composer" });
+  expect(
+    screen.getByText("View-only link - Following this chat live."),
+  ).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
-  expect(screen.getByRole("region", { name: "Message composer" })).toBeTruthy();
   expect(
     screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
   ).toBe(true);
