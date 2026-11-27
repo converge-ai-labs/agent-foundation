@@ -396,9 +396,12 @@ it("opens a popover for a single GitHub link and hides its trigger after unlinki
       ],
     },
   );
-  fireEvent.click(await screen.findByRole("button", { name: "Thread links" }));
+  const trigger = await screen.findByRole("button", { name: "Thread links" });
+  expect(trigger.textContent).toContain("#42");
+  fireEvent.click(trigger);
   const link = await screen.findByRole("link", { name: /Improve retries/ });
   expect(link.getAttribute("href")).toBe(url);
+  expect(link.textContent).toContain("example/repo");
   expect(link.textContent).toContain("#42");
   expect(link.textContent).toContain("Merged");
   fireEvent.click(screen.getByRole("button", { name: "Unlink" }));

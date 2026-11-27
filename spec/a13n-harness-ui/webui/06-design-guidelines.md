@@ -93,7 +93,7 @@ Content fades continuously toward the header and composer. No hard seam, ghosted
 
 Chat headers use the same compact height without a bottom divider in single-column and split layouts. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
 
-The Thread Links header control uses a quiet icon and count and disappears for empty chats. Its popover groups worktree and URL rows by type. Each row leads with the resource name and keeps branch or artifact status secondary. Open actions stay beside their worktree; the unlink affordance stays quiet. The sidebar carries no worktree or link indicators.
+The Thread Links header control uses quiet typed icons with compact labels or counts and disappears for empty chats. Its popover groups worktree and URL rows by type. Each row leads with the resource name and keeps branch or artifact status secondary. Open actions stay beside their worktree; the unlink affordance stays quiet. The sidebar carries no worktree or link indicators.
 
 ## Background Work
 

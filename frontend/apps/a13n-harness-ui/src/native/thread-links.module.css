@@ -1,16 +1,45 @@
 .trigger {
   flex: none;
   color: var(--a13n-secondary);
-  gap: 4px;
+  gap: 6px;
   font-variant-numeric: tabular-nums;
 }
+.triggerSegment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.triggerLabel {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.triggerNumber {
+  white-space: nowrap;
+}
+.triggerDivider {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+@media (max-width: 640px) {
+  .triggerLabel {
+    display: none;
+  }
+}
 .popup {
-  width: min(340px, calc(100vw - 24px), var(--available-width, 100vw));
+  width: min(360px, calc(100vw - 24px), var(--available-width, 100vw));
   border-radius: 16px;
 }
 .groups {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+}
+.section + .section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
 }
 .groups h2 {
   margin: 0 0 8px;
@@ -20,16 +49,34 @@
 }
 .groups ul {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+.worktree {
+  display: grid;
+  gap: 2px;
 }
 .row {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 32px;
+}
+.linkRow {
+  border-radius: 8px;
+  padding: 2px 2px 2px 6px;
+  margin-inline: -6px -2px;
+  transition: background-color 120ms ease-out;
+}
+.linkRow:hover {
+  background: var(--a13n-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .linkRow {
+    transition: none;
+  }
 }
 .row > button,
 .icon {
@@ -40,6 +87,12 @@
   width: 16px;
   height: 16px;
 }
+.toneSuccess {
+  color: var(--success-foreground);
+}
+.toneInfo {
+  color: var(--info-foreground);
+}
 .identity {
   display: grid;
   gap: 2px;
@@ -48,36 +101,58 @@
   border-radius: 4px;
   line-height: 1.4;
 }
-a.identity:hover .name {
+a.identity:hover .nameText {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.name,
-.detail {
+.name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.nameText {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
-.name svg {
-  display: inline;
-  margin-inline-start: 4px;
-  vertical-align: -2px;
+.externalIcon {
+  flex: none;
+  width: 13px;
+  height: 13px;
   color: var(--a13n-secondary);
 }
 .detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   color: var(--a13n-secondary);
   font-size: 0.9em;
 }
-.detail > span {
-  margin-inline-start: 6px;
+.detailText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.artifactNumber {
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 .actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 2px;
   margin-inline-start: 16px;
 }
-.actions button {
+.actionButton {
+  gap: 5px;
   color: var(--a13n-secondary);
+}
+.actionButton:hover {
+  color: var(--a13n-text);
 }
 .srOnly {
   position: absolute;

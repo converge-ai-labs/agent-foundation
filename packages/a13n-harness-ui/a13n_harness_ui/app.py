@@ -3087,10 +3087,16 @@ class HarnessUiApp:
                 if input_surface != "webui":
                     raise ValueError("Worktree mode is a WebUI submission mode.")
                 selection = environment or EnvironmentSelectionPatch()
+                default_environment = (
+                    selection.default_environment
+                    if "default_environment" in selection.model_fields_set
+                    else thread.configuration.default_environment
+                )
                 await self._thread_links.require_worktree_mode(
                     thread,
                     selection.environment_profile_id or thread.configuration.environment_profile_id,
                     selection.local_roots if selection.local_roots is not None else thread.configuration.local_roots,
+                    default_environment,
                 )
             draft_clear = await self._prepare_draft_clear(thread_id, draft, reset_mode=True)
             selected_context = await self._apps().capture_context(thread_id, app_context) if app_context else ()

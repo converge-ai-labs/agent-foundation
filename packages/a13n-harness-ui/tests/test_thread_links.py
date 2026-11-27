@@ -127,6 +127,28 @@ async def test_worktree_status_canonicalization_and_mode_do_not_expand_roots(tmp
         linked_chat = await app.create_thread(defaults=scope)
         implicit = (await app.thread_links(linked_chat.thread_id)).worktrees
         assert len(implicit) == 1 and implicit[0].implicit and implicit[0].branch == "feature"
+        secondary_default = await app.create_thread(
+            defaults=NewThreadDefaults(
+                local_roots=(str(root), str(linked)),
+                default_environment="workspace-2",
+                environment_profile_id="environment-native",
+            )
+        )
+        secondary_implicit = (await app.thread_links(secondary_default.thread_id)).worktrees
+        assert (
+            len(secondary_implicit) == 1
+            and secondary_implicit[0].implicit
+            and secondary_implicit[0].branch == "feature"
+        )
+        thread_files_default = await app.create_thread(
+            defaults=NewThreadDefaults(
+                local_roots=(str(linked),),
+                default_environment="thread-files",
+                environment_profile_id="environment-native",
+            )
+        )
+        thread_files_view = await app.thread_links(thread_files_default.thread_id)
+        assert thread_files_view.worktrees == () and not thread_files_view.worktree_mode_available
         explicit = await app._thread_links.link(
             linked_chat.thread_id, "worktree", str(linked), None, allow_host_git=True
         )

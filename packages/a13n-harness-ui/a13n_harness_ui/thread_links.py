@@ -81,6 +81,20 @@ def _target(kind: ThreadLinkKind, value: str) -> str:
     return _path(value) if kind == "worktree" else _url(value)
 
 
+def _default_local_root(roots: tuple[str, ...], default_environment: str | None) -> str | None:
+    if not roots:
+        return None
+    if default_environment is None or default_environment == "workspace":
+        return roots[0]
+    if default_environment.startswith("workspace-"):
+        suffix = default_environment.removeprefix("workspace-")
+        if suffix.isdigit():
+            index = int(suffix) - 1
+            if 1 <= index < len(roots):
+                return roots[index]
+    return None
+
+
 class ThreadLinks:
     def __init__(self, threads: ThreadRepository, host_git: HostGit, *, changed: Callable[[str], None]) -> None:
         self._threads = threads
@@ -105,14 +119,21 @@ class ThreadLinks:
         except HarnessUiError as exc:
             return None, exc.code == "host_git_not_found"
 
-    async def require_worktree_mode(self, thread: Thread, environment_profile_id: str, roots: tuple[str, ...]) -> None:
+    async def require_worktree_mode(
+        self,
+        thread: Thread,
+        environment_profile_id: str,
+        roots: tuple[str, ...],
+        default_environment: str | None = None,
+    ) -> None:
+        root = _default_local_root(roots, default_environment)
         if (
             thread.configuration.project_id
             and environment_profile_id == "environment-native"
             and self._git.available
-            and roots
+            and root
         ):
-            repository, _ = await self._discover(roots[0])
+            repository, _ = await self._discover(root)
             if repository is not None:
                 return
         raise ThreadError("Worktree mode requires a Git project in Full Control.", code="worktree_mode_unavailable")
@@ -192,7 +213,11 @@ class ThreadLinks:
 
     async def _worktrees(self, thread: Thread, links: list[WorktreeLink]) -> tuple[tuple[WorktreeLinkView, ...], bool]:
         native = self._native_git(thread)
-        root = thread.configuration.local_roots[0] if native and thread.configuration.local_roots else None
+        root = (
+            _default_local_root(thread.configuration.local_roots, thread.configuration.default_environment)
+            if native
+            else None
+        )
         paths = dict.fromkeys(link.path for link in links) if native else {}
         if root is not None:
             paths[_path(root)] = None
