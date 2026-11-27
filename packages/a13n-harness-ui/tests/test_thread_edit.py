@@ -111,6 +111,32 @@ async def test_idle_edit_replaces_selected_suffix_in_place(tmp_path, monkeypatch
             )
 
 
+async def test_branch_points_does_not_load_display_for_completed_threads(tmp_path, monkeypatch, model):
+    from a13n_harness_ui.storage import ObjectKind
+
+    async def stream(messages, info):
+        yield "Reply"
+
+    model(stream)
+    async with open_harness_ui_app(settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread_id = (await app.create_thread(title="Conversation")).thread_id
+        for text in ("First input", "Second input", "Third input"):
+            await send(app, thread_id, text)
+        transcript = await app.get_thread_transcript(thread_id=thread_id)
+        read = app._store.objects.read_model
+        reads = []
+
+        async def record(ref, model):
+            reads.append(ref.object_kind)
+            return await read(ref, model)
+
+        monkeypatch.setattr(app._store.objects, "read_model", record)
+        points = await app.branch_points(thread_id)
+        assert all(points.points[turn.turn_id].edit for turn in transcript.turns)
+        assert ObjectKind.continuation_display not in reads
+        assert ObjectKind.display_segment not in reads
+
+
 @pytest.mark.parametrize("target", ["earlier", "active", "timeout"])
 async def test_edit_active_prompt_waits_for_selected_run_to_stop(tmp_path, monkeypatch, model, target):
     calls = []

@@ -74,6 +74,7 @@ import {
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
 import {
+  rewindHistory,
   transcriptHistory,
   useHistory,
   useOperation,
@@ -83,6 +84,7 @@ import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
 import { applyThreadMutation } from "./thread-updates";
 import { showFocusedOutput } from "./stream";
+import type { InlineEdit } from "./message-edit";
 import { useLiveThread } from "./live-threads";
 import { ConnectionNoticeContext } from "../shell/connection";
 import {
@@ -234,7 +236,8 @@ function ConversationContent({
     );
   const draft = useDraft(threadId, true);
   const [selectedTurn, setSelectedTurn] = useState<string>();
-  const [historyReset, setHistoryReset] = useState<string>();
+  const [historyReset, setHistoryReset] =
+    useState<ReturnType<typeof rewindHistory>>();
   const [messageEditPending, setMessageEditPending] = useState(false);
   const [composerPreparing, setComposerPreparing] = useState(false);
   const pendingJump = useRef<string | undefined>(undefined);
@@ -589,6 +592,7 @@ function ConversationContent({
   const rewindConversation = (
     replacement: Schema<"MessageEditReceipt">,
     input: LocalInput,
+    target: InlineEdit,
   ) => {
     const receiptId = replacement.receipt.receipt_id;
     const detailKey = ["thread", threadId, "detail"];
@@ -601,7 +605,22 @@ function ConversationContent({
     ]) {
       queries.removeQueries({ queryKey: ["thread", threadId, section] });
     }
-    setHistoryReset(replacement.continuation_id);
+    // A live input may have just been included in a saved checkpoint. Match its
+    // turn or authored source before treating the whole saved window as prefix.
+    const key = target.selection.turn_key;
+    const inputPosition =
+      target.inputPosition ??
+      turns.find((turn) => turn.turn_id === key)?.input_position ??
+      entries.find((entry) =>
+        entry.parts.some((part) => part.metadata?.source_id === key),
+      )?.position ??
+      Infinity;
+    setHistoryReset(
+      rewindHistory(replacement.continuation_id, inputPosition, {
+        entries,
+        turns,
+      }),
+    );
     queries.setQueryData<Schema<"ThreadDetail">>(detailKey, (current) => {
       if (
         !current ||

@@ -14,7 +14,7 @@ import type { Schema, Transport } from "../transport/client";
 import type { DisplayBlock } from "./stream";
 import { ConversationTranscript } from "./transcript";
 import { MessageBranches } from "./message-branch";
-import { useHistory } from "./queries";
+import { rewindHistory, transcriptHistory, useHistory } from "./queries";
 import { previewInput, type LocalInput } from "./local-input";
 
 beforeEach(() =>
@@ -284,6 +284,112 @@ it.each([
     queries.clear();
   },
 );
+
+it("keeps the first turn mounted while the replacement history for an edited second turn loads", async () => {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const first = {
+    ...turn,
+    end_position: 2,
+    final_position: 1,
+    output_position: 1,
+  };
+  const second = {
+    ...first,
+    turn_id: "two",
+    preview: "Edit this",
+    input_position: 2,
+    end_position: 4,
+    final_position: 3,
+    output_position: 3,
+  };
+  const oldPage = {
+    continuation_id: "C0",
+    entries: [
+      input,
+      output,
+      {
+        ...input,
+        position: 2,
+        parts: [{ kind: "user" as const, text: "Edit this" }],
+      },
+      {
+        ...output,
+        position: 3,
+        parts: [{ kind: "assistant" as const, text: "Discard this reply" }],
+      },
+    ],
+    turns: [first, second],
+    total: 4,
+  };
+  const replacement = {
+    continuation_id: "C1",
+    entries: [input, output],
+    turns: [first],
+    total: 2,
+  };
+  let finish!: (response: { data: typeof replacement }) => void;
+  const GET = vi
+    .fn()
+    .mockResolvedValueOnce({ data: oldPage })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queries}>
+      <TransportContext value={{ client: { GET } } as unknown as Transport}>
+        {children}
+      </TransportContext>
+    </QueryClientProvider>
+  );
+  function Transcript({
+    continuation,
+    rewind,
+  }: {
+    continuation: string;
+    rewind?: ReturnType<typeof rewindHistory>;
+  }) {
+    const history = useHistory("one", continuation, true, undefined, rewind);
+    return (
+      <ConversationTranscript
+        {...props}
+        {...transcriptHistory(history.data?.pages)}
+        blocks={[]}
+        continuation={history.data?.pages[0]?.continuation_id}
+      />
+    );
+  }
+  const view = render(<Transcript continuation="C0" />, { wrapper });
+  await screen.findByText("Discard this reply");
+  const firstInput = screen.getByText("Prompt");
+  const firstReply = screen.getByText("Visible reply");
+  const seed = rewindHistory(
+    "C1",
+    second.input_position,
+    transcriptHistory([oldPage]),
+  );
+  queries.removeQueries({ queryKey: ["thread", "one", "history"] });
+  view.rerender(<Transcript continuation="C1" rewind={seed} />);
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  expect(screen.getByText("Prompt")).toBe(firstInput);
+  expect(screen.getByText("Visible reply")).toBe(firstReply);
+  expect(screen.queryByText("Edit this")).toBeNull();
+  expect(screen.queryByText("Discard this reply")).toBeNull();
+  await act(async () => finish({ data: replacement }));
+  await waitFor(() =>
+    expect(
+      queries.getQueryData(["thread", "one", "history", "C1"]),
+    ).toBeTruthy(),
+  );
+  expect(screen.getByText("Prompt")).toBe(firstInput);
+  expect(screen.getByText("Visible reply")).toBe(firstReply);
+  view.unmount();
+  queries.clear();
+});
 
 it("preserves distinct repeated text slots without merging messages", () => {
   const blocks: DisplayBlock[] = [

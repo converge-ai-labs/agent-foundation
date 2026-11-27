@@ -320,12 +320,14 @@ export function InputContent({
   threadId,
   renderText,
   branchKey,
+  inputPosition,
   timestamp,
   status,
 }: {
   status?: string;
   timestamp?: string | number;
   branchKey?: string;
+  inputPosition?: number;
   parts: InputPart[];
   threadId?: string;
   renderText: (text: string) => ReactNode;
@@ -580,6 +582,7 @@ export function InputContent({
                     editor?.setDraft({
                       ...editable,
                       identity,
+                      inputPosition,
                       selection: {
                         turn_key: branchKey,
                         expected_source: actions.editSource,

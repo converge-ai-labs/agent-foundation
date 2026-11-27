@@ -598,10 +598,11 @@
 .messageEditor {
   width: min(100%, 640px);
   margin: 8px 0 16px auto;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--a13n-input-border);
   border-radius: var(--harness-radius-panel);
-  background: var(--a13n-elevated);
+  background: var(--card);
+  transition: border-color 120ms ease;
 }
 .messageEditor textarea {
   display: block;
@@ -622,25 +623,34 @@
   outline: none;
   box-shadow: none;
 }
-.messageEditor:has(textarea:focus-visible) {
-  border-color: var(--a13n-signal);
+.messageEditor:focus-within {
+  border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
 }
-.editActions,
-.editAttachments {
+.editFooter,
+.editDetails,
+.editActions {
   display: flex;
   align-items: center;
+  gap: 4px;
+}
+.editFooter {
+  justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
-.editActions {
-  justify-content: flex-end;
+.editDetails {
+  min-width: 0;
+  flex-wrap: wrap;
 }
-.editActions small {
-  margin-inline-end: auto;
+.editDetails small {
   color: var(--a13n-secondary);
 }
-.editAttachments {
-  flex-wrap: wrap;
+.editActions {
+  flex-shrink: 0;
+}
+.editActions > button {
+  border-radius: 50%;
+  box-shadow: none;
 }
 .editAttachment {
   display: inline-flex;
@@ -648,10 +658,17 @@
   gap: 4px;
   min-width: 0;
   max-width: 100%;
-  padding-inline: 8px 0;
-  border-radius: var(--harness-radius-control);
+  height: 26px;
+  padding-inline: 8px 2px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
+}
+.editAttachmentRemove {
+  flex-shrink: 0;
+  color: inherit;
 }
 .editAttachment > span {
   overflow: hidden;
@@ -661,6 +678,9 @@
 @media (pointer: coarse) {
   .messageEditor textarea {
     font-size: max(16px, var(--harness-prose-size));
+  }
+  .editAttachment {
+    min-height: 46px;
   }
   .messageEditor button {
     min-width: 44px;
@@ -1072,6 +1092,7 @@ summary:is(:hover, :focus-visible) > .logCaret {
 @media (prefers-reduced-motion: reduce) {
   .messageActions,
   .composerInput,
+  .messageEditor,
   .activity > summary,
   .logCaret,
   .executionCaret,

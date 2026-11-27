@@ -72,7 +72,11 @@ export function MessageBranchProvider({
   draft: ThreadDraft;
   acpCommands?: Schema<"AcpCommand">[];
   onEditPending: (pending: boolean) => void;
-  onRewound: (value: Schema<"MessageEditReceipt">, input: LocalInput) => void;
+  onRewound: (
+    value: Schema<"MessageEditReceipt">,
+    input: LocalInput,
+    target: InlineEdit,
+  ) => void;
   children: ReactNode;
 }) {
   const transport = useTransport();
@@ -90,7 +94,12 @@ export function MessageBranchProvider({
       setEditAnchor((current) => (current === anchor ? null : current));
   }, []);
   const points = useQuery({
-    queryKey: ["thread", thread, "branch-points", continuation, receipt, runId],
+    queryKey: [
+      "thread",
+      thread,
+      "branch-points",
+      receipt ? `${receipt}:${runId ?? ""}` : continuation,
+    ],
     enabled: enabled && (!!continuation || !!receipt),
     staleTime: Infinity,
     queryFn: ({ signal }) =>
@@ -130,7 +139,7 @@ export function MessageBranchProvider({
     }
   }
   async function edit(
-    selection: Schema<"MessageEditSelection">,
+    target: InlineEdit,
     parts: OrderedInputPart[],
     attachments: Map<string, Schema<"ThreadAttachment">>,
   ) {
@@ -148,7 +157,7 @@ export function MessageBranchProvider({
         transport.client.POST("/api/threads/{thread_id}/edit-message", {
           params: { path: { thread_id: thread } },
           body: {
-            selection,
+            selection: target.selection,
             parts,
             source_id: id,
             skill_references: skillReferences(parts, catalog, {
@@ -157,18 +166,22 @@ export function MessageBranchProvider({
           },
         }),
       );
-      onRewound(replacement, {
-        id,
-        action: "send",
-        state: "accepted",
-        parts: previewInput(
+      onRewound(
+        replacement,
+        {
           id,
-          parts,
-          attachments,
-          catalog,
-          excludedSlashNames,
-        ),
-      });
+          action: "send",
+          state: "accepted",
+          parts: previewInput(
+            id,
+            parts,
+            attachments,
+            catalog,
+            excludedSlashNames,
+          ),
+        },
+        target,
+      );
     } finally {
       sending.current = false;
       setPending(false);

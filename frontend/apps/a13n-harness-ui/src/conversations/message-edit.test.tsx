@@ -122,7 +122,11 @@ function setup({
   const draft = new ThreadDraft();
   const rewound = vi.fn();
   const pending = vi.fn();
-  const view = (visible: boolean) => (
+  const view = (
+    visible: boolean,
+    checkpoint = continuation,
+    runId?: string,
+  ) => (
     <TransportContext value={transport}>
       <QueryClientProvider client={queries}>
         <MemoryRouter initialEntries={["/threads/one"]}>
@@ -131,8 +135,9 @@ function setup({
               <Location />
               <MessageBranchProvider
                 thread="one"
-                continuation={continuation}
+                continuation={checkpoint}
                 receipt={active ? receipt : undefined}
+                runId={runId}
                 active={active}
                 draft={draft}
                 blocked={false}
@@ -190,6 +195,8 @@ function setup({
     rewound,
     pending,
     hideSource: () => rendered.rerender(view(false)),
+    checkpoint: (revision: string, runId?: string) =>
+      rendered.rerender(view(true, revision, runId)),
   };
 }
 
@@ -220,7 +227,7 @@ it("opens during a Run without sending Stop, and Escape and Cancel both discard 
 });
 
 it("keeps the current Run's input editable after it enters saved history with a different turn identity", async () => {
-  const { post } = setup({ checkpointed: true });
+  const { post, rewound } = setup({ checkpointed: true });
   const editor = await openEditor();
   expect(editor.value).toBe("Checkpointed input");
   fireEvent.click(screen.getByRole("button", { name: "Stop & send" }));
@@ -229,6 +236,18 @@ it("keeps the current Run's input editable after it enters saved history with a 
     expected_source: receipt,
     turn_key: source,
   });
+  expect(rewound.mock.calls[0][2].inputPosition).toBe(0);
+});
+
+it("refreshes branch points when the active Run starts but not at its later checkpoints", async () => {
+  const { get, checkpoint } = setup();
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+  checkpoint("first", "run-one");
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  checkpoint("second", "run-one");
+  checkpoint("third", "run-one");
+  await screen.findByRole("button", { name: "Edit message" });
+  expect(get).toHaveBeenCalledTimes(2);
 });
 
 it("sends once in place, keeping the original order, retained attachment and current Skill reference", async () => {

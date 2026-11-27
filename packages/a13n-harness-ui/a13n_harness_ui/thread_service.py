@@ -46,8 +46,7 @@ from a13n_harness_ui.storage.continuations import publish_continuation, read_con
 from a13n_harness_ui.storage.contracts import AcpAgentSource, BotAgentSource, LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.display import (
     DisplayArchive,
-    before_display_input,
-    display_input_boundaries,
+    crop_display_archive,
     read_display,
     seal_display,
 )
@@ -89,6 +88,8 @@ class MessageBranchSource:
 @dataclass(frozen=True, slots=True)
 class MessageEditTarget:
     thread: Thread
+    saved_ref: ObjectRef
+    saved: Continuation | StoredThreadInitialState
     history: tuple[ModelMessage, ...]
     cut: int
     receipt_id: str | None
@@ -345,7 +346,7 @@ class ThreadService:
             previous = await read_continuation(
                 self._store.objects,
                 ref.model_copy(update={"logical_digest": source.completion.continuation_id}),
-                include_display=bool(terminal_key),
+                include_display=editing and terminal_key is not None,
             )
             if previous.harness_state.thread_id != source.thread_id:
                 raise ThreadError(
@@ -353,7 +354,13 @@ class ThreadService:
                 )
             prior = previous.harness_state.message_history
             add_native(prior, await to_thread.run_sync(boundaries, prior, False))
-            if terminal_key and (terminal_key, "before") not in result and previous.display_history and display_archive:
+            if (
+                editing
+                and terminal_key
+                and (terminal_key, "before") not in result
+                and previous.display_history
+                and display_archive
+            ):
                 # The durable display spans compaction. The previous completion is an exact
                 # edit prefix only for the immediately following ordinary input.
                 archive = await read_display(self._store.objects, display_archive)
@@ -390,16 +397,10 @@ class ThreadService:
                 or thread.last_execution is None
                 or thread.last_execution.status not in {"preparing", "running"}
             )
-            points, _, archive = await self._branch_boundaries(
-                source, ref, active.continuing if active else False, editing=can_edit
-            )
-            display_keys = None
-            if archive is not None and can_edit and any(side == "before" for _, side in points):
-                display = await read_display(self._store.objects, archive)
-                display_keys = await to_thread.run_sync(display_input_boundaries, display)
+            points, _, _ = await self._branch_boundaries(source, ref, active.continuing if active else False)
             projected = {
                 key: BranchPoint(
-                    edit=can_edit and (key, "before") in points and (display_keys is None or key in display_keys),
+                    edit=can_edit and (key, "before") in points,
                     branch=(key, "after") in points,
                 )
                 for key, _ in points
@@ -462,20 +463,18 @@ class ThreadService:
                 if cut < len(history) and isinstance(message := history[cut], ModelRequest):
                     submitted = editable_input(request_input_content(message))
                 if archive is not None:
-                    display = await read_display(self._store.objects, archive)
-                    boundary = (await to_thread.run_sync(display_input_boundaries, display)).get(turn_key)
-                    if boundary is None:
+                    archive = await crop_display_archive(self._store.objects, archive, turn_key)
+                    if archive is None:
                         raise ThreadError(
                             "This message has an ambiguous transcript boundary.", code="thread_branch_stale"
                         )
-                    archive = await to_thread.run_sync(before_display_input, display, boundary)
             else:
                 raise ThreadError("This message no longer has a usable history boundary.", code="thread_branch_stale")
             if attachment_ids and (submitted is None or not set(attachment_ids) <= submitted.attachment_ids):
                 raise ThreadError(
                     "The replacement references an attachment outside this input.", code="run_input_invalid"
                 )
-            return MessageEditTarget(thread, history, cut, active.receipt_id if active else None, archive)
+            return MessageEditTarget(thread, ref, saved, history, cut, active.receipt_id if active else None, archive)
 
     async def prepare_message_rewind(self, target: MessageEditTarget, stopped_at: ObjectRef | None) -> MessageRewind:
         thread_id = target.thread.thread_id
@@ -502,11 +501,13 @@ class ThreadService:
                 )
             ):
                 raise ThreadError("Conversation history changed. Reopen the message.", code="thread_branch_stale")
-            stored = (
-                await read_continuation(self._store.objects, thread.continuation)
-                if thread.continuation is not None
-                else await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
-            )
+            selected = thread.continuation or thread.initial_state
+            if selected == target.saved_ref:
+                stored = target.saved
+            elif thread.continuation is not None:
+                stored = await read_continuation(self._store.objects, thread.continuation)
+            else:
+                stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
             if stored.harness_state.thread_id != thread_id:
                 raise ThreadError(
                     "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
@@ -525,7 +526,7 @@ class ThreadService:
                         explicit_options=prior.explicit_options,
                     )
         state, excerpt, _ = await to_thread.run_sync(branch_prefix, target.history, target.cut, stored.harness_state)
-        if target.display is not None:
+        if target.cut == 0 and target.display is not None and (target.display.prefix or target.display.tail.items):
             display = await read_display(self._store.objects, target.display)
             turns = await to_thread.run_sync(display_turns, display)
             if turns:

@@ -881,6 +881,7 @@ function Rows({
           timestamp={row.timestamp}
           status={row.status}
           renderText={(text) => <MessageText text={text} />}
+          inputPosition={row.position}
         />
       ) : row.kind === "failure" ? (
         <FailureNotice message={row.text} />

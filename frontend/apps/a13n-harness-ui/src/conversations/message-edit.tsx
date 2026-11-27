@@ -21,6 +21,7 @@ type EditAttachment = {
 
 export type InlineEdit = {
   identity: string;
+  inputPosition?: number;
   selection: Schema<"MessageEditSelection">;
   text: string;
   attachments: EditAttachment[];
@@ -28,7 +29,7 @@ export type InlineEdit = {
 };
 
 export type SubmitMessageEdit = (
-  selection: Schema<"MessageEditSelection">,
+  target: InlineEdit,
   parts: OrderedInputPart[],
   attachments: Map<string, Schema<"ThreadAttachment">>,
 ) => Promise<void>;
@@ -114,7 +115,7 @@ export function MessageEditEditor({
     setDraft({ ...edit, error: undefined });
     try {
       await submit(
-        edit.selection,
+        edit,
         orderedEditParts(edit),
         new Map(
           edit.attachments.map(({ attachment }) => [
@@ -172,15 +173,30 @@ export function MessageEditEditor({
           }
         }}
       />
-      {edit.attachments.length > 0 && (
-        <div className={styles.editAttachments}>
+      <ConnectionNoticeContext value={false}>
+        <ErrorNotice
+          inline
+          error={edit.error}
+          message={
+            isConnectionError(edit.error) ||
+            edit.error instanceof EmptyResponseError
+              ? t(
+                  "Could not confirm the edit. Check the conversation before sending again.",
+                )
+              : undefined
+          }
+        />
+      </ConnectionNoticeContext>
+      <div className={styles.editFooter}>
+        <div className={styles.editDetails}>
           {edit.attachments.map((item) => (
             <span key={item.id} className={styles.editAttachment}>
               <span>{item.attachment.name}</span>
               <Button
+                className={styles.editAttachmentRemove}
                 type="button"
                 variant="ghost"
-                size="icon-sm"
+                size="icon-xs"
                 disabled={pending}
                 aria-label={t("Remove {{name}}", {
                   name: item.attachment.name,
@@ -198,45 +214,31 @@ export function MessageEditEditor({
               </Button>
             </span>
           ))}
+          {pending && <small role="status">{t("Sending edit…")}</small>}
         </div>
-      )}
-      <ConnectionNoticeContext value={false}>
-        <ErrorNotice
-          inline
-          error={edit.error}
-          message={
-            isConnectionError(edit.error) ||
-            edit.error instanceof EmptyResponseError
-              ? t(
-                  "Could not confirm the edit. Check the conversation before sending again.",
-                )
-              : undefined
-          }
-        />
-      </ConnectionNoticeContext>
-      <div className={styles.editActions}>
-        {pending && <small role="status">{t("Sending edit…")}</small>}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          title={t("Cancel")}
-          aria-label={t("Cancel")}
-          disabled={pending}
-          onClick={() => setDraft(null)}
-        >
-          <X aria-hidden="true" />
-        </Button>
-        <Button
-          type="submit"
-          size="icon-sm"
-          title={label}
-          aria-label={label}
-          aria-keyshortcuts={shortcut.ariaKeyShortcuts}
-          disabled={!canSubmit}
-        >
-          <Check aria-hidden="true" />
-        </Button>
+        <div className={styles.editActions}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            title={t("Cancel")}
+            aria-label={t("Cancel")}
+            disabled={pending}
+            onClick={() => setDraft(null)}
+          >
+            <X aria-hidden="true" />
+          </Button>
+          <Button
+            type="submit"
+            size="icon-sm"
+            title={label}
+            aria-label={label}
+            aria-keyshortcuts={shortcut.ariaKeyShortcuts}
+            disabled={!canSubmit}
+          >
+            <Check aria-hidden="true" />
+          </Button>
+        </div>
       </div>
     </form>
   );
