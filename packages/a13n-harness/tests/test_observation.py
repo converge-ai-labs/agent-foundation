@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
+    AgentDefinition,
     AgentIdentityRef,
     AgentInstanceContext,
     DefinitionError,
@@ -22,7 +23,9 @@ from a13n_harness import (
     ModelResolutionError,
     RunBindings,
     RunCleanupError,
+    SubagentDefinition,
 )
+from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.observation import redact_json
 from a13n_harness.plugins import (
     PluginRunExchange,
@@ -33,6 +36,7 @@ from a13n_harness.pricing import (
     ModelCostInput,
     ModelCostQuote,
 )
+from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.usage import RunUsageSummary
 from opentelemetry import metrics, trace
 from opentelemetry.sdk.metrics import MeterProvider
@@ -45,9 +49,9 @@ from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Instrumentation
 from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models import ModelRequestParameters, StreamedResponse
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.models.instrumented import InstrumentationSettings, InstrumentedModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.settings import ModelSettings
@@ -1081,6 +1085,60 @@ async def test_native_tool_spans_receive_enrichment() -> None:
         assert span.attributes["langfuse.session.id"] == result.state.thread_id
         assert span.attributes["a13n.run.id"] == result.run_id
         assert "a13n.run.outcome" not in span.attributes
+
+
+async def test_inline_subagent_native_spans_preserve_root_conversation_id() -> None:
+    provider, exporter, _, _ = _providers()
+
+    async def parent_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        if isinstance(messages[-1], ModelRequest) and any(
+            isinstance(part, ToolReturnPart) for part in messages[-1].parts
+        ):
+            yield "parent done"
+        else:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate", json_args='{"subagent":"reviewer","prompt":"Review"}', tool_call_id="delegate-1"
+                )
+            }
+
+    async def allow(*args: Any, **kwargs: Any) -> InvocationPolicyDecision:
+        return InvocationPolicyDecision.allow()
+
+    child = AgentDefinition(agent=AgentSpec(name="reviewer"), output_type=str, model=_model())
+    parent = AgentDefinition(
+        agent=AgentSpec(name="parent"),
+        output_type=str,
+        model=FunctionModel(stream_function=parent_model),
+        capabilities=(SubagentCapability(),),
+        subagents=(SubagentDefinition(name="reviewer", description="Review a task.", agent=child),),
+    )
+    executable = HarnessBuilder(instrumentation=HarnessInstrumentation(tracer_provider=provider)).build(parent)
+    result = await executable.run(
+        "Delegate the review",
+        bindings=RunBindings.embedded(
+            capabilities=(InvocationPolicyCapability(evaluator=allow),),
+        ),
+    )
+    assert result.output_or_raise() == "parent done"
+    assert result.state is not None
+    parent_thread_id = result.state.thread_id
+    root_conversation = "pydantic_ai.root_conversation_id"
+    conversation = "gen_ai.conversation.id"
+    native_spans = [
+        span.attributes
+        for span in exporter.get_finished_spans()
+        if span.attributes.get("gen_ai.operation.name") in {"invoke_agent", "chat"}
+        and span.attributes.get(conversation) is not None
+    ]
+    parent_spans = [attrs for attrs in native_spans if attrs[conversation] == parent_thread_id]
+    child_spans = [attrs for attrs in native_spans if attrs[conversation] != parent_thread_id]
+    assert parent_spans and all(root_conversation not in attrs for attrs in parent_spans)
+    assert {attrs["gen_ai.operation.name"] for attrs in child_spans} == {"invoke_agent", "chat"}
+    for attrs in child_spans:
+        assert attrs[root_conversation] == parent_thread_id
+        assert attrs["a13n.thread.id"] == attrs[conversation]
+        assert attrs["langfuse.observation.type"] in {"agent", "generation"}
 
 
 async def test_host_sampler_still_receives_existing_neutral_run_attributes() -> None:
