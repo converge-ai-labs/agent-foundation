@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 470" role="img" aria-label="A chart upload passes the sandbox allowlist. A second destination is blocked.">
-  <rect x="24" y="108" width="267" height="251" rx="3" class="pf"/>
+  <rect x="24" y="108" width="267" height="217" rx="3" class="pf"/>
   <rect x="45" y="137" width="224" height="159" rx="3" class="pl"/>
   <path d="M45 165 L269 165" class="pf"/>
   <circle cx="58" cy="151" r="2.1" class="fi"/>
