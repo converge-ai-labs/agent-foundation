@@ -197,6 +197,8 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
                         )
                     )
             query = query.where(or_(*matches))
+        if filters.app_id is not None:
+            query = query.where(SessionRow.app_id == filters.app_id)
         if filters.application:
             query = query.where(SessionRow.origin["application"].astext == filters.application)
         if filters.updated_after:
@@ -215,7 +217,10 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
             query = query.where(
                 SessionRow.id.in_(select(RunRow.session_id).where(RunRow.workspace_id == scope.workspace_id, match))
             )
-        owner = cursors.query_owner(scope.workspace_id, filters.model_dump(exclude={"limit", "cursor"}))
+        fingerprint = filters.model_dump(exclude={"limit", "cursor"})
+        if filters.app_id is None:
+            del fingerprint["app_id"]
+        owner = cursors.query_owner(scope.workspace_id, fingerprint)
         if filters.sort == "updated_at":
             rows, next_cursor = await cursors.keyset_page(
                 session,

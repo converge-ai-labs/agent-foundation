@@ -2,6 +2,25 @@ import { createContext, useContext } from "react";
 import { useClient } from "../auth/context";
 import { useAccess } from "../layout/workspace";
 import { useTranslation } from "react-i18next";
+import type { InstalledApp, LoadedApp } from "./types";
+
+const emptyCatalog: InstalledApp[] = [];
+
+export const Registry = createContext<{
+  apps: LoadedApp[];
+  catalog: InstalledApp[];
+  pending: boolean;
+  error: unknown;
+}>({ apps: [], catalog: emptyCatalog, pending: false, error: null });
+
+export function useInstalledApps() {
+  return useContext(Registry).catalog;
+}
+
+export function useAppLabel(appId: string) {
+  return useInstalledApps().find((app) => app.app_id === appId)?.name ?? appId;
+}
+
 export const AppContext = createContext<string | null>(null);
 
 /** Scope and requests are taken from the currently mounted host providers. */

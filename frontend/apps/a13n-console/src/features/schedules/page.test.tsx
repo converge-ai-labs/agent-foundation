@@ -1118,3 +1118,33 @@ it("preserves an unchanged one-time instant when editing metadata after its time
   await waitFor(() => expect(saved?.schedule).toEqual(once.schedule));
   expect(saved?.name).toBe("Morning report edited");
 });
+
+it("requests the URL App selection and carries schedule attribution to the detail header", async () => {
+  const owned = { ...schedule, app_id: "reports.app" };
+  const reads: URL[] = [];
+  show(`/workspace/ws_one/schedules?app_id=${owned.app_id}`, (request) => {
+    const url = new URL(request.url);
+    reads.push(url);
+    if (url.pathname.endsWith(`/schedules/${owned.id}`))
+      return Response.json(owned);
+    if (url.pathname.endsWith("/status")) return Response.json(status);
+    const items = url.pathname.endsWith("/schedules") ? [owned] : [];
+    return Response.json({ items, next_cursor: null });
+  });
+  expect(
+    (await screen.findByRole("row", { name: /Morning report/ })).textContent,
+  ).toContain(owned.app_id);
+  expect(
+    reads.some(
+      (url) =>
+        url.pathname.endsWith("/schedules") &&
+        url.searchParams.get("app_id") === owned.app_id,
+    ),
+  ).toBe(true);
+  await userEvent.click(screen.getByRole("link", { name: /Morning report/ }));
+  expect(
+    (await screen.findByText(owned.app_id))
+      .closest("[title]")
+      ?.getAttribute("title"),
+  ).toBe(owned.app_id);
+});

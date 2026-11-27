@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict
 
+from a13n_service.app_provenance import APP_ID_MAX_LENGTH, APP_ID_PATTERN
 from a13n_service.infra.errors import ServiceError, not_found
 
 
@@ -48,7 +49,7 @@ class AppManifest:
     has_run_seal_subscribers: bool = False
 
     def __post_init__(self) -> None:
-        if len(self.app_id) > 128 or not re.fullmatch(r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*", self.app_id):
+        if len(self.app_id) > APP_ID_MAX_LENGTH or not re.fullmatch(APP_ID_PATTERN, self.app_id):
             raise ValueError(f"Invalid App ID: {self.app_id}")
         object.__setattr__(self, "factory_keys", frozenset(self.factory_keys))
 

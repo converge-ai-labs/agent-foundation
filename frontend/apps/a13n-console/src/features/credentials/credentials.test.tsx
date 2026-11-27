@@ -13,6 +13,7 @@ import { ToastProvider } from "a13n-ui";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { Registry } from "../../app-plugins/context";
 import { createClient, type Client } from "../../service-client";
 import { credentialKeys, type Credential, type SessionCredential } from "./api";
 import { CredentialDetail } from "./detail";
@@ -597,8 +598,39 @@ it("shows App ownership and preserves inspection and sync without editing contro
       ? sessionPage([])
       : json({ ...credential, app_id: "claw" }),
   );
-  detail();
-  await screen.findByText("Managed by claw");
+  mount(
+    <Registry.Provider
+      value={{
+        apps: [],
+        pending: false,
+        error: null,
+        catalog: [
+          {
+            app_id: "claw",
+            name: "Claw Reports",
+            version: "1",
+            distribution: "claw",
+            enabled: false,
+            factory_keys: [],
+            frontend: null,
+          },
+        ],
+      }}
+    >
+      <Routes>
+        <Route
+          path="/credentials/:credentialId"
+          element={<CredentialDetail />}
+        />
+      </Routes>
+    </Registry.Provider>,
+    "/credentials/ecred_test",
+  );
+  expect(
+    (await screen.findByText("Managed by Claw Reports"))
+      .closest("[title]")
+      ?.getAttribute("title"),
+  ).toContain("(claw)");
   expect(
     screen.getByRole("button", { name: "Sync active Sessions" }),
   ).toBeTruthy();
@@ -609,4 +641,20 @@ it("shows App ownership and preserves inspection and sync without editing contro
   await user.click(screen.getByRole("tab", { name: "Configuration" }));
   expect(screen.getByText("api.github.com")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
+});
+
+it("forwards the App selection to credential reads and identifies the matching row", async () => {
+  const appId = "credential.app";
+  fetcher.mockImplementation(async () =>
+    page([{ ...credential, app_id: appId }]),
+  );
+  mount(<CredentialsPage />, `/credentials?app_id=${appId}`);
+  expect(
+    (await screen.findByRole("row", { name: /GitHub automation/ })).textContent,
+  ).toContain(appId);
+  expect(
+    requests("GET").some(
+      (request) => new URL(request.url).searchParams.get("app_id") === appId,
+    ),
+  ).toBe(true);
 });

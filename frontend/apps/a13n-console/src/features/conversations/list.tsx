@@ -10,6 +10,8 @@ import {
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
+import { useAppLabel } from "../../app-plugins/context";
+import { AppBadge } from "../../shared/identity";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
@@ -108,7 +110,7 @@ function SessionResults({
 }: {
   filters: SessionFilters;
   create: ReactNode;
-  onFilter: (key: "application" | "label", value: string) => void;
+  onFilter: (key: "application" | "app_id" | "label", value: string) => void;
   onSort: (sort: NonNullable<SessionFilters["sort"]>) => void;
 }) {
   const { t } = useTranslation(),
@@ -320,7 +322,11 @@ function SessionResults({
             : undefined
         }
       >
-        <Pagination page={page} next={sessions.data.next_cursor} />
+        <Pagination
+          page={page}
+          next={sessions.data.next_cursor}
+          pending={sessions.isPlaceholderData}
+        />
       </CollectionFooter>
       {editing && (
         <SessionEditor
@@ -347,7 +353,7 @@ function SessionIdentity({
   agentImage?: string | null;
   href: string;
   metrics: ReactNode;
-  onFilter: (key: "application" | "label", value: string) => void;
+  onFilter: (key: "application" | "app_id" | "label", value: string) => void;
 }) {
   const { t } = useTranslation();
   const title = sessionTitle(session);
@@ -438,11 +444,31 @@ function SessionSource({
   onFilter,
 }: {
   session: Schema["SessionView"];
-  onFilter: (key: "application", value: string) => void;
+  onFilter: (key: "application" | "app_id", value: string) => void;
 }) {
   const { t } = useTranslation();
   const origin = session.origin;
-  if (!origin)
+  const appId = session.app_id;
+  const appName = useAppLabel(appId ?? "");
+  const application = origin?.application;
+  const duplicate =
+    appId &&
+    application &&
+    [appId, appName].some(
+      (name) => name.toLowerCase() === application.toLowerCase(),
+    );
+  const caption = application && !duplicate && (
+    <button
+      type="button"
+      className={styles.application}
+      data-lead={(!appId && !origin?.name) || undefined}
+      onClick={() => onFilter("application", application)}
+      title={t("Filter by {{label}}", { label: application })}
+    >
+      {application}
+    </button>
+  );
+  if (!origin && !appId)
     return (
       <span className={styles.unspecified} title={t("Not specified")}>
         <span aria-hidden="true">—</span>
@@ -451,20 +477,19 @@ function SessionSource({
     );
   return (
     <div className={styles.source}>
-      {origin.name && (
+      {origin?.name && (
         <span className={styles.sourceName} title={origin.name}>
           {origin.name}
         </span>
       )}
-      <button
-        type="button"
-        className={styles.application}
-        data-lead={!origin.name || undefined}
-        onClick={() => onFilter("application", origin.application)}
-        title={t("Filter by {{label}}", { label: origin.application })}
-      >
-        {origin.application}
-      </button>
+      {appId ? (
+        <span className={styles.sourceMeta}>
+          <AppBadge appId={appId} onClick={() => onFilter("app_id", appId)} />
+          {caption}
+        </span>
+      ) : (
+        caption
+      )}
     </div>
   );
 }

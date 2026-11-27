@@ -341,6 +341,16 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     assert len(tools) == len(selected) == len({tool.name for tool in tools})
     assert all(len(tool.name) <= 64 for tool in tools)
     assert all("X-Workspace-ID" not in tool.parameters["properties"] for tool in tools)
+    by_name = {tool.name: tool for tool in tools}
+    for collection in ("sessions", "environments", "browsers", "memory-spaces", "schedules", "egress-credentials"):
+        operation = schema["paths"][f"/api/v1/{collection}"]["get"]
+        assert operation["x-a13n-mcp"] is True
+        assert "app_id" in by_name[tool_name(operation["operationId"])].parameters["properties"]
+    browser_schemas = schema["components"]["schemas"]
+    assert browser_schemas["Browser"]["properties"]["app_id"]["readOnly"] is True
+    assert "app_context" not in browser_schemas["Browser"]["properties"]
+    for write_schema in ("BrowserCreate", "BrowserAttach"):
+        assert {"app_id", "app_context"}.isdisjoint(browser_schemas[write_schema]["properties"])
     findings = next(
         tool for tool in tools if tool.name == tool_name(schema["paths"]["/api/v1/findings"]["get"]["operationId"])
     )

@@ -8,12 +8,14 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import {
+  AppFilter,
   CollectionFooter,
   Empty,
   Pagination,
   ResourceIdentity,
   ResourceTable,
   Toolbar,
+  useAppFilterParam,
   useCursor,
 } from "../../shared/collection";
 import {
@@ -23,6 +25,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { FormActions, TextAreaField } from "../../shared/forms";
+import { AppBadge } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { invalidateSpaces, spaceQueries } from "./spaces-api";
 
@@ -34,19 +37,20 @@ export function MemorySpacesPage() {
     client = useClient(),
     { t } = useTranslation(),
     navigate = useNavigate();
+  const [appId, setAppId] = useAppFilterParam();
   const [search, setSearch] = useState("");
   const [enabled, setEnabled] = useState<boolean>();
   const term = search.trim().toLocaleLowerCase();
-  const page = useCursor({ term, enabled });
+  const page = useCursor({ term, enabled, appId });
   const query = useQuery(
-    spaceQueries(client, workspace.id).page(term, enabled, page.cursor),
+    spaceQueries(client, workspace.id).page(term, enabled, page.cursor, appId),
   );
   const create = can("write") ? (
     <CreateSpace
       onCreated={(id) => navigate(`${basePath}/memory-spaces/${id}`)}
     />
   ) : undefined;
-  const filtered = !!term || enabled !== undefined;
+  const filtered = !!term || enabled !== undefined || !!appId;
   return (
     <Page
       title={t("Memory spaces")}
@@ -60,19 +64,22 @@ export function MemorySpacesPage() {
           onSearchChange={setSearch}
           searchLabel={t("Search spaces")}
           filters={
-            <ChoiceField
-              label={t("Status")}
-              variant="filter"
-              value={enabled === undefined ? "all" : String(enabled)}
-              options={[
-                { value: "all", label: t("All statuses") },
-                { value: "true", label: t("Enabled") },
-                { value: "false", label: t("Disabled") },
-              ]}
-              onValueChange={(value) =>
-                setEnabled(value === "all" ? undefined : value === "true")
-              }
-            />
+            <>
+              <ChoiceField
+                label={t("Status")}
+                variant="filter"
+                value={enabled === undefined ? "all" : String(enabled)}
+                options={[
+                  { value: "all", label: t("All statuses") },
+                  { value: "true", label: t("Enabled") },
+                  { value: "false", label: t("Disabled") },
+                ]}
+                onValueChange={(value) =>
+                  setEnabled(value === "all" ? undefined : value === "true")
+                }
+              />
+              <AppFilter value={appId} onChange={setAppId} />
+            </>
           }
         />
       }
@@ -96,6 +103,7 @@ export function MemorySpacesPage() {
                     name={space.name}
                     description={space.description ?? space.id}
                     resourceId={space.id}
+                    badge={space.app_id && <AppBadge appId={space.app_id} />}
                     icon={<BrainIcon size={16} />}
                   />
                 ),

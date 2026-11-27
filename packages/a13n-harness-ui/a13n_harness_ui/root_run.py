@@ -1018,18 +1018,21 @@ class RootRunCoordinator:
                 self._browser_handback.retry(thread_id)
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
-            try:
-                notice = root_operation_notice(
-                    _view(operation),
-                    output=outcome.result.output
-                    if outcome is not None and isinstance(outcome.result.output, str)
-                    else None,
-                    deferred=outcome.result.deferred if outcome is not None else None,
-                )
-            except Exception:
-                notice = None
-            if thread_id == BOT_THREAD_ID and operation.status is RootOperationStatus.completed:
-                notice = None
+            notice = None
+            if not (
+                operation.status is RootOperationStatus.completed
+                and (thread_id == BOT_THREAD_ID or admission.published.value.coordinator_thread_id is not None)
+            ):
+                try:
+                    notice = root_operation_notice(
+                        _view(operation),
+                        output=outcome.result.output
+                        if outcome is not None and isinstance(outcome.result.output, str)
+                        else None,
+                        deferred=outcome.result.deferred if outcome is not None else None,
+                    )
+                except Exception:
+                    pass
             await self._publish_change(operation, notice=None if operation.observation_only else notice)
             if self._on_settled is not None and self._accepting and not operation.observation_only:
                 try:

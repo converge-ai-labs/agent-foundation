@@ -8,6 +8,7 @@ import pytest
 from a13n_harness import DeferredToolCall, DeferredToolRequests, HarnessRunResult, HarnessState
 from a13n_harness.usage import RunUsageSummary
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization
+from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice, SummaryCursor
 from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.root_execution import RootContinuationSelection, RootRunOutcome
@@ -42,11 +43,22 @@ def test_reply_brief_includes_details_after_a_short_introduction() -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("notify_raises", [False, True])
+@pytest.mark.parametrize("coordinator_thread_id", [None, "thread-coordinator"], ids=["independent", "worker"])
 @pytest.mark.parametrize(
-    "scenario", ["completed", "save_failed", "question", "approval", "preparation_failed", "cancelled"]
+    "scenario",
+    [
+        "completed",
+        "goal_verified",
+        "goal_incomplete",
+        "save_failed",
+        "question",
+        "approval",
+        "preparation_failed",
+        "cancelled",
+    ],
 )
 async def test_root_notices_follow_host_settlement_and_replay_without_new_history(
-    scenario: str, notify_raises: bool
+    scenario: str, coordinator_thread_id: str | None, notify_raises: bool
 ) -> None:
     hub = HarnessUiSummaryHub(epoch="notice-test")
     deferred = None
@@ -89,6 +101,13 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
 
             raise RunCoordinationError("Choose a model first.", code="model_missing")
         await kwargs["on_stream"](SimpleNamespace(run_id="run-notice"))
+        if scenario in {"goal_verified", "goal_incomplete"}:
+            await kwargs["on_goal"](
+                GoalView(
+                    objective="Verify the full objective",
+                    status="verified" if scenario == "goal_verified" else "max_iterations",
+                )
+            )
         status = "suspended" if deferred else "cancelled" if scenario == "cancelled" else "completed"
         return RootRunOutcome(
             result=HarnessRunResult(
@@ -126,7 +145,9 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
     async def capture_project(**kwargs):
         admission = await capture(**kwargs)
         admission.published.value = SimpleNamespace(
-            project_id="project-captured", origin_browser_id="browser_" + "a" * 32
+            project_id="project-captured",
+            origin_browser_id="browser_" + "a" * 32,
+            coordinator_thread_id=coordinator_thread_id,
         )
         return admission
 
@@ -155,28 +176,20 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
             assert len(settled) == 1
             assert settled[0][0] == "project-captured"
             assert settled[0][1].status == operation.status
-            if scenario == "cancelled":
-                assert operation.status == "cancelled"
-            else:
-                with fail_after(3):
-                    while True:
-                        event = await subscription.receive()
-                        if event.notice is not None:
-                            break
-                assert event.kind == "root_operation"
-                assert event.thread_id == "thread_test"
-                assert event.notice.origin_browser_id == "browser_" + "a" * 32
-                assert event.notice.receipt_id == receipt.receipt_id
-                assert event.notice.status == operation.status
-                assert operation.completed_at is not None and operation.completed_at <= datetime.now(UTC)
-                expected = {
-                    "completed": "Fixed project expansion and archived filtering.",
-                    "save_failed": "disk unavailable",
-                    "question": "Which project should I update?",
-                    "approval": "This command deploys the application.",
-                    "preparation_failed": "Choose a model first.",
-                }
-                assert expected[scenario] in event.notice.brief
+            expected_status, expected_notice = {
+                "completed": ("completed", "completed"),
+                "goal_verified": ("completed", "goal_verified"),
+                "goal_incomplete": ("completed", "goal_incomplete"),
+                "save_failed": ("failed", "failed"),
+                "question": ("suspended", "suspended"),
+                "approval": ("suspended", "suspended"),
+                "preparation_failed": ("failed", "failed"),
+                "cancelled": ("cancelled", None),
+            }[scenario]
+            assert operation.status == expected_status
+            assert operation.completed_at is not None and operation.completed_at <= datetime.now(UTC)
+            if coordinator_thread_id is not None and expected_status == "completed":
+                expected_notice = None
         # Joining without a cursor starts at the current boundary, not historical completions.
         async with hub.subscribe() as fresh:
             boundary = fresh.cursor.sequence
@@ -185,9 +198,30 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
             with fail_after(3):
                 for _ in range(boundary - cursor.sequence):
                     events.append(await replay.receive())
-        notices = [event for event in events if event.notice is not None]
-        assert len(notices) == (0 if scenario == "cancelled" else 1)
-        assert pushed == [("thread_test", event.notice) for event in notices]
+        terminal, refresh = events[-2:]
+        assert terminal.kind == "root_operation" and terminal.thread_id == "thread_test"
+        assert refresh.kind == "thread" and refresh.thread_id == "thread_test" and refresh.notice is None
+        assert all(event.notice is None for event in events[:-2])
+        notice = terminal.notice
+        if expected_notice is None:
+            assert notice is None
+            assert pushed == []
+        else:
+            assert notice is not None
+            assert notice.origin_browser_id == "browser_" + "a" * 32
+            assert notice.receipt_id == receipt.receipt_id
+            assert notice.status == expected_notice
+            expected_brief = {
+                "completed": "Fixed project expansion and archived filtering.",
+                "goal_verified": "Fixed project expansion and archived filtering.",
+                "goal_incomplete": "The follow-up check limit was reached.",
+                "save_failed": "disk unavailable",
+                "question": "Which project should I update?",
+                "approval": "This command deploys the application.",
+                "preparation_failed": "Choose a model first.",
+            }
+            assert expected_brief[scenario] in notice.brief
+            assert pushed == [("thread_test", notice)]
     finally:
         await coordinator.close(timeout_seconds=1)
         await hub.close()
@@ -205,7 +239,6 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
     ],
 )
 def test_goal_notices_distinguish_verification_from_run_completion(goal_status, operation_status, expected):
-    from a13n_harness_ui.goal import GoalView
     from a13n_harness_ui.notifications import root_operation_notice
     from a13n_harness_ui.surfaces import RootOperationStatus, RootOperationView, RootRunReceipt
 

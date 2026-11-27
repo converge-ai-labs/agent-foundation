@@ -55,6 +55,13 @@
   font-size: var(--a13n-text-md);
   line-height: 1.35;
 }
+.resourceMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: min(420px, 40vw);
+}
 .resourceCopy small {
   display: block;
   max-width: min(420px, 40vw);

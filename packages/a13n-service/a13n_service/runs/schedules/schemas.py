@@ -5,6 +5,7 @@ from typing import Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from a13n_service.app_provenance import AppIdFilter
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
@@ -157,6 +158,7 @@ class SchedulePage(_Model):
 
 class ScheduleQuery(_Model):
     limit: PageLimit = 50
+    app_id: AppIdFilter | None = None
     cursor: str | None = None
     state: ScheduleState | None = None
     agent_id: ObjectId | None = None

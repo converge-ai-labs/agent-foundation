@@ -138,6 +138,13 @@ button.tag:hover .tagKey {
   gap: 2px;
   justify-items: start;
 }
+.sourceMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+}
 .sourceName {
   max-width: 100%;
   overflow: hidden;

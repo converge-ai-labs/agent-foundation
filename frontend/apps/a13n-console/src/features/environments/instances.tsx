@@ -20,12 +20,14 @@ import {
   type Schema,
 } from "../../shared/api";
 import {
+  AppFilter,
   CollectionFooter,
   Empty,
   Pagination,
   ResourceIdentity,
   ResourceTable,
   Toolbar,
+  useAppFilterParam,
   useCursor,
 } from "../../shared/collection";
 import {
@@ -36,7 +38,7 @@ import {
 } from "../../shared/feedback";
 import { FormActions, SchemaFields } from "../../shared/forms";
 import { object } from "../../shared/forms/schema-definition";
-import { ProviderIcon } from "../../shared/identity";
+import { AppBadge, ProviderIcon } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers/manage-link";
@@ -72,20 +74,21 @@ export function EnvironmentInstances() {
     { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
     [selected, setSelected] = useState<Schema["EnvironmentView"]>();
+  const [appId, setAppId] = useAppFilterParam();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>();
   const term = search.trim().toLocaleLowerCase();
-  const filtered = !!term || !!status;
-  const page = useCursor({ term, status });
+  const filtered = !!term || !!status || !!appId;
+  const page = useCursor({ term, status, appId });
   const query = useQuery({
-    queryKey: ["environments", workspace.id, page.cursor, term, status],
+    queryKey: ["environments", workspace.id, page.cursor, term, status, appId],
     queryFn: ({ signal }) =>
       matchingPage(
         (cursor, limit) =>
           client
             .workspace(workspace.id)
             .GET("/api/v1/environments", {
-              params: { query: { cursor, limit, status } },
+              params: { query: { cursor, limit, status, app_id: appId } },
               signal,
             })
             .then(data),
@@ -137,21 +140,24 @@ export function EnvironmentInstances() {
           onSearchChange={setSearch}
           searchLabel={t("Search environments")}
           filters={
-            <ChoiceField
-              label={t("Status")}
-              variant="filter"
-              value={status ?? "all"}
-              onValueChange={(value) =>
-                setStatus(STATUSES.find((item) => item === value))
-              }
-              options={[
-                { value: "all", label: t("All statuses") },
-                ...STATUSES.map((value) => ({
-                  value,
-                  label: t(`state.${value}`),
-                })),
-              ]}
-            />
+            <>
+              <ChoiceField
+                label={t("Status")}
+                variant="filter"
+                value={status ?? "all"}
+                onValueChange={(value) =>
+                  setStatus(STATUSES.find((item) => item === value))
+                }
+                options={[
+                  { value: "all", label: t("All statuses") },
+                  ...STATUSES.map((value) => ({
+                    value,
+                    label: t(`state.${value}`),
+                  })),
+                ]}
+              />
+              <AppFilter value={appId} onChange={setAppId} />
+            </>
           }
         />
       }
@@ -196,6 +202,7 @@ export function EnvironmentInstances() {
                       />
                     }
                     description={templateName(item)}
+                    badge={item.app_id && <AppBadge appId={item.app_id} />}
                   />
                 ),
               },

@@ -64,20 +64,31 @@ from a13n_service.tenancy.authorize import Principal
 
 
 async def list_environments(
-    runtime: Runtime, actor: Principal, workspace_id: str, *, status: str | None, limit: int, cursor: str | None
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    *,
+    status: str | None,
+    limit: int,
+    cursor: str | None,
+    app_id: str | None = None,
 ) -> EnvironmentPage:
     """Instances of the workspace; deleted tombstones only when asked for with `status=deleted`."""
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
+        query = select(EnvironmentRow).where(
+            EnvironmentRow.workspace_id == scope.workspace_id,
+            EnvironmentRow.status == status if status is not None else EnvironmentRow.status != "deleted",
+        )
+        if app_id is not None:
+            query = query.where(EnvironmentRow.app_id == app_id)
+        filters = (status,) if app_id is None else (status, app_id)
         rows, next_cursor = await cursors.id_page(
             session,
-            select(EnvironmentRow).where(
-                EnvironmentRow.workspace_id == scope.workspace_id,
-                EnvironmentRow.status == status if status is not None else EnvironmentRow.status != "deleted",
-            ),
+            query,
             EnvironmentRow.id,
             kind="environments",
-            owner=cursors.query_owner(scope.workspace_id, status),
+            owner=cursors.query_owner(scope.workspace_id, *filters),
             cursor=cursor,
             limit=limit,
         )

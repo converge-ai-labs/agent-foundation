@@ -123,16 +123,19 @@ def require_operator_managed(row: CredentialRow) -> None:
 
 
 async def list_credentials(
-    storage: Storage, actor: Principal, workspace_id: str, *, limit: int, cursor: str | None
+    storage: Storage, actor: Principal, workspace_id: str, *, limit: int, cursor: str | None, app_id: str | None = None
 ) -> CredentialPage:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
+        query = select(CredentialRow).where(CredentialRow.workspace_id == scope.workspace_id)
+        if app_id is not None:
+            query = query.where(CredentialRow.app_id == app_id)
         rows, next_cursor = await cursors.keyset_page(
             session,
-            select(CredentialRow).where(CredentialRow.workspace_id == scope.workspace_id),
+            query,
             (CredentialRow.created_at, CredentialRow.id),
             kind="egress_credentials",
-            owner=scope.workspace_id,
+            owner=scope.workspace_id if app_id is None else cursors.query_owner(scope.workspace_id, app_id),
             cursor=cursor,
             limit=limit,
             newest_first=True,
