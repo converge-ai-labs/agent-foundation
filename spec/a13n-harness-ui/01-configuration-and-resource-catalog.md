@@ -51,6 +51,8 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 
 [Bot and Connector Ingress](12-bot-and-connector-ingress.md#configuration-and-scheduling) owns `webui.bot` Agent and Model selections, optional instructions, and scheduling settings. Its `bot/` workspace is runtime content beside the selected root YAML, not a resource source. Private Connector settings and credentials use the instance database under that contract, not this file-resource catalog.
 
+[Workbench keyboard shortcuts](webui/04-workbench-interaction.md#workbench-keyboard-shortcuts) owns the instance `webui.shortcuts` mapping and its defaults. The [composer send shortcut](webui/04-workbench-interaction.md#conversation-and-shared-composer) uses the separate `webui.send_shortcut` key.
+
 [Live Mode](10-live-mode.md#configuration-and-executor) owns the optional root `live` mapping and existing Codex Model selection. Loading configuration never enables Live or starts microphone capture.
 
 The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:

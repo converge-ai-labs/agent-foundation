@@ -13,6 +13,7 @@ import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { useWorkbenchShortcut } from "../shell/workbench-shortcuts";
 import styles from "./terminal.module.css";
 
 export type TerminalRequest = { cwd: string; projectId: string };
@@ -48,6 +49,7 @@ export function TerminalPanel({
   const { t } = useTranslation();
   const { client } = useTransport();
   const shortcuts = terminalShortcutLabels();
+  const terminalBinding = useWorkbenchShortcut("terminal");
   const newTerminal = useRef<HTMLButtonElement>(null);
   const queries = useQueryClient();
   const currentProject = useRef(projectId);
@@ -226,7 +228,9 @@ export function TerminalPanel({
           <TerminalAction
             ref={newTerminal}
             label={t("New terminal")}
-            shortcut={shortcuts.create}
+            shortcut={
+              terminalBinding === "ctrl-backtick" ? shortcuts.create : undefined
+            }
             disabled={pending || attempted || !projectId || !directory}
             description={
               directory

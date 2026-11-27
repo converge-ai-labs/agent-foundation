@@ -12578,6 +12578,9 @@
             "title": "Send Shortcut",
             "default": "enter"
           },
+          "shortcuts": {
+            "$ref": "#/components/schemas/WebUiShortcutsConfiguration"
+          },
           "coordinator_by_default": {
             "type": "boolean",
             "title": "Coordinator By Default",
@@ -30225,6 +30228,91 @@
           "supports_restricted_scrape"
         ],
         "title": "WebProviderType"
+      },
+      "WebUiShortcutsConfiguration": {
+        "properties": {
+          "new_chat": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-shift-o",
+              "mod-n"
+            ],
+            "title": "New Chat",
+            "default": "off"
+          },
+          "search_chats": {
+            "type": "string",
+            "enum": [
+              "mod-f",
+              "mod-k",
+              "both",
+              "off"
+            ],
+            "title": "Search Chats",
+            "default": "mod-f"
+          },
+          "toggle_sidebar": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-b",
+              "mod-shift-s"
+            ],
+            "title": "Toggle Sidebar",
+            "default": "off"
+          },
+          "toggle_supporting_panel": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-j"
+            ],
+            "title": "Toggle Supporting Panel",
+            "default": "off"
+          },
+          "open_files": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-shift-e"
+            ],
+            "title": "Open Files",
+            "default": "off"
+          },
+          "open_changes": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-shift-g"
+            ],
+            "title": "Open Changes",
+            "default": "off"
+          },
+          "terminal": {
+            "type": "string",
+            "enum": [
+              "ctrl-backtick",
+              "off"
+            ],
+            "title": "Terminal",
+            "default": "ctrl-backtick"
+          },
+          "open_settings": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-comma"
+            ],
+            "title": "Open Settings",
+            "default": "off"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "WebUiShortcutsConfiguration"
       },
       "WorkbenchPage": {
         "additionalProperties": false,

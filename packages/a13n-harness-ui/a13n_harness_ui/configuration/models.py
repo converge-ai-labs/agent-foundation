@@ -377,8 +377,28 @@ class BotConfiguration(ConfigurationModel):
 ComposerSendShortcut = Literal["enter", "mod-enter"]
 
 
+class WebUiShortcutsConfiguration(ConfigurationModel):
+    new_chat: Literal["off", "mod-shift-o", "mod-n"] = Field(default="off", exclude_if=lambda value: value == "off")
+    search_chats: Literal["mod-f", "mod-k", "both", "off"] = Field(
+        default="mod-f", exclude_if=lambda value: value == "mod-f"
+    )
+    toggle_sidebar: Literal["off", "mod-b", "mod-shift-s"] = Field(
+        default="off", exclude_if=lambda value: value == "off"
+    )
+    toggle_supporting_panel: Literal["off", "mod-j"] = Field(default="off", exclude_if=lambda value: value == "off")
+    open_files: Literal["off", "mod-shift-e"] = Field(default="off", exclude_if=lambda value: value == "off")
+    open_changes: Literal["off", "mod-shift-g"] = Field(default="off", exclude_if=lambda value: value == "off")
+    terminal: Literal["ctrl-backtick", "off"] = Field(
+        default="ctrl-backtick", exclude_if=lambda value: value == "ctrl-backtick"
+    )
+    open_settings: Literal["off", "mod-comma"] = Field(default="off", exclude_if=lambda value: value == "off")
+
+
 class WebUiConfiguration(ConfigurationModel):
     send_shortcut: ComposerSendShortcut = Field(default="enter", exclude_if=lambda value: value == "enter")
+    shortcuts: WebUiShortcutsConfiguration = Field(
+        default_factory=WebUiShortcutsConfiguration, exclude_if=lambda value: value == WebUiShortcutsConfiguration()
+    )
     coordinator_by_default: bool = Field(default=False, exclude_if=lambda value: not value)
     allowed_origins: tuple[str, ...] = ()
     bot: BotConfiguration = Field(default_factory=BotConfiguration)

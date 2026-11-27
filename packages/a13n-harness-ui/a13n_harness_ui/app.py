@@ -124,6 +124,7 @@ from a13n_harness_ui.configuration.models import (
     McpRemoteTransport,
     PairedDeviceAuthentication,
     ProjectResource,
+    WebUiShortcutsConfiguration,
 )
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
@@ -467,6 +468,7 @@ class AppStatus(BaseModel):
     memory_organization: MemoryOrganizationStatus | None = None
     input_prediction_enabled: bool = False
     send_shortcut: ComposerSendShortcut = "enter"
+    shortcuts: WebUiShortcutsConfiguration = Field(default_factory=WebUiShortcutsConfiguration)
     coordinator_by_default: bool = False
     inbox_auto_mark_read: bool = True
 
@@ -997,6 +999,11 @@ class HarnessUiApp:
                 memory_organization=self._memory_organizer.status(configuration),
                 input_prediction_enabled=configuration is not None and configuration.document.input_prediction.enabled,
                 send_shortcut=configuration.document.webui.send_shortcut if configuration is not None else "enter",
+                shortcuts=(
+                    configuration.document.webui.shortcuts
+                    if configuration is not None
+                    else WebUiShortcutsConfiguration()
+                ),
                 coordinator_by_default=configuration is not None
                 and configuration.document.webui.coordinator_by_default,
                 inbox_auto_mark_read=configuration is None or configuration.document.inbox.auto_mark_read,

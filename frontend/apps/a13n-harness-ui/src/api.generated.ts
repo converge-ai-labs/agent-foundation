@@ -4239,6 +4239,7 @@ export interface components {
              * @enum {string}
              */
             send_shortcut?: "enter" | "mod-enter";
+            shortcuts?: components["schemas"]["WebUiShortcutsConfiguration"];
             /**
              * Coordinator By Default
              * @default false
@@ -10616,6 +10617,59 @@ export interface components {
             operations: ("search" | "scrape")[];
             /** Supports Restricted Scrape */
             supports_restricted_scrape: boolean;
+        };
+        /** WebUiShortcutsConfiguration */
+        WebUiShortcutsConfiguration: {
+            /**
+             * New Chat
+             * @default off
+             * @enum {string}
+             */
+            new_chat?: "off" | "mod-shift-o" | "mod-n";
+            /**
+             * Search Chats
+             * @default mod-f
+             * @enum {string}
+             */
+            search_chats?: "mod-f" | "mod-k" | "both" | "off";
+            /**
+             * Toggle Sidebar
+             * @default off
+             * @enum {string}
+             */
+            toggle_sidebar?: "off" | "mod-b" | "mod-shift-s";
+            /**
+             * Toggle Supporting Panel
+             * @default off
+             * @enum {string}
+             */
+            toggle_supporting_panel?: "off" | "mod-j";
+            /**
+             * Open Files
+             * @default off
+             * @enum {string}
+             */
+            open_files?: "off" | "mod-shift-e";
+            /**
+             * Open Changes
+             * @default off
+             * @enum {string}
+             */
+            open_changes?: "off" | "mod-shift-g";
+            /**
+             * Terminal
+             * @default ctrl-backtick
+             * @enum {string}
+             */
+            terminal?: "ctrl-backtick" | "off";
+            /**
+             * Open Settings
+             * @default off
+             * @enum {string}
+             */
+            open_settings?: "off" | "mod-comma";
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         /** WorkbenchPage */
         WorkbenchPage: {

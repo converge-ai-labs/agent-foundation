@@ -46,6 +46,10 @@ import { newConversationPath } from "./new-conversation";
 import { ThreadRow } from "./thread-row";
 import styles from "./conversation.module.css";
 import { readPreference, writePreference } from "../shell/preferences";
+import {
+  shortcutAttributes,
+  useWorkbenchShortcut,
+} from "../shell/workbench-shortcuts";
 import { RecentNavigation } from "./recent-navigation";
 import {
   useNavigationObservations,
@@ -70,6 +74,7 @@ type Group = {
 
 export function ConversationNavigation() {
   const { t } = useTranslation();
+  const newChatShortcut = useWorkbenchShortcut("new_chat");
   const projects = useProjects();
   const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
@@ -219,7 +224,12 @@ export function ConversationNavigation() {
     >
       <div className={styles.navigation}>
         <nav aria-label={t("Chat shortcuts")} className={styles.shortcuts}>
-          <NavLink to="/" end className={styles.newConversationLink}>
+          <NavLink
+            to="/"
+            end
+            className={styles.newConversationLink}
+            {...shortcutAttributes(t("New"), newChatShortcut)}
+          >
             <Plus size={18} aria-hidden="true" />
             <span>{t("New")}</span>
           </NavLink>
