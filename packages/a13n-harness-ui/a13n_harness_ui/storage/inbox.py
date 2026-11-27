@@ -1,11 +1,12 @@
 """Intentional human-facing Inbox items, independent of Thread unread state."""
 
+import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from secrets import token_hex
 from typing import Literal
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import ColumnElement, CursorResult, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert
 
 from a13n_harness_ui.errors import ThreadError
@@ -122,6 +123,33 @@ class InboxRepository:
             )
             needs_you, updates = counts.one()
         return InboxUnreadCounts(needs_you=needs_you, updates=updates)
+
+    async def thread_unread(self, thread_id: str) -> tuple[tuple[str, str, datetime], ...]:
+        async with short_session(self._sessions) as session:
+            rows = await session.execute(
+                select(InboxItemRecord.item_id, InboxItemRecord.tool_call_id, InboxItemRecord.created_at)
+                .where(InboxItemRecord.thread_id == thread_id, _UNREAD)
+                .order_by(InboxItemRecord.item_id)
+            )
+            return tuple((item_id, call_id, created_at) for item_id, call_id, created_at in rows)
+
+    async def mark_thread_read(self, thread_id: str, *, item_ids: tuple[str, ...]) -> bool:
+        # One bound value avoids a SQL variable per item regardless of Inbox size.
+        ids = func.json_each(json.dumps(item_ids)).table_valued("value")
+        return await self._mark_thread_read(thread_id, InboxItemRecord.item_id.in_(select(ids.c.value)))
+
+    async def mark_thread_read_through(self, thread_id: str, *, through: datetime) -> bool:
+        return await self._mark_thread_read(thread_id, InboxItemRecord.created_at <= through)
+
+    async def _mark_thread_read(self, thread_id: str, matches: ColumnElement[bool]) -> bool:
+        async with transaction(self._sessions) as session:
+            changed = await session.execute(
+                update(InboxItemRecord)
+                .where(InboxItemRecord.thread_id == thread_id, _UNREAD, matches)
+                .values(read_at=datetime.now(UTC))
+            )
+            assert isinstance(changed, CursorResult)
+            return changed.rowcount > 0
 
     async def mark_group_read(self, group: InboxGroup) -> None:
         async with transaction(self._sessions) as session:

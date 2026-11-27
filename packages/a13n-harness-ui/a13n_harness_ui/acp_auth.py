@@ -28,7 +28,7 @@ from a13n_harness_ui.acp_sessions import (
     acp_options_scope,
     local_transport,
 )
-from a13n_harness_ui.configuration.models import AcpAgentResource
+from a13n_harness_ui.configuration.models import AcpAgentCandidate, AcpAgentResource
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_runtime.inputs import Inputs
 
@@ -42,6 +42,10 @@ class AcpAuthRequest(BaseModel):
         if (self.action == "login") != (self.method_id is not None):
             raise ValueError("Select an authentication method only when logging in.")
         return self
+
+
+class AcpPresetAuthRequest(AcpAgentCandidate, AcpAuthRequest):
+    pass
 
 
 class AcpAuthMethod(BaseModel):
@@ -65,6 +69,8 @@ class AcpAuthStatus(BaseModel):
 def auth_input_scope(agent_id: str) -> str:
     return f"acp-auth/{agent_id}"
 
+
+ACP_SETUP_AUTH_SCOPE = "acp-setup-preview"
 
 _AGY = "Antigravity ACP Server"
 _GOOGLE_URL = re.compile(
@@ -177,8 +183,9 @@ async def preview_acp_options(
 
 
 async def acp_auth(
-    resource: AcpAgentResource, cwd: Path, request: AcpAuthRequest, inputs: Inputs | None
+    resource: AcpAgentResource, cwd: Path, request: AcpAuthRequest, inputs: Inputs | None, *, scope: str | None = None
 ) -> AcpAuthStatus:
+    scope = scope or auth_input_scope(resource.id)
     transport = local_transport(resource, str(cwd))
     executable = Path(transport.executable)
     if executable.parent != Path(".") or os.path.dirname(transport.executable):
@@ -276,7 +283,7 @@ async def acp_auth(
                 if method is not None and method.kind == "browser" and inputs is not None:
                     interaction = AcpInputs(
                         inputs,
-                        auth_input_scope(resource.id),
+                        scope,
                         resource.id,
                         lambda: None,
                         server_name=resource.name,
@@ -297,7 +304,7 @@ async def acp_auth(
 
                     interaction = AcpInputs(
                         inputs,
-                        auth_input_scope(resource.id),
+                        scope,
                         resource.id,
                         require_active,
                         server_name=resource.name,

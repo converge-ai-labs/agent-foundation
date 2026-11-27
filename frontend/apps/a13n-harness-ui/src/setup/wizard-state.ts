@@ -1,3 +1,4 @@
+import type { SetupTrack } from "./connections";
 import type { ModelEditorDraft } from "../configuration/model-editor";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "../shell/preferences";
@@ -5,12 +6,17 @@ import { readPreference, writePreference } from "../shell/preferences";
 export type WizardDraft = {
   version: 2;
   step: number;
+  track?: SetupTrack;
+  engine?: string;
+  originalDefault?: string | null;
+  returnTo?: "/setup" | "/settings/agents";
   selection: Schema<"SetupSelection">;
   threadId: string;
   modelDraft?: ModelEditorDraft;
   pending?: {
     selection: Schema<"SetupSelection">;
     files: Record<string, string>;
+    agentId?: string;
   };
 };
 const key = (scope: string) => `setup.${scope}`;
@@ -24,8 +30,7 @@ export function readWizardDraft(scope: string): WizardDraft | undefined {
       /^thread[-_][a-f0-9]{32}$/.test(value.threadId) &&
       Number.isInteger(value.step) &&
       value.step >= 0 &&
-      value.step <=
-        (value.selection.model?.authentication?.kind === "api_key" ? 2 : 1)
+      value.step <= 2
     )
       return value;
   } catch {

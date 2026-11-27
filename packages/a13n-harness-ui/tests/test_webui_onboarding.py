@@ -173,3 +173,131 @@ async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_s
         assert published.json()["completed"]
         assert configuration.exists()
         assert (configuration.parent / "models" / f"{model_file}.yaml").is_file()
+
+
+@pytest.mark.anyio
+async def test_setup_status_exposes_acp_agents_and_environment_names_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "config.yaml"
+    monkeypatch.setenv("OPENAI_API_KEY", "fixture-value-that-must-stay-on-host")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "  \t  ")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        assert (await app.setup_status()).fresh
+    agents = tmp_path / "acp_agents"
+    agents.mkdir()
+    (agents / "cli.yaml").write_text(
+        'schema_version: "1"\nkind: acp_agent\nid: acp-local\nname: Local peer\npreset: claude_code\n'
+    )
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        status = await app.setup_status()
+        assert not status.fresh
+        assert "OPENAI_API_KEY" in status.detected_env_keys
+        assert "ANTHROPIC_API_KEY" not in status.detected_env_keys
+        assert "fixture-value-that-must-stay-on-host" not in status.model_dump_json()
+    path.write_text('schema_version: "1"\ndefaults: {agent: acp-local}\n')
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        status = await app.setup_status()
+        assert status.agents["acp-local"] == "Local peer"
+        assert status.acp_presets["acp-local"] == "claude_code"
+        assert status.default_agent == "acp-local"
+        assert not status.needed
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("project_override", [False, True])
+async def test_setting_acp_default_rejects_an_inherited_sandbox(tmp_path: Path, project_override: bool) -> None:
+    path = tmp_path / "config.yaml"
+    data_root = tmp_path / "data"
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=data_root)), configuration_path=path
+    ) as app:
+        initial = SetupSelection(
+            project="project-local", project_path=str(tmp_path), environment_profile="environment-native"
+        )
+        assert (await app.apply_setup(initial)).completed
+    if project_override:
+        project = tmp_path / "projects" / "project-local.yaml"
+        with project.open("a") as stream:
+            stream.write("defaults: {environment_profile: environment-sandbox}\n")
+    else:
+        path.write_text(path.read_text().replace("environment-native", "environment-sandbox"))
+    root = path.read_bytes()
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=data_root)), configuration_path=path
+    ) as app:
+        selection = SetupSelection.model_validate(
+            {
+                "primary_acp_agent": {"preset": "claude_code"},
+                "configure_workspace": False,
+                "environment_profile": "environment-native",
+            }
+        )
+        for operation in (app.preview_setup, app.apply_setup):
+            with pytest.raises(HarnessUiError) as error:
+                await operation(selection)
+            assert error.value.code == "acp_requires_native_environment"
+        assert path.read_bytes() == root
+        assert not (tmp_path / "acp_agents").exists()
+        assert (await app.apply_setup(selection.model_copy(update={"set_as_default": False}))).completed
+        assert path.read_bytes() == root
+        # The CLI's named Add Agent operation does not replace the default either.
+        assert (await app.apply_setup(selection.model_copy(update={"new_agent_id": "acp-named"}))).completed
+        assert path.read_bytes() == root
+
+
+@pytest.mark.anyio
+async def test_preset_auth_http_probes_and_handles_login_without_saving_configuration(tmp_path: Path) -> None:
+    import sys
+
+    import httpx
+    from a13n_harness_ui.webui import create_webui
+    from anyio import fail_after, sleep
+
+    configuration = tmp_path / "config.yaml"
+    peer = Path(__file__).resolve().parents[2] / "a13n-harness/tests/fixtures/acp_peer.py"
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    server = create_webui(
+        lambda: open_harness_ui_app(settings, configuration_path=configuration, host_mode="webui"),
+        api_key="owner-fixture",
+    )
+    async with (
+        server.router.lifespan_context(server),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://localhost") as client,
+    ):
+        endpoint = "/api/acp-agents/preset-auth"
+        candidate = {"preset": "custom", "command": sys.executable, "args": [str(peer), "auth-required"]}
+        probe = {**candidate, "action": "probe"}
+        unauthorized = await client.post(endpoint, json=probe)
+        assert unauthorized.status_code in (401, 403)
+        client.headers["Authorization"] = "Bearer owner-fixture"
+        response = await client.post(endpoint, json=probe)
+        assert response.status_code == 200, response.text
+        assert response.json()["state"] == "auth_required"
+        invalid = await client.post(endpoint, json={**candidate, "action": "login", "method_id": "unknown"})
+        assert invalid.status_code == 400
+        assert invalid.json()["error"]["code"] == "acp_auth_method_invalid"
+        results = []
+
+        async def login() -> None:
+            result = await client.post(endpoint, json={**candidate, "action": "login", "method_id": "browser"})
+            assert result.status_code == 200, result.text
+            results.append(result)
+
+        with fail_after(15):
+            async with create_task_group() as group:
+                group.start_soon(login)
+                while not (requests := (await client.get(f"{endpoint}/inputs")).json()):
+                    await sleep(0.02)
+                (request,) = requests
+                assert request["thread_id"] == "acp-setup-preview"
+                assert request["url"] == "https://example.com/sign-in"
+                response = await client.post(
+                    f"{endpoint}/inputs/{request['request_id']}/response", json={"action": "accept"}
+                )
+                assert response.status_code == 200, response.text
+            assert results[0].status_code == 200, results[0].text
+            assert results[0].json()["state"] == "login_completed"
+    assert not configuration.exists()
+    assert not (tmp_path / "acp_agents").exists()

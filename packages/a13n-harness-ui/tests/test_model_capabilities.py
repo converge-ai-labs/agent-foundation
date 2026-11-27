@@ -167,15 +167,23 @@ async def test_all_creation_flows_persist_known_native_image_support(
 ) -> None:
     connection = {
         "api": ["api", "anthropic", "", "new", "env:TEST_KEY", "claude-sonnet-4-6", "", ""],
-        "codex": ["codex", "later", "gpt-5.6-sol", ""],
-        "grok": ["grok", "later", ""],
+        "codex": ["subscription", "codex", "gpt-5.6-sol", ""],
+        "grok": ["subscription", "grok", ""],
     }[provider]
     answers = deque([*connection, "full-control"])
     notices = []
 
     async def ask(question, selection):
-        if question.key in {"tools", "review_model"} or question.text == "Model saved. Configure tools on a new Agent?":
+        if (
+            question.key in {"tools", "review_model", "additional_acp"}
+            or question.text == "Model saved. Configure tools on a new Agent?"
+        ):
             return question.default
+        if question.key == "action":
+            if "keep" in question.choices:
+                return "keep"
+            if "later" in question.choices:
+                return "later"
         assert answers, question
         if provider == "grok" and question.key == "model":
             assert question.default == "grok-4.7"

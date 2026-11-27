@@ -34,7 +34,9 @@ class SetupStatus(StrictModel):
     configuration_path: str
     suggested_project_path: str = "."
     providers: tuple[SetupProvider, ...]
+    detected_env_keys: tuple[str, ...] = ()
     agents: dict[str, str]
+    acp_presets: dict[str, str] = Field(default_factory=dict)
     projects: dict[str, str]
     project_paths: dict[str, tuple[str, ...]] = Field(default_factory=dict)
     system_prompt: str = DEFAULT_SYSTEM_PROMPT

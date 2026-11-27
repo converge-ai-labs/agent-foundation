@@ -494,7 +494,13 @@ Listing and search cover the server's accepted root Threads with bounded retaine
 
 ### Inbox Posting
 
-`post_to_inbox(kind, title, message)` delivers one item to [Inbox](webui/04-workbench-interaction.md#entry-and-navigation) from WebUI ordinary roots, Coordinators, and Bot (excluded from workers, children, Live, Memory, and Terminal; active only when the Run captured `inbox.enabled=true`, [Inbox configuration](01-configuration-and-resource-catalog.md#inbox)). `kind` is `result`, `needs_human`, or `milestone`; `title` is 1–120 chars; `message` is 1–4096 chars of standalone Markdown. Posting is non-suspending and deduplicates by tool-call ID, emitting an App-wide `inbox` summary event and eligible Web Push. A request-epilogue reminder emits on each input request, after context replacement, and once per Run after 10 minutes without a post. Human APIs (owner-only): `GET /api/inbox`, `PATCH /api/inbox/{item_id}`, and `GET /api/inbox/{item_id}/location`.
+`post_to_inbox(kind, title, message)` delivers one item to [Inbox](webui/04-workbench-interaction.md#entry-and-navigation) from WebUI ordinary roots, Coordinators, and Bot (excluded from workers, children, Live, Memory, and Terminal; active only when the Run captured `inbox.enabled=true`, [Inbox configuration](01-configuration-and-resource-catalog.md#inbox)). `kind` is `result`, `needs_human`, or `milestone`; `title` is 1–120 chars; `message` is 1–4096 chars of standalone Markdown. Posting is non-suspending and deduplicates by tool-call ID, emitting an App-wide `inbox` summary event and eligible Web Push. A request-epilogue reminder emits on each input request, after context replacement, and once per Run after 10 minutes without a post.
+
+Owner Inbox APIs:
+
+- `GET /api/inbox`, `PATCH /api/inbox/{item_id}`, and `GET /api/inbox/{item_id}/location` list, update, and locate items.
+- `POST /api/inbox/mark-read` and `POST /api/inbox/mark-done` update an Open section across pages.
+- `GET /api/inbox/threads/{thread_id}/unread` returns unread item and tool-call IDs, creation time, and whether each item has a transcript source. `POST /api/inbox/threads/{thread_id}/mark-read` sets `read_at` on the specified items (`item_ids`) still unread in that Thread. `done_at` stays unchanged. A changed write publishes an `inbox` summary event.
 
 ### Coordinator instructions
 

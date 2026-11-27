@@ -18,6 +18,7 @@ import yaml
 from anyio import to_thread
 from pydantic import ConfigDict, Field, model_validator
 
+from a13n_harness_ui.acp_sessions import acp_presets
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
 from a13n_harness_ui.model_authoring import SUBSCRIPTION_CONNECTIONS, ModelRecipe, recipe_document, recipe_name
 from a13n_harness_ui.model_presets import starter_tool_capabilities
@@ -26,6 +27,8 @@ from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _read_bounded_stable, _scan_directory, load_harness_ui_configuration
 from .models import (
+    AcpAgentCandidate,
+    AcpAgentPreset,
     BackgroundCompactionConfiguration,
     CapabilitySelection,
     ResourceId,
@@ -35,11 +38,17 @@ from .models import (
 from .mutation import CandidateValidator, _publish_content
 
 _EMPTY_ROOT = b'schema_version: "1"\n'
-_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "subagents")
+SETUP_DIRECTORIES = ("models", "extensions", "mcp", "agents", "acp_agents", "projects", "subagents")
 
 
 class SetupSelection(StrictModel):
     model: ModelRecipe | None = None
+    primary_acp_agent: AcpAgentCandidate | None = None
+    additional_acp_presets: tuple[AcpAgentPreset, ...] = ()
+    set_as_default: bool = True
+    configure_workspace: bool = True
+    enable_dictation: bool | None = None
+    auto_organize_memory: bool | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     new_agent_id: ResourceId | None = None
     new_agent_name: str = Field(default="", max_length=128)
@@ -61,6 +70,10 @@ class SetupSelection(StrictModel):
     def is_addition(self) -> bool:
         return self.new_agent_id is not None or self.new_model_id is not None
 
+    @property
+    def updates_workspace(self) -> bool:
+        return not self.is_addition and self.set_as_default and self.configure_workspace
+
     @model_validator(mode="after")
     def _creation_target(self) -> Self:
         if (self.project is None) != (self.project_path is None):
@@ -71,6 +84,15 @@ class SetupSelection(StrictModel):
             raise ValueError("Tools belong to an Agent; configure them when adding an Agent for this Model")
         if self.existing_model_id is not None and (self.new_agent_id is None or self.model is not None):
             raise ValueError("An existing Model can only be selected when adding an Agent without a new connection")
+        if self.primary_acp_agent is not None:
+            if self.model is not None or self.existing_model_id is not None or self.new_model_id is not None:
+                raise ValueError("An ACP Agent cannot be combined with a native Model")
+            if self.environment_profile == "environment-sandbox":
+                raise ValueError("External ACP Agents require Full Control")
+            if self.new_agent_id is not None and not self.new_agent_id.startswith("acp-"):
+                raise ValueError("An ACP Agent ID must start with acp-")
+        if "custom" in self.additional_acp_presets:
+            raise ValueError("A custom ACP Agent requires an explicit command")
         if self.shell_review_model is not None and (
             self.model is None or self.model.authentication.kind != "api_key" or self.new_model_id is not None
         ):
@@ -84,11 +106,13 @@ class SetupPreview(StrictModel):
     files: dict[str, str]
     preserved_paths: tuple[str, ...]
     project_paths: tuple[str, ...]
+    agent_id: ResourceId | None = None
 
 
 class SetupPublication(StrictModel):
     completed: bool
     published_paths: tuple[str, ...]
+    agent_id: ResourceId | None = None
     error_code: str | None = None
     error_message: str | None = None
 
@@ -98,7 +122,7 @@ def _capture(path: Path) -> dict[str, bytes]:
     for source in (path, path.parent / "AGENTS.md"):
         if os.path.lexists(source):
             entries[source.name], _fingerprint = _read_bounded_stable(source, 1024 * 1024)
-    for directory in _DIRECTORIES:
+    for directory in SETUP_DIRECTORIES:
         for relative, source, _fingerprint in _scan_directory(
             path.parent / directory, markdown=directory == "subagents"
         ):
@@ -126,7 +150,11 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
     model_id = selection.existing_model_id
     if recipe is not None:
         model_id = selection.new_model_id or (
-            f"model-{selection.new_agent_id}" if selection.new_agent_id else f"model-{connection}"
+            f"model-{selection.new_agent_id}"
+            if selection.new_agent_id
+            else f"model-{selection.default_agent}"
+            if not selection.set_as_default
+            else f"model-{connection}"
         )
         resources[f"models/{model_id.removeprefix('model-')}.yaml"] = {
             "schema_version": "1",
@@ -199,16 +227,59 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "name": "Codex shell review" if codex else "Grok shell review",
             **recipe_document(review),
         }
-    if not selection.is_addition and selection.project is not None:
-        assert selection.project_path is not None
-        resources[f"projects/{selection.project}.yaml"] = {
-            "schema_version": "1",
-            "kind": "project",
-            "id": selection.project,
-            "name": Path(selection.project_path).name or selection.project_path,
-            "roots": [{"path": selection.project_path}],
-        }
     return {name: yaml.safe_dump(value, sort_keys=False, allow_unicode=True) for name, value in resources.items()}
+
+
+def _acp_templates(
+    selection: SetupSelection,
+    existing: dict[str, tuple[str, dict[str, object]]],
+    baseline: dict[str, bytes],
+    *,
+    active_id: str | None = None,
+) -> tuple[str | None, dict[str, str]]:
+    primary = selection.primary_acp_agent
+    if primary is None and not selection.additional_acp_presets:
+        return None, {}
+    names = {item.id: item.name for item in acp_presets()}
+    configured = {resource.get("preset") for key, (_, resource) in existing.items() if key.startswith("acp-")}
+    templates: dict[str, str] = {}
+    primary_id: str | None = None
+
+    def add(candidate: AcpAgentCandidate, preferred: str, *, instructions: str = "", exact_id: bool = False) -> str:
+        for index in range(1, len(baseline) + len(templates) + 2):
+            agent_id = preferred if index == 1 else f"{preferred[:120]}-{index}"
+            if agent_id == active_id:
+                continue
+            destination = f"acp_agents/{agent_id}.yaml"
+            resource = candidate.resource(
+                agent_id, names.get(candidate.preset, "Custom ACP"), instructions=instructions
+            )
+            document = resource.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+            found = existing.get(agent_id)
+            if (found is not None and found[1] == document) or (
+                found is None and destination not in baseline and destination not in templates
+            ):
+                templates[destination] = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+                return agent_id
+            if exact_id:
+                break
+        raise ConfigurationError("This Agent name is already in use.", code="configuration_mutation_conflict")
+
+    if primary is not None:
+        preferred = selection.new_agent_id or (
+            selection.default_agent
+            if selection.default_agent.startswith("acp-")
+            else f"acp-{primary.preset.replace('_', '-')}"
+        )
+        primary_id = add(
+            primary, preferred, instructions=selection.instructions, exact_id=selection.new_agent_id is not None
+        )
+        configured.add(primary.preset)
+    for preset in selection.additional_acp_presets:
+        if preset not in configured:
+            add(AcpAgentCandidate(preset=preset), f"acp-{preset.replace('_', '-')}")
+            configured.add(preset)
+    return primary_id, templates
 
 
 def _same_connection(actual: dict[str, object], desired: dict[str, object]) -> bool:
@@ -246,13 +317,71 @@ async def preview_setup(
     security = root.get("security", {})
     if not isinstance(security, dict):
         raise ConfigurationError("Configuration security must be a mapping.", code="settings_invalid")
-    seed_review = selection.new_model_id is None and "shell_review" not in security
-    templates = _templates(
-        selection if seed_review else selection.model_copy(update={"shell_review": False}),
-        existing_model=selected_model[1] if selected_model is not None else None,
+    preserve_root = not selection.set_as_default and path.name in baseline
+    seed_review = (
+        not preserve_root
+        and selection.primary_acp_agent is None
+        and selection.new_model_id is None
+        and "shell_review" not in security
     )
+    resource_only_native = (
+        not selection.set_as_default and not selection.is_addition and selection.primary_acp_agent is None
+    )
+    root_defaults = root.get("defaults")
+    active = root_defaults.get("agent") if isinstance(root_defaults, dict) else None
+    active_id = active if isinstance(active, str) else None
+    if resource_only_native:
+        # Keep a matching identity on retry, including after a partial publication.
+        preferred = selection.default_agent
+        suffix = hashlib.sha256(selection.model_dump_json().encode()).hexdigest()[:10]
+        for agent_id in (preferred, f"{preferred[:110]}-{suffix}"):
+            if agent_id == active_id:
+                continue
+            proposed = selection.model_copy(update={"default_agent": agent_id, "shell_review": False})
+            for name, text in _templates(
+                proposed, existing_model=selected_model[1] if selected_model else None
+            ).items():
+                document = yaml.safe_load(text)
+                found = existing.get(document["id"])
+                if found is None:
+                    if name in baseline:
+                        break
+                elif not (
+                    _same_connection(found[1], document) if document["kind"] == "model" else found[1] == document
+                ):
+                    break
+            else:
+                selection = proposed
+                break
+        else:
+            raise ConfigurationError(
+                "The Agent or Model already exists with different settings.", code="configuration_mutation_conflict"
+            )
+    acp_id, templates = _acp_templates(
+        selection, existing, baseline, active_id=active_id if not selection.set_as_default else None
+    )
+    if acp_id is None:
+        templates.update(
+            _templates(
+                selection if seed_review else selection.model_copy(update={"shell_review": False}),
+                existing_model=selected_model[1] if selected_model is not None else None,
+            )
+        )
+    if selection.updates_workspace and selection.project is not None:
+        assert selection.project_path is not None
+        templates[f"projects/{selection.project}.yaml"] = yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "kind": "project",
+                "id": selection.project,
+                "name": Path(selection.project_path).name or selection.project_path,
+                "roots": [{"path": selection.project_path}],
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        )
     connection_model: str | None = None
-    if selection.new_agent_id is not None:
+    if acp_id is None and selection.new_agent_id is not None:
         connection_model = "model-" + selection.new_agent_id if selection.existing_model_id is None else None
         current_agent = existing.get(selection.new_agent_id)
         desired_agent = next(
@@ -264,7 +393,7 @@ async def preview_setup(
             )
     elif selection.new_model_id is not None:
         connection_model = selection.new_model_id
-    elif selection.model is not None:
+    elif selection.model is not None and not resource_only_native:
         # Setup never replaces an authored Model. A different connection gets a
         # deterministic new identity so retries do not create duplicates.
         connection_model = next(
@@ -321,7 +450,12 @@ async def preview_setup(
                 code="configuration_mutation_conflict",
             )
         files[name] = text
-    if not selection.is_addition and selection.connect_default and connection_model is not None:
+    if (
+        selection.set_as_default
+        and not selection.is_addition
+        and selection.connect_default
+        and connection_model is not None
+    ):
         current_agent = existing.get(selection.default_agent)
         if current_agent is not None:
             name, resource = current_agent
@@ -344,7 +478,8 @@ async def preview_setup(
         else None
     )
     if (
-        "live" not in root
+        not preserve_root
+        and "live" not in root
         and selection.enable_live
         and selected_model_id is not None
         and isinstance(live_authentication, dict)
@@ -383,14 +518,29 @@ async def preview_setup(
             },
         }
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
-    if not selection.is_addition:
+    if (
+        not preserve_root
+        and "dictation" not in root
+        and (selection.enable_dictation is True or (selection.enable_dictation is None and path.name not in baseline))
+        and isinstance(live_authentication, dict)
+        and live_authentication.get("kind") == "codex_subscription"
+        and selection.new_model_id is None
+    ):
+        root["dictation"] = {"backend": "codex"}
+        files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
+    if not selection.is_addition and not preserve_root:
         root.setdefault("background_compaction", BackgroundCompactionConfiguration().model_dump(mode="json"))
         memory = root.setdefault("memory", {})
         if isinstance(memory, dict):
             memory.setdefault("enabled", True)
             organize = memory.setdefault("auto_organize", {})
             if isinstance(organize, dict):
-                organize.setdefault("enabled", True)
+                organize.setdefault(
+                    "enabled",
+                    selection.auto_organize_memory
+                    if selection.auto_organize_memory is not None and acp_id is None
+                    else selected_model_id is not None,
+                )
                 organize.setdefault("instructions", "")
                 organize.setdefault("model", None)
         tools = root.setdefault("tools", {})
@@ -408,16 +558,16 @@ async def preview_setup(
             raise ConfigurationError("Configuration defaults must be a mapping.", code="configuration_invalid")
         root["defaults"] = {
             **defaults,
-            "agent": selection.default_agent,
-            **({"project": selection.project} if selection.project is not None else {}),
-            "environment_profile": selection.environment_profile,
+            **({"agent": acp_id or selection.default_agent} if selection.set_as_default else {}),
+            **({"project": selection.project} if selection.updates_workspace and selection.project is not None else {}),
+            **({"environment_profile": selection.environment_profile} if selection.updates_workspace else {}),
         }
         if path.name not in baseline and selected_model_id is not None:
             root["agent_creation"] = {
                 "allowed_models": [selected_model_id],
                 "default_model": selected_model_id,
             }
-        if selection.include_default_subagents is not None:
+        if selection.include_default_subagents is not None and acp_id is None:
             subagents = root.setdefault("subagents", {})
             if not isinstance(subagents, dict):
                 raise ConfigurationError("Configuration subagents must be a mapping.", code="configuration_invalid")
@@ -436,8 +586,11 @@ async def preview_setup(
         files=files,
         preserved_paths=tuple(sorted(name for name in baseline if name not in files)),
         project_paths=()
-        if selection.is_addition or selection.project is None
+        if not selection.updates_workspace or selection.project is None
         else tuple(root.path for root in loaded.projects[selection.project].roots),
+        agent_id=None
+        if selection.new_model_id is not None
+        else acp_id or selection.new_agent_id or selection.default_agent,
     )
 
 
@@ -465,7 +618,7 @@ async def publish_setup(
         ):
             await to_thread.run_sync(_publish_content, path.parent / name, text.encode())
             published.append(name)
-        return SetupPublication(completed=True, published_paths=tuple(published))
+        return SetupPublication(completed=True, published_paths=tuple(published), agent_id=preview.agent_id)
     except (HarnessUiError, OSError) as exc:
         return SetupPublication(
             completed=False,

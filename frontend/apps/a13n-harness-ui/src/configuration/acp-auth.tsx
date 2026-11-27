@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { ErrorNotice } from "../shell/ui";
 import {
@@ -13,7 +13,18 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { McpInput } from "../conversations/mcp-inputs";
 
-export function AcpAuth({ agentId }: { agentId: string }) {
+type AcpAuthTarget =
+  | { agentId: string; candidate?: never }
+  | {
+      agentId?: never;
+      candidate: Schema<"AcpAgentCandidate">;
+      detected: boolean;
+      installUrl?: string | null;
+      onReady: (ready: boolean, needsSignIn: boolean) => void;
+    };
+
+export function AcpAuth(target: AcpAuthTarget) {
+  const { agentId, candidate } = target;
   const { t } = useTranslation();
   const { client } = useTransport();
   const navigate = useNavigate();
@@ -21,18 +32,37 @@ export function AcpAuth({ agentId }: { agentId: string }) {
   const returnThread = search.get("returnThread");
   const [methodId, setMethod] = useState("");
   const [reauth, setReauth] = useState(false);
-  const params = { path: { agent_id: agentId } };
-  const request = (body: Schema<"AcpAuthRequest">) =>
-    result(client.POST("/api/acp-agents/{agent_id}/auth", { params, body }));
+  const params = { path: { agent_id: agentId ?? "" } };
+  const loginRequest = useRef<AbortController>(null);
+  useEffect(() => () => loginRequest.current?.abort(), []);
+  const request = (body: Schema<"AcpAuthRequest">, signal?: AbortSignal) =>
+    candidate
+      ? result(
+          client.POST("/api/acp-agents/preset-auth", {
+            body: { ...candidate, ...body },
+            signal,
+          }),
+        )
+      : result(
+          client.POST("/api/acp-agents/{agent_id}/auth", {
+            params,
+            body,
+            signal,
+          }),
+        );
   const probe = useQuery({
-    queryKey: ["acp-auth", agentId],
-    queryFn: () => request({ action: "probe" }),
+    queryKey: ["acp-auth", agentId ?? candidate],
+    queryFn: ({ signal }) => request({ action: "probe" }, signal),
+    enabled: !target.candidate || target.detected,
     refetchOnMount: "always",
     refetchOnWindowFocus: false,
     retry: false,
   });
   const auth = useMutation({
-    mutationFn: request,
+    mutationFn: (body: Schema<"AcpAuthRequest">) => {
+      loginRequest.current = new AbortController();
+      return request(body, loginRequest.current.signal);
+    },
     onSuccess: async () => {
       setReauth(false);
       await probe.refetch();
@@ -44,7 +74,7 @@ export function AcpAuth({ agentId }: { agentId: string }) {
         client.POST("/api/threads", {
           body: {
             defaults: {
-              agent_id: agentId,
+              agent_id: agentId!,
               environment_profile_id: "environment-native",
               environment_bindings: [],
             },
@@ -56,45 +86,74 @@ export function AcpAuth({ agentId }: { agentId: string }) {
   });
   const status = probe.data;
   const ready = status?.state === "ready";
+  const canContinue =
+    !auth.isPending &&
+    !probe.isFetching &&
+    (ready || status?.state === "auth_required");
+  const onReady = target.candidate ? target.onReady : undefined;
+  useEffect(() => {
+    onReady?.(canContinue, canContinue && status?.state === "auth_required");
+  }, [canContinue, onReady, status?.state]);
   const methods = status?.methods ?? [];
   const method = methods.find(({ id }) => id === methodId) ?? methods[0];
   const signingIn = auth.isPending && auth.variables?.action === "login";
   const inputs = useQuery({
-    queryKey: ["acp-auth-inputs", agentId],
+    queryKey: ["acp-auth-inputs", agentId ?? candidate],
     enabled: signingIn,
     refetchInterval: signingIn ? 800 : false,
     queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/acp-agents/{agent_id}/auth/inputs", {
-          params,
-          signal,
-        }),
-      ),
+      candidate
+        ? result(client.GET("/api/acp-agents/preset-auth/inputs", { signal }))
+        : result(
+            client.GET("/api/acp-agents/{agent_id}/auth/inputs", {
+              params,
+              signal,
+            }),
+          ),
   });
   const terminalCommand =
     method?.argv
       ?.map((argument) => `'${argument.replaceAll("'", "'\\''")}'`)
       .join(" ") ?? "";
+  const missing =
+    status?.state === "executable_missing" ||
+    !!(target.candidate && !target.detected && !status && target.installUrl);
+  const uncheckedCustom =
+    target.candidate && !target.detected && !status && !target.installUrl;
   const message = probe.isFetching
     ? t("Checking whether the Agent is ready…")
-    : status?.state === "executable_missing"
+    : missing
       ? t("The configured executable was not found.")
       : status?.state === "auth_required"
         ? t("Sign in to use this Agent.")
-        : undefined;
-  return (
-    <SettingsSection title={t("Authentication")}>
+        : uncheckedCustom
+          ? t("Check the executable before continuing.")
+          : undefined;
+  const content = (
+    <>
       <SettingsRow
         label={ready ? t("Ready · Signed in") : t("ACP connection")}
         description={
-          ready
-            ? [status.agent_name, status.agent_version, status.default_model]
-                .filter(Boolean)
-                .join(" · ")
-            : message
+          ready ? (
+            [status.agent_name, status.agent_version, status.default_model]
+              .filter(Boolean)
+              .join(" · ")
+          ) : (
+            <>
+              {message}
+              {missing && target.candidate && target.installUrl && (
+                <>
+                  {" "}
+                  <a href={target.installUrl} target="_blank" rel="noreferrer">
+                    {t("Installation instructions")}
+                  </a>
+                </>
+              )}
+            </>
+          )
         }
       >
-        {ready ? (
+        {ready && !candidate ? (
           returnThread ? (
             <Button
               render={
@@ -117,32 +176,34 @@ export function AcpAuth({ agentId }: { agentId: string }) {
             disabled={auth.isPending || probe.isFetching}
             onClick={() => void probe.refetch()}
           >
-            {t("Check again")}
+            {uncheckedCustom ? t("Check connection") : t("Check again")}
           </Button>
         )}
       </SettingsRow>
-      {ready && (methods.length > 0 || status.logout_supported) && (
-        <SettingsRow label={t("Agent account")}>
-          {methods.length > 0 && (
-            <Button
-              variant="ghost"
-              disabled={auth.isPending}
-              onClick={() => setReauth(!reauth)}
-            >
-              {t("Re-authenticate")}
-            </Button>
-          )}
-          {status.logout_supported && (
-            <Button
-              variant="outline"
-              disabled={auth.isPending}
-              onClick={() => auth.mutate({ action: "logout" })}
-            >
-              {t("Log out")}
-            </Button>
-          )}
-        </SettingsRow>
-      )}
+      {!candidate &&
+        ready &&
+        (methods.length > 0 || status.logout_supported) && (
+          <SettingsRow label={t("Agent account")}>
+            {methods.length > 0 && (
+              <Button
+                variant="ghost"
+                disabled={auth.isPending}
+                onClick={() => setReauth(!reauth)}
+              >
+                {t("Re-authenticate")}
+              </Button>
+            )}
+            {status.logout_supported && (
+              <Button
+                variant="outline"
+                disabled={auth.isPending}
+                onClick={() => auth.mutate({ action: "logout" })}
+              >
+                {t("Log out")}
+              </Button>
+            )}
+          </SettingsRow>
+        )}
       {(status?.state === "auth_required" || reauth) && method && (
         <>
           <SettingsChoice
@@ -221,23 +282,38 @@ export function AcpAuth({ agentId }: { agentId: string }) {
             request={request}
             reconcile={() => void inputs.refetch()}
             submitResponse={(body) =>
-              result(
-                client.POST(
-                  "/api/acp-agents/{agent_id}/auth/inputs/{request_id}/response",
-                  {
-                    params: {
-                      path: {
-                        agent_id: agentId,
-                        request_id: request.request_id,
+              candidate
+                ? result(
+                    client.POST(
+                      "/api/acp-agents/preset-auth/inputs/{request_id}/response",
+                      {
+                        params: { path: { request_id: request.request_id } },
+                        body,
                       },
-                    },
-                    body,
-                  },
-                ),
-              )
+                    ),
+                  )
+                : result(
+                    client.POST(
+                      "/api/acp-agents/{agent_id}/auth/inputs/{request_id}/response",
+                      {
+                        params: {
+                          path: {
+                            agent_id: agentId!,
+                            request_id: request.request_id,
+                          },
+                        },
+                        body,
+                      },
+                    ),
+                  )
             }
           />
         ))}
-    </SettingsSection>
+    </>
+  );
+  return candidate ? (
+    content
+  ) : (
+    <SettingsSection title={t("Authentication")}>{content}</SettingsSection>
   );
 }

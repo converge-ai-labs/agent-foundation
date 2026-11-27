@@ -215,6 +215,71 @@ async def test_http_routes_list_update_and_locate_items(tmp_path: Path) -> None:
                 assert (await client.get("/api/inbox?limit=0")).status_code == 422
 
 
+async def test_thread_mark_read_is_owner_only_scoped_and_bounded(tmp_path: Path) -> None:
+    from a13n_harness_ui.webui import create_webui
+    from anyio import move_on_after
+    from httpx import ASGITransport, AsyncClient
+
+    root = coordinator_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        inbox = app.inbox()
+        thread = await create_coordinator(app)
+        other = await app.create_thread(title="Other")
+        call = await inbox.post(
+            thread_id=thread.thread_id, tool_call_id="call-1", kind="result", title="One", message="Ready"
+        )
+        mcp = await inbox.post_from_mcp(thread_id=thread.thread_id, kind="needs_human", title="Two", message="Review")
+        done = await inbox.post(
+            thread_id=thread.thread_id, tool_call_id="call-done", kind="result", title="Done", message="Handled"
+        )
+        done = await inbox.update(done.item_id, InboxItemMutation(done=True))
+        unrelated = await inbox.post_from_mcp(thread_id=other.thread_id, kind="result", title="Other", message="Other")
+
+        @asynccontextmanager
+        async def factory():
+            yield app
+
+        server = create_webui(factory, api_key="test-only-key")
+        path = f"/api/inbox/threads/{thread.thread_id}"
+        async with (
+            server.router.lifespan_context(server),
+            AsyncClient(transport=ASGITransport(app=server), base_url="http://localhost") as client,
+        ):
+            assert (await client.get(path + "/unread")).status_code == 401
+            assert (await client.post(path + "/mark-read", json={})).status_code == 401
+            client.headers["Authorization"] = "Bearer test-only-key"
+            snapshot = (await client.get(path + "/unread")).json()
+            assert {post["item_id"]: post["has_transcript"] for post in snapshot} == {
+                call.item_id: True,
+                mcp.item_id: False,
+            }
+            assert {post["tool_call_id"] for post in snapshot} == {call.tool_call_id, mcp.tool_call_id}
+            late = await inbox.post_from_mcp(thread_id=thread.thread_id, kind="result", title="Later", message="New")
+            mark = {"item_ids": [*(post["item_id"] for post in snapshot), unrelated.item_id]}
+
+            async with app.summary_events() as events:
+                assert (await client.post(path + "/mark-read", json=mark)).status_code == 204
+                with fail_after(2):
+                    event = await events.receive()
+                assert event.kind == "inbox" and event.thread_id == thread.thread_id and event.inbox is None
+                assert (await client.post(path + "/mark-read", json=mark)).status_code == 204
+                with move_on_after(0.05) as scope:
+                    await events.receive()
+                assert scope.cancelled_caught
+
+            page = (await client.get("/api/inbox")).json()
+            by_id = {item["item_id"]: item for item in page["items"]}
+            assert page["unread_count"] == 2
+            assert by_id[call.item_id]["read_at"] == by_id[mcp.item_id]["read_at"] is not None
+            assert by_id[call.item_id]["done_at"] is by_id[mcp.item_id]["done_at"] is None
+            assert by_id[late.item_id]["read_at"] is by_id[unrelated.item_id]["read_at"] is None
+            assert (await inbox.page(state="done", before=None, limit=1)).items == (done,)
+            assert [post["item_id"] for post in (await client.get(path + "/unread")).json()] == [late.item_id]
+            assert (await client.patch(f"/api/inbox/{call.item_id}", json={"read": False})).status_code == 200
+            unread = (await client.get(path + "/unread")).json()
+            assert {post["item_id"] for post in unread} == {call.item_id, late.item_id}
+
+
 async def test_mark_read_is_scoped_to_one_open_group_across_pages(tmp_path: Path) -> None:
     from a13n_harness_ui.webui import create_webui
     from httpx import ASGITransport, AsyncClient
