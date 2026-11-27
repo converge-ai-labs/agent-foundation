@@ -28,7 +28,12 @@ it.each([false, true])(
   "ends www autolinks at CJK punctuation in Markdown (agent reply: %s)",
   (agentReply) => {
     const label = "www.example.com/wiki/人工智能";
-    render(<MarkdownContent agentReply text={`另见（${label}）了解更多。`} />);
+    render(
+      <MarkdownContent
+        agentReply={agentReply}
+        text={`另见（${label}）了解更多。`}
+      />,
+    );
     const link = screen.getByRole("link", { name: label });
     expect(link.getAttribute("href")).toBe(encodeURI(`http://${label}`));
     expect(link.nextSibling?.textContent).toBe("）了解更多。");
