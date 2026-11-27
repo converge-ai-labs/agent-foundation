@@ -61,7 +61,7 @@ import type { FileReference } from "./files/assets";
 import styles from "./conversations.module.css";
 import {
   RealtimeCallProvider,
-  RealtimeComposer,
+  ConversationComposer,
   useRealtimeAvailability,
 } from "./realtime";
 
@@ -261,47 +261,48 @@ export function NewConversation() {
             },
           ]}
         />
-        {realtime?.realtime ? (
-          <RealtimeComposer
-            key={agentId}
-            agentId={agentId}
-            agentName={selected?.name}
-            revisionId={revisionId}
-            initial={
-              message
-                ? { content: [{ type: "text", text: message }] }
-                : undefined
-            }
-            availability={realtime}
-            controls={controls}
-            disabled={
-              !can("run") || (memory !== null && !validSpaceSelection(memory))
-            }
-            setup={async () => {
-              const {
-                options: selectedOptions,
-                memories,
-                environment,
-              } = options.build();
-              return {
-                options: selectedOptions,
-                memories,
-                memory,
-                environments: environment
-                  ? [await primaryMount(environment)]
-                  : [],
-              };
-            }}
-            onAccepted={(run) => {
-              void invalidateConversation(cache, workspace.id, {
-                sessionId: run.session_id,
-                threadId: run.thread_id,
-                runId: run.run_id,
-              });
-              navigate(runPath(basePath, run) + "?follow=latest");
-            }}
-          />
-        ) : (
+        <ConversationComposer
+          voice={
+            realtime?.realtime
+              ? {
+                  agentId,
+                  agentName: selected?.name,
+                  revisionId,
+                  availability: realtime,
+                  initial: message
+                    ? { content: [{ type: "text", text: message }] }
+                    : undefined,
+                  controls,
+                  disabled:
+                    !can("run") ||
+                    (memory !== null && !validSpaceSelection(memory)),
+                  setup: async () => {
+                    const {
+                      options: selectedOptions,
+                      memories,
+                      environment,
+                    } = options.build();
+                    return {
+                      options: selectedOptions,
+                      memories,
+                      memory,
+                      environments: environment
+                        ? [await primaryMount(environment)]
+                        : [],
+                    };
+                  },
+                  onAccepted: (run) => {
+                    void invalidateConversation(cache, workspace.id, {
+                      sessionId: run.session_id,
+                      threadId: run.thread_id,
+                      runId: run.run_id,
+                    });
+                    navigate(runPath(basePath, run) + "?follow=latest");
+                  },
+                }
+              : undefined
+          }
+        >
           <Composer
             initial={
               message
@@ -369,7 +370,7 @@ export function NewConversation() {
               );
             }}
           />
-        )}
+        </ConversationComposer>
       </div>
     </div>
   );

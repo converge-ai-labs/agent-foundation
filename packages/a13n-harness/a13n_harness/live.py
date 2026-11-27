@@ -76,7 +76,12 @@ _WEBRTC_HANGUP_SECONDS = 5
 
 @dataclass(frozen=True, slots=True)
 class LiveWebRTC:
-    """An audio offer from the host and the callback that delivers its answer."""
+    """Host callbacks for signaling and durable provider-call tracking.
+
+    When supplied, record_call saves the call ID before the answer is delivered. After a
+    successful hangup it receives None. Hosts that retry cleanup handle transient storage
+    errors there. Raising from the callback signals that the Run cannot safely finish.
+    """
 
     offer: str
     deliver_answer: Callable[[str], Awaitable[None]]
@@ -615,8 +620,10 @@ class HarnessLiveStream(HarnessRunStream[None]):
                             )
                             return
                         if self._webrtc and self._webrtc.record_call:
-                            with anyio.fail_after(_WEBRTC_HANGUP_SECONDS, shield=True):
+                            with anyio.move_on_after(_WEBRTC_HANGUP_SECONDS, shield=True) as cleanup:
                                 await self._webrtc.record_call(None)
+                            if cleanup.cancelled_caught:
+                                get_logger(__name__).warning("Timed out clearing the provider hangup record")
 
                     transport.push_async_callback(hang_up)
                     if self._webrtc.record_call:

@@ -94,7 +94,7 @@ export function Composer({
     // A message that still fits has nothing to scroll, whatever the rounding.
     input.style.overflowY = input.scrollHeight > 240 ? "auto" : "hidden";
   }, [text, textInput]);
-  const [attachments, setAttachments] = useState<Attachment[]>(
+  const [draftAttachments, setAttachments] = useState<Attachment[]>(
     initial?.content.flatMap((part): Attachment[] =>
       part.type === "asset"
         ? [{ part, label: part.asset_id }]
@@ -103,12 +103,14 @@ export function Composer({
           : [],
     ) ?? [],
   );
-  const [structured, setStructured] = useState(() => {
+  const attachments = attachmentsEnabled ? draftAttachments : [];
+  const [structuredDraft, setStructured] = useState(() => {
     const json = initial?.content.find(
       (part): part is Schema["JsonPart"] => part.type === "json",
     );
     return json ? JSON.stringify(json.value, null, 2) : "";
   });
+  const structured = attachmentsEnabled ? structuredDraft : "";
   const [key, setKey] = useState(crypto.randomUUID()),
     [uploadFile, setUploadFile] = useState<{ file: File; key: string }>();
   const changed = () => setKey(crypto.randomUUID());
@@ -167,8 +169,10 @@ export function Composer({
     onSuccess: (submitted) => {
       if (submitted === false) return;
       setText("");
-      setAttachments([]);
-      setStructured("");
+      if (attachmentsEnabled) {
+        setAttachments([]);
+        setStructured("");
+      }
       changed();
     },
   });

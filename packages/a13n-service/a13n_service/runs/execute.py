@@ -99,7 +99,7 @@ from a13n_service.runs.attempts import (
     lock_thread_lease,
     prove,
 )
-from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged
+from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged, close_realtime_tool
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.child_messages import ParentMessageCapability
@@ -1073,9 +1073,10 @@ class _Attempt:
             return None
         results = DeferredToolResults()
         for call in requests.approvals:
-            results.approvals[call.tool_call_id] = await channel.approve(
-                call.tool_call_id, call.tool_name, call.args_as_json_str()
-            )
+            decision = await channel.approve(call.tool_call_id, call.tool_name, call.args_as_json_str())
+            if decision is None:
+                await close_realtime_tool(ctx)
+            results.approvals[call.tool_call_id] = decision
         return results
 
     async def _realtime_input(
@@ -1477,7 +1478,10 @@ class _Attempt:
                 # A rejected receipt is a recorded outcome, not an uncertain tool execution.
                 self.fold.interrupt(open_tool_calls(result.all_messages()))
                 await self._commit(
-                    result.state, cursors=self.cursors.snapshot(), snapshot=self._snapshot(), outcome=failed
+                    result.state,
+                    cursors=self.cursors.snapshot(),
+                    snapshot=self._snapshot(terminal=True),
+                    outcome=failed,
                 )
             else:
                 await self._record_usage()
@@ -1495,7 +1499,7 @@ class _Attempt:
         # Completed and suspended results always carry their state; a waiting one leaves its pending calls open.
         assert result.state is not None
         self.fold.interrupt(open_tool_calls(result.all_messages()))
-        snapshot = self._snapshot()
+        snapshot = self._snapshot(terminal=True)
         if result.status == "completed":
             require_output_size(result.output, self.runtime.settings.worker.output_bytes)
             outcome = Outcome(status="completed", output=result.output)
@@ -1516,7 +1520,7 @@ class _Attempt:
         display = None
         self.fold.interrupt()
         if not near_deadline(self.runtime, self.control):
-            snapshot = self.fold.pending(self._snapshot())
+            snapshot = self.fold.pending(self._snapshot(terminal=True))
             # Only user sources actually visible in this display join a failed/cancelled run's index.
             visible = {
                 str(metadata["source_id"])
@@ -1550,16 +1554,13 @@ class _Attempt:
         search = await asyncio.to_thread(self.search.prepare, items, inputs)
         return search, Snapshot(snapshot.pages, snapshot.tail.model_copy(update={"search": search.state}))
 
-    def _snapshot(self) -> Snapshot:
+    def _snapshot(self, *, terminal: bool = False) -> Snapshot:
         """The display to commit, with a safe resume hint captured without waiting for queued Redis writes.
 
         The writer replaces one immutable value on the same event loop. Terminal callers read it after close.
         """
-        if self.channel is not None and self.channel.closed.is_set():
-            channel = self.channel
-            self.fold.close_realtime_tools(
-                channel.expired | (channel.approved - channel.dispatched), channel.interrupted
-            )
+        if terminal and self.channel is not None:
+            self.fold.close_realtime_tools(self.channel.decisions, self.channel.dispatched)
         snapshot = self.fold.snapshot()
         tail, written = snapshot.tail, self.live.last_written if self.live is not None else None
         if (

@@ -108,7 +108,7 @@ it("retains message and attachment drafts when closing the attachment dialog", a
   });
 });
 
-it("keeps the waveform action with and without a realtime draft", () => {
+it("keeps the waveform action usable after audio startup fails with an empty draft", async () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
@@ -132,6 +132,20 @@ it("keeps the waveform action with and without a realtime draft", () => {
   expect(voice.closest("form")).toBe(input.closest("form"));
   expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
 
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      constructor() {
+        throw new Error("Audio output unavailable");
+      }
+    },
+  );
+  try {
+    fireEvent.click(voice);
+    expect(await screen.findByText("Audio output unavailable")).toBeTruthy();
+  } finally {
+    vi.unstubAllGlobals();
+  }
   fireEvent.change(input, { target: { value: "Typed input" } });
   const withDraft = screen.getByRole("button", { name: "Start voice chat" });
   expect(withDraft.className).toBe(voice.className);
@@ -390,20 +404,15 @@ it("transfers call controls to the accepted Run while the same socket becomes re
     fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
     expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "stop" }));
     expect(stop).toHaveBeenCalledOnce();
-    getRun
-      .mockResolvedValueOnce({
-        response: new Response(),
-        data: { sealed_at: null },
-      })
-      .mockResolvedValueOnce({
-        response: new Response(),
-        data: { sealed_at: "now" },
-      });
+    getRun.mockResolvedValueOnce({
+      response: new Response(),
+      data: { sealed_at: null },
+    });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10500);
     });
     expect(close).toHaveBeenCalled();
-    expect(getRun).toHaveBeenCalledTimes(2);
+    expect(getRun).toHaveBeenCalledOnce();
     expect(screen.queryByText("Saving conversation…")).toBeNull();
   } finally {
     vi.useRealTimers();

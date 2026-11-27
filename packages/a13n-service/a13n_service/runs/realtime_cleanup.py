@@ -1,6 +1,7 @@
 """Recover accepted calls without ingress and close provider calls orphaned by a lost Attempt."""
 
 import asyncio
+from dataclasses import replace
 from datetime import timedelta
 
 from a13n_logging import get_logger
@@ -16,7 +17,7 @@ from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.service import ResolvedModel
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import ModelProviderRow
-from a13n_service.runs.attempts import Lease, lock_thread_lease
+from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.realtime_transport import ATTACH_SECONDS
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RealtimeCallRow, RealtimeTicketRow, RunRow
@@ -37,22 +38,32 @@ def location(run: RunRow) -> SecretLocation:
 
 
 async def provider_call(runtime: Runtime, lease: Lease, model: ResolvedModel, call_id: str | None) -> None:
-    async with transaction(runtime.storage) as session:
-        _, run, _, _ = await lock_thread_lease(session, lease)
-        call = await session.get_one(RealtimeCallRow, run.id)
-        if call_id is None:
-            call.provider_session = None
-        else:
-            value = ProviderCall(
-                provider_id=model.provider.id,
-                model_id=model.id,
-                model_key=model.key,
-                config=model.config,
-                call_id=call_id,
-            )
-            call.provider_session = runtime.keys.protect(value.model_dump_json().encode(), location(run)).model_dump(
-                mode="json"
-            )
+    try:
+        async with transaction(runtime.storage) as session:
+            _, run, _, _ = await lock_thread_lease(session, lease)
+            call = await session.get_one(RealtimeCallRow, run.id)
+            if call_id is None:
+                call.provider_session = None
+            else:
+                value = ProviderCall(
+                    provider_id=model.provider.id,
+                    model_id=model.id,
+                    model_key=model.key,
+                    config=model.config,
+                    call_id=call_id,
+                )
+                call.provider_session = runtime.keys.protect(
+                    value.model_dump_json().encode(), location(run)
+                ).model_dump(mode="json")
+    except LeaseLost:
+        raise
+    except Exception as error:
+        if call_id is not None:
+            raise
+        logger.warning(
+            "Provider hangup record retained for cleanup",
+            extra={"run_id": lease.run_id, "error_type": type(error).__name__},
+        )
 
 
 async def reconcile(runtime: Runtime) -> None:
@@ -118,6 +129,12 @@ async def reconcile(runtime: Runtime) -> None:
                 value = ProviderCall.model_validate_json(runtime.keys.reveal(Envelope.model_validate(envelope), aad))
                 async with short_session(runtime.storage) as session:
                     provider = await read_provider(session, ModelProviderRow, value.provider_id)
+                # Inference headers are irrelevant to hanging up an existing provider call.
+                provider = replace(
+                    provider,
+                    extra_headers={},
+                    config={k: v for k, v in provider.config.items() if k != "session_affinity_header"},
+                )
                 model = ResolvedModel(value.model_id, value.model_key, 0, value.config, None, provider)
                 async with open_realtime_model(
                     model,

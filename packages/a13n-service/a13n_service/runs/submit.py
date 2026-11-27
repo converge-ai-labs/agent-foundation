@@ -39,7 +39,7 @@ from a13n_service.runs.accept import (
 from a13n_service.runs.attachments import asset_fields, require_readable
 from a13n_service.runs.environments.mounts import PRIMARY, mount_environments, shared_mounts, thread_has_primary
 from a13n_service.runs.environments.schemas import MountCreate
-from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
+from a13n_service.runs.inbox import Request, append_message, check_replay, compatible_steer, find_request
 from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
 from a13n_service.runs.memories.session_memory import configure
 from a13n_service.runs.runs import run_view
@@ -87,6 +87,8 @@ async def validate_message(
     then.
     """
     options = message.options
+    revision_id = message.agent_revision_id
+    receiving_options = None
     if thread.agent_snapshot is not None:
         options = await snapshot_options(session, thread, options)
     elif message.delivery == "steer" and thread.current_run_id is not None:
@@ -98,6 +100,9 @@ async def validate_message(
             raise conflict("run", current.id, "run_configuration_immutable")
         if not matches(accepted.execution, options.execution):
             raise conflict("run", current.id, "execution_policy_immutable")
+        if compatible_steer(message, options, current, accepted):
+            revision_id = current.agent_revision_id
+            receiving_options = accepted
     if thread.agent_snapshot is not None:
         revision = await definitions.resolve(
             session, thread, message.agent_id, message.agent_revision_id, message.options.overrides, accepting=True
@@ -110,10 +115,12 @@ async def validate_message(
             principal,
             scope,
             message.agent_id,
-            message.agent_revision_id,
+            revision_id,
             message.options.overrides,
             authority=authority,
         )
+    if receiving_options is not None:
+        overrides = receiving_options.overrides
     effective = stored.require_effective(revision.config, overrides, revision_id=revision.definition_id)
     selected = await resolve_model(session, principal, scope, effective.model, authority=authority)
     if selected.config.model_api in PROTOCOLS:

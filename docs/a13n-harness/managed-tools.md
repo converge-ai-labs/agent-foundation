@@ -115,7 +115,7 @@ permissions = ToolPermissionsCapability(
 
 ## Handle approvals and bound output
 
-- **Approvals:** Tools can also inspect `ctx.deps.tool_approval` or raise `ApprovalRequired`. Resume a suspended approval batch with `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` (see [Human-in-the-loop](human-in-the-loop.md)).
+- **Approvals:** Tools can also inspect `ctx.deps.tool_approval` or raise `ApprovalRequired`. Request approval before writing data, sending a request with side effects, or starting paid work. Approval can run the function again. Resume a suspended approval batch with `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` (see [Human-in-the-loop](human-in-the-loop.md)).
 - **Output bounds (`ToolOutputPolicy`):** Choose `overflow="spill"` (default—writes full redacted output to `.a13n/tmp/tool-results/` when an Environment mount is writable), `"truncate"`, or `"fail"`.
 
 ### Unattended Runs

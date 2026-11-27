@@ -16,7 +16,6 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
-from pydantic_ai.exceptions import SkipToolExecution
 from redis.exceptions import RedisError
 from sqlalchemy import delete, func, select
 from starlette.websockets import WebSocketState
@@ -68,11 +67,8 @@ class Channel:
     incoming: asyncio.Queue[bytes | str | Media] = field(default_factory=lambda: asyncio.Queue(64))
     outgoing: asyncio.Queue[dict[str, str | int | bool]] = field(default_factory=lambda: asyncio.Queue(128))
     pcm: asyncio.Queue[tuple[int, bytes]] = field(default_factory=lambda: asyncio.Queue(32))
-    decided: set[str] = field(default_factory=set)
+    decisions: dict[str, bool | None] = field(default_factory=dict)
     dispatched: set[str] = field(default_factory=set)
-    approved: set[str] = field(default_factory=set)
-    interrupted: set[str] = field(default_factory=set)
-    expired: set[str] = field(default_factory=set)
     closed: asyncio.Event = field(default_factory=asyncio.Event)
     finished: asyncio.Event = field(default_factory=asyncio.Event)
     failed: bool = False
@@ -81,7 +77,7 @@ class Channel:
     draft: str = ""
     playback_epoch: int = 0
     playback_offset: int = 0
-    verify_dispatch: Callable[[str], Awaitable[None]] | None = None
+    verify_dispatch: Callable[[str], Awaitable[bool]] | None = None
     approvals: dict[str, asyncio.Future[bool]] = field(default_factory=dict)
     webrtc_offer: str | None = None
 
@@ -110,11 +106,14 @@ class Channel:
         self.emit({"type": "sealed", "run_id": run_id, "status": status})
         self.finished.set()
 
-    async def approve(self, call_id: str, name: str, arguments: str) -> bool:
-        if self.closed.is_set() or call_id in self.decided:
-            self.expired.add(call_id)
+    async def approve(self, call_id: str, name: str, arguments: str) -> bool | None:
+        if call_id in self.decisions:
             return False
-        self.decided.add(call_id)
+        self.decisions[call_id] = None
+        # A tool body or managed policy may defer an execution that already reached the dispatch hook.
+        self.dispatched.discard(call_id)
+        if self.closed.is_set():
+            return None
         answer = asyncio.get_running_loop().create_future()
         self.approvals[call_id] = answer
         disconnected = asyncio.create_task(self.closed.wait())
@@ -122,15 +121,15 @@ class Channel:
             self.emit({"type": "approval_required", "call_id": call_id, "name": name, "arguments": arguments})
             done, _ = await asyncio.wait((answer, disconnected), return_when=asyncio.FIRST_COMPLETED)
             if self.closed.is_set() or answer not in done:
-                self.expired.add(call_id)
-                return False
-            if answer.result():
-                self.approved.add(call_id)
+                return None
+            self.decisions[call_id] = answer.result()
             return answer.result()
         finally:
             self.approvals.pop(call_id, None)
             answer.cancel()
             disconnected.cancel()
+            if self.decisions[call_id] is None and not self.closed.is_set():
+                self.emit({"type": "approval_withdrawn", "call_id": call_id})
             await asyncio.gather(disconnected, return_exceptions=True)
 
 
@@ -746,11 +745,12 @@ async def relay(
             await pipe.send(frame)
 
     async def send() -> None:
-        attachment = await pipe.receive(attaching=True)
-        if not attachment.startswith(b"a"):
-            raise unavailable()
-        await authorize_attachment(pipe.attempt_id)
-        await pipe.send(b"o" + (offer or "").encode())
+        async with pipe.handshake():
+            attachment = await pipe.receive()
+            if not attachment.startswith(b"a"):
+                raise unavailable()
+            await authorize_attachment(pipe.attempt_id)
+            await pipe.send(b"o" + (offer or "").encode())
         attached.set()
         next_offset = 0
         acknowledged_epoch = 0
@@ -830,26 +830,21 @@ async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channe
         raise ServiceError("conflict", "Start a new connection to continue this realtime Thread")
     await prove(runtime.storage, lease)
     pipe = Pipe(bridge, session_id, side="worker")
-    offer = await pipe.attach(lease)
-    async with pipe.subscribe():
-        await pipe.send(b"a" + lease.attempt_id.encode() + b"/" + bridge.id.encode())
-        start = await pipe.receive()
+    async with AsyncExitStack() as stack:
+        async with pipe.handshake():
+            offer = await pipe.attach(lease)
+            await stack.enter_async_context(pipe.subscribe())
+            await pipe.send(b"a" + lease.attempt_id.encode() + b"/" + bridge.id.encode())
+            start = await pipe.receive()
         if not start.startswith(b"o"):
             raise unavailable()
         channel = Channel(
             offer.principal_id, offer.workspace_id, audio=offer.audio, webrtc_offer=start[1:].decode() or None
         )
 
-        async def verify_dispatch(call_id: str) -> None:
-            def stop_dispatch() -> None:
-                if call_id in channel.approved:
-                    channel.expired.add(call_id)
-                else:
-                    channel.interrupted.add(call_id)
-                raise SkipToolExecution("The realtime conversation ended before tool dispatch")
-
+        async def verify_dispatch(call_id: str) -> bool:
             if channel.closed.is_set() and not channel.failed:
-                stop_dispatch()
+                return False
             await prove(runtime.storage, lease)
             async with short_session(runtime.storage) as session:
                 call = await session.get_one(RealtimeCallRow, lease.run_id)
@@ -858,10 +853,11 @@ async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channe
             if channel.failed:
                 raise unavailable()
             if await pipe.redis.get(pipe.inbox + ":close") == pipe.fence or channel.closed.is_set():
-                stop_dispatch()
-            if call_id in channel.dispatched:
-                raise ServiceError("conflict", "This tool call was already dispatched")
+                return False
+            if call_id in channel.dispatched or not channel.decisions.get(call_id, True):
+                raise ServiceError("conflict", "This tool call was already decided")
             channel.dispatched.add(call_id)
+            return True
 
         channel.verify_dispatch = verify_dispatch
         channel.draft = offer.draft

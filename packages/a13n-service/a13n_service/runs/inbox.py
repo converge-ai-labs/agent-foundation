@@ -425,6 +425,11 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
         return origin is not None and (origin.id == run.id or origin.sealed_at is not None)
     options = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
     accepted = stored.require(RunOptions, run.options, kind="run", id=run.id)
+    return compatible_steer(entry, options, run, accepted)
+
+
+def compatible_steer(entry: InboxEntryRow | Message, options: RunOptions, run: RunRow, accepted: RunOptions) -> bool:
+    """Use the same submitted choices to select the receiving Run at validation and assignment."""
     configuration = accepted.configuration
     requested_output = options.overrides.output_spec if options.overrides else None
     accepted_output = accepted.overrides.output_spec if accepted.overrides else None

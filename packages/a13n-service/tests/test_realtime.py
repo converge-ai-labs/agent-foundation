@@ -29,7 +29,7 @@ from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RealtimeCallRow, RunRow
 from a13n_service.settings import Providers
 from pydantic import SecretStr
-from pydantic_ai import Tool
+from pydantic_ai import ApprovalRequired, ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import BinaryAudio, ModelMessage, RealtimeTurnCompleteEvent
 from pydantic_ai.models import ModelRequestParameters
@@ -43,6 +43,7 @@ from pydantic_ai.realtime.codec import (
     ResponseDone,
     TextContext,
     ToolCall,
+    ToolCallCancelled,
     ToolResult,
     TruncateOutput,
 )
@@ -299,7 +300,13 @@ async def test_app_opens_realtime_over_http_and_websocket(
         monkeypatch.setattr(adapter, "hang_up", provider.hang_up)
         build = agent.build
 
-        def lookup_order() -> str:
+        def validate_order(ctx: RunContext) -> None:
+            if ctx.tool_call_approved and ctx.tool_call_id == "call_revalidate":
+                raise ModelRetry("Order changed while waiting for approval")
+
+        def lookup_order(ctx: RunContext) -> str:
+            if not ctx.tool_call_approved:
+                raise ApprovalRequired()
             calls.append("lookup_order")
             return "Order shipped"
 
@@ -308,7 +315,8 @@ async def test_app_opens_realtime_over_http_and_websocket(
                 root,
                 capabilities=lambda node: [
                     *capabilities(node),
-                    Capability(tools=[Tool(lookup_order, requires_approval=True)]),
+                    # Cover both a declared approval and a tool that asks from its body.
+                    Capability(tools=[Tool(lookup_order, requires_approval=not split, args_validator=validate_order)]),
                 ],
                 **kwargs,
             )
@@ -403,16 +411,22 @@ async def test_app_opens_realtime_over_http_and_websocket(
                     assert isinstance(audio, BinaryAudio) and audio.data == pcm
                     await provider.connection.incoming.put(AudioDelta(pcm))
                 elif transport == "webrtc":
-                    await provider.connection.incoming.put(
-                        ToolCall("call_order", tool_name="lookup_order", args="{}", response_usage_follows=True)
-                    )
-                    await provider.connection.incoming.put(ResponseDone())
-                    approval = json.loads(await socket.recv())
-                    assert approval["type"] == "approval_required" and approval["call_id"] == "call_order"
-                    assert calls == []
-                    await socket.send('{"type":"approval","call_id":"call_order","approve":true}')
-                    result = await provider.connection.outgoing.get()
-                    assert isinstance(result, ToolResult) and "Order shipped" in result.output
+                    for call_id, allowed, expected in (
+                        ("call_declined", False, "denied"),
+                        ("call_revalidate", True, "Order changed"),
+                        ("call_order", True, "Order shipped"),
+                    ):
+                        await provider.connection.incoming.put(
+                            ToolCall(call_id, tool_name="lookup_order", args="{}", response_usage_follows=True)
+                        )
+                        await provider.connection.incoming.put(ResponseDone())
+                        approval = json.loads(await socket.recv())
+                        assert approval["type"] == "approval_required" and approval["call_id"] == call_id
+                        assert calls == []
+                        await socket.send(json.dumps({"type": "approval", "call_id": call_id, "approve": allowed}))
+                        result = await provider.connection.outgoing.get()
+                        assert isinstance(result, ToolResult) and result.tool_call_id == call_id
+                        assert expected in result.output
                     assert calls == ["lookup_order"]
                 await provider.connection.incoming.put(OutputTranscript("Hello!", is_final=True))
                 await provider.connection.incoming.put(ResponseDone())
@@ -427,6 +441,25 @@ async def test_app_opens_realtime_over_http_and_websocket(
                     while "playback_end" not in received:
                         received.append(json.loads(await socket.recv())["type"])
                     assert "interrupted" in received
+                if transport == "webrtc":
+                    await provider.connection.incoming.put(
+                        ToolCall("call_pending", tool_name="lookup_order", args="{}", response_usage_follows=True)
+                    )
+                    await provider.connection.incoming.put(ResponseDone())
+                    while (event := json.loads(await socket.recv()))["type"] == "transcript":
+                        pass
+                    assert event["type"] == "approval_required" and event["call_id"] == "call_pending"
+                    if split:
+                        # An explicit provider cancellation settles the pending call while the session stays live.
+                        await provider.connection.incoming.put(ToolCallCancelled(["call_pending"]))
+                        assert json.loads(await socket.recv()) == {
+                            "type": "approval_withdrawn",
+                            "call_id": "call_pending",
+                        }
+                        await socket.send(json.dumps({"type": "approval", "call_id": "call_pending", "approve": True}))
+                        await provider.connection.incoming.put(OutputTranscript("Cancelled.", is_final=True))
+                        await provider.connection.incoming.put(ResponseDone())
+                        assert json.loads(await socket.recv())["text"] == "Cancelled."
                 await socket.send('{"type":"stop"}')
                 async for frame in socket:
                     assert json.loads(frame)["type"] in {"transcript", "sealed"}, frame
@@ -437,7 +470,15 @@ async def test_app_opens_realtime_over_http_and_websocket(
         assert run["trigger"] == "realtime" and run["max_attempts"] == 1
         assert run["status"] == "completed"
         assert provider.hangups == (1 if transport == "webrtc" else 0)
-        assert ("user", "Hello from an App.") in runs_kit.texts(await runs_kit.items(service, run["id"]))
+        items = await runs_kit.items(service, run["id"])
+        assert ("user", "Hello from an App.") in runs_kit.texts(items)
+        if transport == "webrtc":
+            outcomes = {i["content"]["toolCallId"]: i for i in items["items"] if i["kind"] == "tool_call"}
+            assert outcomes["call_declined"]["content"]["outcome"] == "denied"
+            assert outcomes["call_revalidate"]["state"] == "failed"
+            assert "Order changed" in str(outcomes["call_revalidate"]["content"])
+            assert outcomes["call_order"]["state"] == "completed"
+            assert outcomes["call_pending"]["content"]["outcome"] == "expired"
 
 
 @pytest.mark.parametrize(
@@ -668,6 +709,21 @@ async def test_webrtc_rejects_data_channels_and_hangs_up_when_sideband_fails(set
                     assert provider.hangups == 1
 
 
+async def test_provider_call_defers_only_cleanup_errors(monkeypatch):
+    from a13n_service.runs.attempts import LeaseLost
+
+    runtime, lease, model = Mock(), Mock(), Mock()
+    transaction = Mock(side_effect=OSError("Database is unavailable"))
+    monkeypatch.setattr(realtime_cleanup, "transaction", transaction)
+
+    await realtime_cleanup.provider_call(runtime, lease, model, None)
+    with pytest.raises(OSError):
+        await realtime_cleanup.provider_call(runtime, lease, model, "rtc_call")
+    transaction.side_effect = LeaseLost()
+    with pytest.raises(LeaseLost):
+        await realtime_cleanup.provider_call(runtime, lease, model, None)
+
+
 async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs_kit, monkeypatch):
     service = executing
     await runs_kit.pause_sweeps(service)
@@ -713,6 +769,16 @@ async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs
     async with short_session(service.runtime.storage) as db:
         run = await db.get_one(RunRow, run_id)
         assert run.status == "completed" and run.checkpoint
+
+    model = (await service.client.get(f"{service.api}/models/voice")).json()
+    provider_url = f"{service.api}/model-providers/{model['provider_id']}"
+    saved = await service.client.get(provider_url)
+    changed = await service.client.patch(
+        provider_url,
+        headers={"if-match": saved.headers["etag"]},
+        json={"config": {"session_affinity_header": "x-thread"}, "extra_headers": {"x-inference": "enabled"}},
+    )
+    assert changed.status_code == 200, changed.text
 
     hangup.reset_mock()
     entered = asyncio.Event()
@@ -1133,7 +1199,9 @@ async def test_crash_before_notice_checkpoint_redelivers_on_reconnect(
 async def test_approval_close_straddles_dispatch_gate(
     settings, serve, service_app, runs_kit, monkeypatch, after_dispatch, requires_approval
 ):
+    from a13n_harness.live import HarnessLiveStream
     from a13n_service.runs.boundaries import Boundaries
+    from pydantic_ai.messages import ToolReturnPart
 
     dispatched = asyncio.Event()
     gate = asyncio.Event()
@@ -1164,20 +1232,37 @@ async def test_approval_close_straddles_dispatch_gate(
 
     monkeypatch.setattr(agent, "build", with_tool)
     original = Boundaries.before_tool_execute
+    close_requested = asyncio.Event()
+    usage = None
 
     async def pause(boundary, ctx, *, call, tool_def, args):
+        nonlocal usage
+        usage = ctx.usage
         if boundary.before_dispatch and not after_dispatch:
             verify = boundary.before_dispatch
 
             async def hold(call_id):
                 gate.set()
-                await resume.wait()
-                await verify(call_id)
+                await close_requested.wait()
+                try:
+                    return await verify(call_id)
+                finally:
+                    resume.set()
 
             boundary.before_dispatch = hold
         return await original(boundary, ctx, call=call, tool_def=tool_def, args=args)
 
     monkeypatch.setattr(Boundaries, "before_tool_execute", pause)
+    if not after_dispatch:
+        close = HarnessLiveStream.close
+
+        async def close_after_gate(stream):
+            # Let the dispatch hook observe a closed channel while the native session is still open.
+            close_requested.set()
+            await resume.wait()
+            await close(stream)
+
+        monkeypatch.setattr(HarnessLiveStream, "close", close_after_gate)
     async with serve(role="control", settings=settings) as service:
         worker = service_app(role="worker", settings=settings)
         async with (
@@ -1202,18 +1287,31 @@ async def test_approval_close_straddles_dispatch_gate(
                     assert json.loads(await ws.recv())["type"] == "approval_required"
                     await ws.send('{"type":"approval","call_id":"call_order","approve":true}')
                 await (dispatched if after_dispatch else gate).wait()
-            resume.set()
-            # Socket is already closed. Read the durable outcome without a sealed receipt.
+                if after_dispatch:
+                    response = await service.client.post(f"{service.api}/runs/{ticket['run_id']}/interrupt")
+                    assert response.status_code == 200
+                    await runs_kit.sealed(service, ticket["run_id"])
             run = await runs_kit.sealed(service, ticket["run_id"])
-            assert run["status"] == "completed"
+            assert run["status"] == ("cancelled" if after_dispatch else "completed")
             assert dispatched.is_set() == after_dispatch
             if after_dispatch:
                 assert ended.is_set()
+            else:
+                assert usage is not None and usage.tool_calls == 0
+                async with short_session(service.runtime.storage) as db:
+                    row = await db.get_one(RunRow, run["id"])
+                    pointer = checkpoints.StatePointer.model_validate(row.checkpoint)
+                state = await checkpoints.load_state(service.runtime.objects, pointer)
+                assert state is not None
+                assert [
+                    part.outcome
+                    for message in state.harness.message_history
+                    for part in message.parts
+                    if isinstance(part, ToolReturnPart) and part.tool_call_id == "call_order"
+                ] == ["interrupted"]
             items = await runs_kit.items(service, ticket["run_id"])
             item = next(i for i in items["items"] if i["content"].get("toolCallId") == "call_order")
-            assert item["content"]["outcome"] == (
-                "expired" if requires_approval and not after_dispatch else "interrupted"
-            )
+            assert item["content"]["outcome"] == ("interrupted" if after_dispatch else "expired")
 
 
 async def test_missed_sealed_receipt_recovers_via_http(settings, serve, service_app, runs_kit, monkeypatch):
@@ -1293,6 +1391,10 @@ def test_realtime_settings_expose_inference_and_protect_service_owned_fields():
 
 
 async def test_voice_fork_redeems_into_a_new_thread_at_the_selected_checkpoint(executing, runs_kit, monkeypatch):
+    from a13n_service.app_provenance import AppProvenance
+    from a13n_service.runs.sessions import new_session
+    from a13n_service.runs.threads import new_thread
+
     provider = ScriptedRealtimeProvider()
     monkeypatch.setattr(OpenAIRealtimeModel, "connect", provider.connect)
     agent_view = await create_voice_agent(executing, runs_kit)
@@ -1330,7 +1432,13 @@ async def test_voice_fork_redeems_into_a_new_thread_at_the_selected_checkpoint(e
                 assert events[-1]["status"] == "completed"
             return await runs_kit.get_run(executing, ticket["run_id"]), before
 
-        root, _ = await talk("Original branch point")
+        tenant = executing.tenant
+        provenance = AppProvenance("voice-app", {"instance": "one"})
+        owner = new_session(tenant.organization_id, tenant.workspace_id, tenant.principal_id, provenance=provenance)
+        thread = new_thread(owner, mcp_headers={})
+        async with transaction(executing.runtime.storage) as db:
+            db.add_all((owner, thread))
+        root, _ = await talk("Original branch point", thread_id=thread.id)
         invalid_selection = await client.get(
             f"{api}/realtime", params={"agent_id": agent_view["id"], "fork_run_id": root["id"], "model": "other"}
         )
@@ -1340,6 +1448,11 @@ async def test_voice_fork_redeems_into_a_new_thread_at_the_selected_checkpoint(e
         branch, inherited = await talk("New branch message", fork_run_id=root["id"])
         assert branch["session_id"] == root["session_id"] and branch["thread_id"] != root["thread_id"]
         assert branch["trigger"] == "realtime" and branch["lineage"] == "fork" and branch["parent_run_id"] == root["id"]
+        for run in (root, newer, branch):
+            assert run["app_id"] == "voice-app" and run["trigger_app_id"] is None
+        async with short_session(executing.runtime.storage) as db:
+            for run in (newer, branch):
+                assert (await db.get_one(RunRow, run["id"])).app_context == provenance.app_context
         assert branch["agent_revision_id"] == root["agent_revision_id"]
         assert "Original branch point" in inherited and "Later source message" not in inherited
         source_thread = (await client.get(f"{api}/threads/{root['thread_id']}")).json()

@@ -9,7 +9,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Never
 
 from a13n_harness import AgentContext, HarnessState
 from a13n_harness.capabilities import CompactionCapability, HandoffCapability
@@ -35,6 +35,13 @@ class Staged:
     completed: asyncio.Future[None]
 
 
+async def close_realtime_tool(ctx: RunContext) -> Never:
+    """Settle unfinished calls in native history and stop this tool before dispatch."""
+    assert ctx.realtime_session is not None
+    await ctx.realtime_session.close()
+    raise asyncio.CancelledError
+
+
 class Boundaries(AbstractCapability[AgentContext]):
     id = "a13n.service.boundaries"
 
@@ -51,7 +58,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         self.wait_for_model = False
         self.staging = asyncio.Lock()
         self.pending_live: Staged | None = None
-        self.before_dispatch: Callable[[str], Awaitable[None]] | None = None
+        self.before_dispatch: Callable[[str], Awaitable[bool]] | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(
@@ -154,8 +161,8 @@ class Boundaries(AbstractCapability[AgentContext]):
                 self.pending_live = None
                 completed = await self._stage(ctx, ctx.messages, "tool")
             await asyncio.shield(completed)
-            if self.before_dispatch is not None:
-                await self.before_dispatch(call.tool_call_id)
+            if self.before_dispatch is not None and not await self.before_dispatch(call.tool_call_id):
+                await close_realtime_tool(ctx)
         return args
 
     async def stage_live(self, capture: Callable[[], Awaitable[HarnessState]]) -> None:

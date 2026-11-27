@@ -10,6 +10,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING, Literal, cast
 from uuid import uuid4
 
+from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
@@ -122,21 +123,30 @@ class Pipe:
         self.explicit_commits = False
         self.control_sent = self.control_received = 0
         self.last_check = 0.0
-        self.started = asyncio.get_running_loop().time()
+        self.attach_deadline = asyncio.get_running_loop().time() + ATTACH_SECONDS
+        self.check_heartbeat_after: float | None = None
 
     @property
     def fence(self) -> bytes:
         return f"{self.control_id}/{self.attempt_id}".encode()
 
+    @asynccontextmanager
+    async def handshake(self) -> AsyncIterator[None]:
+        try:
+            async with asyncio.timeout_at(self.attach_deadline):
+                yield
+        except TimeoutError:
+            raise unavailable() from None
+        self.check_heartbeat_after = asyncio.get_running_loop().time() + _PEER_TIMEOUT
+
     async def publish_offer(self, offer: Offer) -> None:
         await self.redis.set(self.offer, offer.model_dump_json(), ex=ATTACH_SECONDS)
 
     async def attach(self, lease: Lease) -> Offer:
-        async with asyncio.timeout(ATTACH_SECONDS):
-            while (raw := await self.redis.getdel(self.offer)) is None:
-                if await self.redis.exists(self.inbox + ":close"):
-                    raise unavailable()
-                await asyncio.sleep(0.05)
+        while (raw := await self.redis.getdel(self.offer)) is None:
+            if await self.redis.exists(self.inbox + ":close"):
+                raise unavailable()
+            await asyncio.sleep(0.05)
         offer = Offer.model_validate_json(raw)
         if offer.workspace_id != lease.workspace_id:
             raise unavailable()
@@ -155,12 +165,18 @@ class Pipe:
             self.bridge.calls.pop(address, None)
 
     async def shutdown(self) -> None:
-        if self.side == "control" or self.peer:
+        if self.side != "control" and not self.peer:
+            return
+        try:
             async with self.redis.pipeline(transaction=False) as batch:
                 batch.set(self.outbox + ":close", self.fence, ex=ATTACH_SECONDS * 2)
                 if self.peer:
                     batch.publish(f"a13n:rt:{self.peer}:control", self.outbox.encode())
                 await batch.execute()
+        except RedisError as error:
+            get_logger(__name__).warning(
+                "Realtime peer close notification failed", extra={"error_type": type(error).__name__}
+            )
 
     async def send(self, frame: bytes) -> None:
         try:
@@ -194,8 +210,7 @@ class Pipe:
         except RedisError:
             raise unavailable() from None
 
-    async def receive(self, *, attaching: bool = False) -> bytes:
-        deadline = self.started + ATTACH_SECONDS
+    async def receive(self) -> bytes:
         try:
             while True:
                 self.wake.clear()
@@ -210,7 +225,11 @@ class Pipe:
                         return b"closed"
                     if periodic:
                         self.last_check = clock
-                        if not attaching and clock - self.started > _PEER_TIMEOUT and alive != self.fence:
+                        if (
+                            self.check_heartbeat_after is not None
+                            and clock >= self.check_heartbeat_after
+                            and alive != self.fence
+                        ):
                             raise unavailable()
                     rows = await self.redis.xread({self.inbox: self.cursor}, count=_STREAM_LIMIT)
                     for _, entries in cast(list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]], rows):
@@ -219,7 +238,8 @@ class Pipe:
                             frame = fields[b"frame"]
                             fence = fields[b"fence"]
                             if (
-                                attaching
+                                self.side == "control"
+                                and not self.peer
                                 and frame.startswith(b"a")
                                 and fence.startswith(self.control_id.encode() + b"/")
                             ):
@@ -279,8 +299,6 @@ class Pipe:
                         elif self.segment_gap:
                             self.resumed_after_gap = True
                         return b"b" + packet[_PCM_HEADER.size :]
-                if attaching and clock >= deadline:
-                    raise unavailable()
                 try:
                     await asyncio.wait_for(
                         self.wake.wait(),

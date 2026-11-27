@@ -1,7 +1,7 @@
 """support realtime conversations
 
 Revision ID: 1a495a69a673
-Revises: 7b2bb3943ecc
+Revises: 482d62aeefa1
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "1a495a69a673"
-down_revision = "7b2bb3943ecc"
+down_revision = "482d62aeefa1"
 branch_labels = None
 depends_on = None
 

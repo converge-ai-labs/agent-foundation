@@ -45,27 +45,25 @@ export interface RealtimeReceipt {
   run_id: string;
 }
 
-export function useRealtimeAvailability(
-  { agentId, revisionId, threadId, forkRunId, model }: Selection,
-  busy = false,
-) {
+export function useRealtimeAvailability({
+  agentId,
+  revisionId,
+  threadId,
+  forkRunId,
+  model,
+}: Selection) {
   const { workspace, can } = useWorkspace();
   const client = useClient();
-  const identity = [
-    workspace.id,
-    agentId,
-    revisionId,
-    threadId ?? forkRunId,
-    model,
-  ];
   return useQuery<Availability>({
-    queryKey: ["realtime", ...identity, busy],
-    placeholderData: (previous, query) =>
-      query?.queryKey
-        .slice(1, 1 + identity.length)
-        .every((value, index) => value === identity[index])
-        ? previous
-        : undefined,
+    queryKey: [
+      "realtime",
+      workspace.id,
+      agentId,
+      revisionId,
+      threadId,
+      forkRunId,
+      model,
+    ],
     enabled: !!agentId && can("run"),
     retry: false,
     queryFn: ({ signal }) =>
@@ -103,6 +101,7 @@ type Approval = {
 
 type Event =
   | Approval
+  | { type: "approval_withdrawn"; call_id: string }
   | ({ type: "accepted" } & RealtimeReceipt)
   | { type: "sealed"; run_id: string; status: string }
   | {
@@ -133,7 +132,8 @@ interface CallOptions extends Selection {
 
 function useRealtimeCall() {
   const { t } = useTranslation();
-  const { workspace, basePath } = useWorkspace();
+  const { workspace, basePath, can } = useWorkspace();
+  const canRun = can("run");
   const client = useClient();
   const cache = useQueryClient();
   const interruptPlayback = useRef<(() => void) | null>(null);
@@ -158,6 +158,9 @@ function useRealtimeCall() {
   const stopMedia = useRef<(() => void) | null>(null);
 
   useEffect(() => () => cleanup.current?.(), []);
+  useEffect(() => {
+    if (!canRun) cleanup.current?.();
+  }, [canRun]);
 
   const dialingOwner = useRef<string | undefined>(undefined);
   const runRoute = useRef<string | undefined>(undefined);
@@ -179,13 +182,14 @@ function useRealtimeCall() {
       onAccepted,
     }: CallOptions,
     firstText?: string,
+    displayedRunId?: string,
   ): Promise<void | false> {
     if (!agentId || cleanup.current || !availability.can_start)
       throw new Error(t("Realtime connection failed"));
     const useWebRTC =
       availability.transports?.includes("webrtc") &&
       typeof RTCPeerConnection !== "undefined";
-    const context = new AudioContext();
+    let context: AudioContext;
     const abort = new AbortController();
     let settleFirst: ((result?: Error | false) => void) | undefined;
     let input: MediaStream | undefined;
@@ -254,7 +258,7 @@ function useRealtimeCall() {
         speaker.pause();
         speaker.srcObject = null;
       }
-      void context.close();
+      void context?.close();
     };
     const dispose = () => {
       disposed = true;
@@ -320,8 +324,10 @@ function useRealtimeCall() {
     setPhase("connecting");
     setOwner(ownerId);
     dialingOwner.current = ownerId;
+    if (displayedRunId) setActiveRun({ id: displayedRunId, availability });
     setApprovals([]);
     try {
+      context = new AudioContext();
       await context.resume();
       if (disposed) return false;
       input = await navigator.mediaDevices.getUserMedia({
@@ -471,8 +477,10 @@ function useRealtimeCall() {
           return;
         }
         const event = JSON.parse(data) as Event;
-        if (event.type === "sealed" && receipt?.run_id === event.run_id)
+        if (event.type === "sealed" && receipt?.run_id === event.run_id) {
           sealed = true;
+          setApprovals([]);
+        }
         if (event.type === "playback_position") nextOffset = event.offset;
         if (event.type === "barge_in" && hasPlayback()) interrupt();
         if (event.type === "interrupted") interrupting = false;
@@ -510,9 +518,15 @@ function useRealtimeCall() {
               : [...items, event],
           );
         }
+        if (event.type === "approval_withdrawn") {
+          setApprovals((items) =>
+            items.filter((item) => item.call_id !== event.call_id),
+          );
+        }
         if (event.type === "error") {
           setError(event.message);
-          settleFirst?.(new Error(event.message));
+          // The close handler checks whether the ticket already created a Run.
+          settleFirst?.(false);
         }
       };
       connected.onerror = () => setError(t("Realtime connection failed"));
@@ -536,16 +550,12 @@ function useRealtimeCall() {
               abort.signal,
               AbortSignal.timeout(20000),
             ]);
-            for (let delay = 100; ; delay = Math.min(delay * 2, 1000)) {
-              const run = await api.GET("/api/v1/runs/{run_id}", {
-                params: { path: { run_id: receipt.run_id } },
-                signal,
-              });
-              if (run.response.status === 404) return;
-              if (data(run).sealed_at) break;
-              await new Promise((resolve) => setTimeout(resolve, delay));
-              signal.throwIfAborted();
-            }
+            const run = await api.GET("/api/v1/runs/{run_id}", {
+              params: { path: { run_id: receipt.run_id } },
+              signal,
+            });
+            if (run.response.status === 404) return;
+            data(run);
           }
           if (!disposed) {
             void invalidateConversation(cache, workspace.id, {
@@ -571,7 +581,7 @@ function useRealtimeCall() {
         connection?.close();
         void finish(1000);
       };
-      return await firstMessage;
+      return firstMessage;
     } catch (cause) {
       if (disposed) return false;
       dispose();
@@ -642,27 +652,58 @@ export function useActiveRealtimeAvailability(runId: string) {
     : undefined;
 }
 
-export function RealtimeComposer({
-  displayedRunId,
-  controls,
-  disabled,
-  agentName,
-  initial,
-  ...options
-}: CallOptions & {
+type VoiceComposerOptions = CallOptions & {
   displayedRunId?: string;
   controls?: ReactNode;
   disabled?: boolean;
   agentName?: string;
   initial?: Schema["MessagePayload"];
+};
+
+export function RealtimeComposer(options: VoiceComposerOptions) {
+  return <ConversationComposer voice={options} />;
+}
+
+export function ConversationComposer({
+  voice,
+  children,
+}: {
+  voice?: VoiceComposerOptions;
+  children?: ReactNode;
 }) {
+  const controls = useVoiceComposer(voice);
+  return (
+    <>
+      {controls?.approvals}
+      {controls?.editor ?? children}
+      {controls?.status}
+    </>
+  );
+}
+
+function useVoiceComposer(voice?: VoiceComposerOptions) {
   const { t } = useTranslation();
   const id = useId();
   const call = useContext(CallContext);
+  const dialingOwner = call?.dialingOwner;
+  const cleanup = call?.cleanup;
+  useEffect(
+    () => () => {
+      if (dialingOwner?.current === id) cleanup?.current?.();
+    },
+    [id, dialingOwner, cleanup, voice?.agentId],
+  );
+  if (!voice) return;
   if (!call) throw new Error(t("Realtime conversation is unavailable."));
   const {
-    dialingOwner,
-    cleanup,
+    displayedRunId,
+    controls,
+    disabled,
+    agentName,
+    initial,
+    availability,
+  } = voice;
+  const {
     owner,
     sendText,
     supportsInterruption,
@@ -675,17 +716,9 @@ export function RealtimeComposer({
   const phase = mine ? call.phase : "idle";
   const error = mine ? call.error : "";
   const approvals = mine ? call.approvals : [];
-  const { availability } = options;
   const acceptsText =
     phase === "ready" ? call.acceptsText : availability.accepts_text;
-  useEffect(
-    () => () => {
-      if (dialingOwner.current === id) cleanup.current?.();
-    },
-    [id, dialingOwner, cleanup],
-  );
-
-  const start = (text?: string) => call.start(id, options, text);
+  const start = (text?: string) => call.start(id, voice, text, displayedRunId);
   async function submit(payload: Schema["MessagePayload"]) {
     const text = payload.content
       .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
@@ -698,37 +731,37 @@ export function RealtimeComposer({
     sendText(text);
   }
 
-  return (
-    <>
-      {approvals.map((approval) => (
-        <section
-          key={approval.call_id}
-          aria-label={t("Approval required")}
-          className="grid gap-2 rounded-xl border p-3"
-        >
-          <p className="text-sm font-medium">{approval.name}</p>
-          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-xs">
-            {approval.arguments}
-          </pre>
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={phase !== "ready"}
-              onClick={() => decide(approval.call_id, false)}
-            >
-              {t("Deny")}
-            </Button>
-            <Button
-              type="button"
-              disabled={phase !== "ready"}
-              onClick={() => decide(approval.call_id, true)}
-            >
-              {t("Approve once")}
-            </Button>
-          </div>
-        </section>
-      ))}
+  return {
+    approvals: approvals.map((approval) => (
+      <section
+        key={approval.call_id}
+        aria-label={t("Approval required")}
+        className="grid gap-2 rounded-xl border p-3"
+      >
+        <p className="text-sm font-medium">{approval.name}</p>
+        <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-xs">
+          {approval.arguments}
+        </pre>
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={phase !== "ready"}
+            onClick={() => decide(approval.call_id, false)}
+          >
+            {t("Deny")}
+          </Button>
+          <Button
+            type="button"
+            disabled={phase !== "ready"}
+            onClick={() => decide(approval.call_id, true)}
+          >
+            {t("Approve once")}
+          </Button>
+        </div>
+      </section>
+    )),
+    editor: (
       <Composer
         options={phase === "idle" ? controls : undefined}
         agentName={agentName}
@@ -787,17 +820,21 @@ export function RealtimeComposer({
           )
         }
       />
-      <span className="sr-only" role="status">
-        {phase === "connecting" && t("Connecting…")}
-        {phase === "ending" && t("Saving conversation…")}
-      </span>
-      {(error || (phase === "idle" && availability.reason)) && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {error || availability.reason}
-        </p>
-      )}
-    </>
-  );
+    ),
+    status: (
+      <>
+        <span className="sr-only" role="status">
+          {phase === "connecting" && t("Connecting…")}
+          {phase === "ending" && t("Saving conversation…")}
+        </span>
+        {(error || (phase === "idle" && availability.reason)) && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {error || availability.reason}
+          </p>
+        )}
+      </>
+    ),
+  };
 }
 
 function waitForIce(

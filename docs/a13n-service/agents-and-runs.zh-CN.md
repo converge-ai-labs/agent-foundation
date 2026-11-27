@@ -47,7 +47,7 @@ description: 掌握 Service 执行 API：固定智能体版本、幂等提交收
 
 OpenAI Realtime 和 GPT-Live 可以在开启音频输入的情况下指定 `"transport":"webrtc"`。先向 `RTCPeerConnection` 添加静音的麦克风轨道，再通过 WebSocket 发送完整的纯音频 SDP，格式为 `{"type":"offer","sdp":"…"}`。应用 `answer` 帧中的 SDP，等媒体连接就绪且 Service 发出 `ready` 后再打开麦克风。音频在客户端与 OpenAI 之间直传。`GET /api/v1/realtime` 会列出可用传输方式。Grok Voice 使用 `"transport":"websocket"`。WebRTC 通话中，用户插话时立即将本地播放静音，并发送 `{"type":"interrupt"}`。OpenAI Realtime 在下次开始播放时发送 `playback_start`；GPT-Live 在被打断的轮次结束时发送 `playback_end`，并保留提供方生成的转写。客户端收到相应事件后解除静音。
 
-两种传输方式都用 `{"type":"text","text":"你好"}` 发送文字，从 `transcript` 帧读取字幕。收到 `approval_required` 时，把待审批的调用展示给用户，再发送对应的决定 `{"type":"approval","call_id":"…","approve":true}`，拒绝时使用 `approve: false`。挂断时发 `{"type":"stop"}`，并立即停止本地媒体。`sealed` 回执确认 Run 的终态已提交。如果先断开连接，可查询 `GET /api/v1/runs/{run_id}` 并确认 Thread 可用后重连。
+两种传输方式都用 `{"type":"text","text":"你好"}` 发送文字，从 `transcript` 帧读取字幕。收到 `approval_required` 时，把待审批的调用展示给用户，再发送对应的决定 `{"type":"approval","call_id":"…","approve":true}`，拒绝时使用 `approve: false`。收到 `approval_withdrawn` 时，只移除对应 `call_id` 的审批提示。连接结束时清空其余提示。挂断时发 `{"type":"stop"}`，并立即停止本地媒体。`sealed` 回执确认 Run 的终态已提交。如果先断开连接，可查询 `GET /api/v1/runs/{run_id}` 并确认 Thread 可用后重连。
 
 ## 提交消息
 

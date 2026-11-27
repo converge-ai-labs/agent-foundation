@@ -6,7 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
@@ -21,6 +21,11 @@ import {
 } from "../api";
 import { ForkRun } from "../fork-run";
 import { Composer, RunOptions, useRunOptions } from "../composer";
+import {
+  ConversationComposer,
+  useActiveRealtimeAvailability,
+  useRealtimeAvailability,
+} from "../realtime";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
 import { ThreadInbox } from "./inbox";
@@ -83,7 +88,6 @@ export function RunDock({
   onSubmissionChange,
   pendingRunId,
   level = "chat",
-  realtime = false,
 }: {
   run: Schema["RunView"];
   thread: Schema["ThreadView"];
@@ -97,7 +101,6 @@ export function RunDock({
   /** A receipt can update the Thread before the route transition commits. */
   pendingRunId?: string;
   level?: ViewLevel;
-  realtime?: ReactNode;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -109,18 +112,35 @@ export function RunDock({
   const latest = thread.current_run_id ?? thread.last_run_id;
   const latestRun = useRun(latest);
   const following = new URLSearchParams(search).get("follow") === "latest";
+  const activeVoice = useActiveRealtimeAvailability(run.id);
+  const interactive = useInteractiveThread(thread);
+  const active = isActiveRun(run.status);
+  const idle =
+    !thread.current_run_id &&
+    latest === run.id &&
+    !active &&
+    run.status !== "waiting";
+  const detachedVoice = active && run.trigger === "realtime" && !activeVoice;
+  const revisionId = options.revision || undefined;
+  const availableVoice = useRealtimeAvailability({
+    agentId: interactive && idle ? run.agent_id : undefined,
+    revisionId,
+    model: options.model || undefined,
+    threadId: thread.id,
+  }).data;
+  const realtime = activeVoice ?? availableVoice;
+  const navigate = useNavigate();
   const current =
+    !!activeVoice ||
     following ||
     latest === run.id ||
     (!!pendingRunId && latest === pendingRunId);
-  const active = isActiveRun(run.status);
   // Only the Thread's last Run can wait; show its exact questions.
   const last = latest === run.id ? run : latestRun.data;
   const waiting =
     !thread.current_run_id && current && last?.status === "waiting"
       ? last
       : null;
-  const interactive = useInteractiveThread(thread);
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
   const [guidance, setGuidance] = useState<{
@@ -174,6 +194,17 @@ export function RunDock({
     ) : (
       <PendingRequests pending={waiting.pending} />
     ));
+  const controls = !active &&
+    run.revision_selection !== "snapshot" &&
+    !resubmit && (
+      <RunOptions
+        options={options}
+        showAgent={false}
+        newThread={false}
+        agentId={run.agent_id}
+        showRequestLimit={realtime?.realtime}
+      />
+    );
   if (run.finding_analysis_id)
     return (
       <div className={styles.dockControls}>
@@ -235,118 +266,132 @@ export function RunDock({
           </div>
         ) : (
           <>
-            {interactive &&
-              !waiting &&
-              can("run") &&
-              latest === run.id &&
-              realtime}
-            {interactive && !waiting && !realtime && (
-              <Composer
+            {detachedVoice && stop}
+            {interactive && !waiting && !detachedVoice && (
+              <ConversationComposer
                 key={resubmit ? "resubmit" : "message"}
-                initial={resubmit?.payload}
-                agentName={agentName}
-                label={t(
-                  active
-                    ? "Add guidance"
-                    : level === "debug"
-                      ? "Start run"
-                      : "Send message",
-                )}
-                placeholder={
-                  active
-                    ? t("Add guidance while it works")
-                    : level === "debug"
-                      ? t("Input for the next run…")
-                      : agentName
-                        ? t("Message {{agent}}…", { agent: agentName })
-                        : t("Message your agent…")
-                }
-                disabled={!can("run") || (following && latest !== run.id)}
-                options={
-                  !active &&
-                  run.revision_selection !== "snapshot" &&
-                  !resubmit && (
-                    <RunOptions
-                      options={options}
-                      showAgent={false}
-                      newThread={false}
-                      agentId={run.agent_id}
-                    />
-                  )
-                }
-                stop={canStop ? () => interrupt.mutate() : undefined}
-                stopping={interrupt.isPending}
-                submit={async (payload) => {
-                  if (!active) onSubmissionChange?.({ payload });
-                  try {
-                    const nextOptions =
-                      !active &&
-                      !resubmit &&
-                      run.revision_selection !== "snapshot"
-                        ? options.build()
-                        : undefined;
-                    const body: Schema["Message"] = {
-                      kind: "message",
-                      delivery: active ? "steer" : "next_run",
-                      payload,
-                      agent_id: run.agent_id,
-                      ...(run.revision_selection === "snapshot"
-                        ? { agent_revision_id: null, options: run.options }
-                        : {}),
-                      ...(nextOptions?.options
-                        ? { options: nextOptions.options }
-                        : {}),
-                      ...(nextOptions?.agent_revision_id
-                        ? { agent_revision_id: nextOptions.agent_revision_id }
-                        : {}),
-                      ...(resubmit && {
-                        agent_revision_id: resubmit.agent_revision_id,
-                        options: resubmit.options,
-                      }),
-                    };
-                    // Guidance joins the active run; a next step never joins
-                    // a run another caller started meanwhile.
-                    const receipt = data(
-                      await client
-                        .workspace(workspace.id)
-                        .POST("/api/v1/threads/{thread_id}/inbox", {
-                          params: {
-                            path: {
-                              thread_id: thread.id,
-                            },
-                            header: commandHeaders(
-                              idempotency.forBody({
-                                threadId: thread.id,
-                                body,
-                              }),
-                            ),
-                          },
-                          body,
+                voice={
+                  can("run") && realtime?.realtime && (activeVoice || idle)
+                    ? {
+                        agentId: run.agent_id,
+                        agentName,
+                        threadId: thread.id,
+                        displayedRunId: run.id,
+                        revisionId,
+                        availability: realtime,
+                        controls,
+                        setup: async () => ({
+                          options:
+                            run.revision_selection === "snapshot"
+                              ? run.options
+                              : options.build().options,
                         }),
-                    );
-                    idempotency.reset();
-                    if (!active) options.reset();
-                    if (resubmit) onResubmitted?.();
-                    if (receipt.run) {
-                      if (!active)
-                        onSubmissionChange?.({
-                          payload,
-                          runId: receipt.run.id,
-                        });
-                      accepted(receipt.run, receipt.thread);
-                    } else {
-                      if (active)
-                        setGuidance({ runId: run.id, entry: receipt.entry });
-                      else onSubmissionChange?.(null);
-                      void refresh();
-                    }
-                  } catch (error) {
-                    if (!active) onSubmissionChange?.(null);
-                    void refresh();
-                    throw error;
+                        onAccepted: (receipt) => {
+                          options.reset();
+                          navigate(
+                            runPath(basePath, receipt) + "?follow=latest",
+                            { state: { continuedFrom: run.id } },
+                          );
+                        },
+                      }
+                    : undefined
+                }
+              >
+                <Composer
+                  initial={resubmit?.payload}
+                  agentName={agentName}
+                  label={t(
+                    active
+                      ? "Add guidance"
+                      : level === "debug"
+                        ? "Start run"
+                        : "Send message",
+                  )}
+                  placeholder={
+                    active
+                      ? t("Add guidance while it works")
+                      : level === "debug"
+                        ? t("Input for the next run…")
+                        : agentName
+                          ? t("Message {{agent}}…", { agent: agentName })
+                          : t("Message your agent…")
                   }
-                }}
-              />
+                  disabled={!can("run") || (following && latest !== run.id)}
+                  options={controls}
+                  stop={canStop ? () => interrupt.mutate() : undefined}
+                  stopping={interrupt.isPending}
+                  submit={async (payload) => {
+                    if (!active) onSubmissionChange?.({ payload });
+                    try {
+                      const nextOptions =
+                        !active &&
+                        !resubmit &&
+                        run.revision_selection !== "snapshot"
+                          ? options.build()
+                          : undefined;
+                      const body: Schema["Message"] = {
+                        kind: "message",
+                        delivery: active ? "steer" : "next_run",
+                        payload,
+                        agent_id: run.agent_id,
+                        ...(run.revision_selection === "snapshot"
+                          ? { agent_revision_id: null, options: run.options }
+                          : {}),
+                        ...(nextOptions?.options
+                          ? { options: nextOptions.options }
+                          : {}),
+                        ...(nextOptions?.agent_revision_id
+                          ? { agent_revision_id: nextOptions.agent_revision_id }
+                          : {}),
+                        ...(resubmit && {
+                          agent_revision_id: resubmit.agent_revision_id,
+                          options: resubmit.options,
+                        }),
+                      };
+                      // Guidance joins the active run; a next step never joins
+                      // a run another caller started meanwhile.
+                      const receipt = data(
+                        await client
+                          .workspace(workspace.id)
+                          .POST("/api/v1/threads/{thread_id}/inbox", {
+                            params: {
+                              path: {
+                                thread_id: thread.id,
+                              },
+                              header: commandHeaders(
+                                idempotency.forBody({
+                                  threadId: thread.id,
+                                  body,
+                                }),
+                              ),
+                            },
+                            body,
+                          }),
+                      );
+                      idempotency.reset();
+                      if (!active) options.reset();
+                      if (resubmit) onResubmitted?.();
+                      if (receipt.run) {
+                        if (!active)
+                          onSubmissionChange?.({
+                            payload,
+                            runId: receipt.run.id,
+                          });
+                        accepted(receipt.run, receipt.thread);
+                      } else {
+                        if (active)
+                          setGuidance({ runId: run.id, entry: receipt.entry });
+                        else onSubmissionChange?.(null);
+                        void refresh();
+                      }
+                    } catch (error) {
+                      if (!active) onSubmissionChange?.(null);
+                      void refresh();
+                      throw error;
+                    }
+                  }}
+                />
+              </ConversationComposer>
             )}
             {!interactive && thread.origin === "child" && (
               <div className={styles.dockNotice}>

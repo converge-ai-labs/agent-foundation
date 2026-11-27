@@ -682,17 +682,24 @@ it("prefills the first message from the link, leaving sending to the user", asyn
 
 it("retains Run options and Session memory when starting a voice conversation", async () => {
   allowed = ["run"];
+  const user = userEvent.setup();
+  let finishAvailability!: () => void;
+  const availability = new Promise<void>((resolve) => {
+    finishAvailability = resolve;
+  });
   client = createClient({
     baseUrl: "https://service.example",
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
-      if (url.pathname.endsWith("/realtime"))
+      if (url.pathname.endsWith("/realtime")) {
+        await availability;
         return Response.json({
           realtime: true,
           can_start: true,
           accepts_text: true,
         });
+      }
       return Response.json({
         items: [{ id: "agt_voice", name: "Voice" }],
         next_cursor: null,
@@ -711,9 +718,19 @@ it("retains Run options and Session memory when starting a voice conversation", 
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  const editor = screen.getByRole<HTMLTextAreaElement>("textbox", {
+    name: "Message",
+  });
+  await waitFor(() =>
+    expect(editor.disabled || editor.matches(":disabled")).toBe(false),
+  );
+  await user.type(editor, "Keep my draft");
+  finishAvailability();
   expect(
     await screen.findByRole("button", { name: "Start voice chat" }),
   ).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
+  expect(editor.value).toBe("Keep my draft");
   expect(screen.getByRole("button", { name: "Run options" })).toBeTruthy();
   expect(screen.getByRole("button", { name: /memory/i })).toBeTruthy();
   cache.clear();

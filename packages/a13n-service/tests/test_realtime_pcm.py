@@ -176,6 +176,40 @@ async def test_worker_keeps_stale_pcm_in_previous_epoch_until_provider_cut():
         assert len(calls) == 1 and calls[0].args[1].endswith((3).to_bytes(8) + b"new")
 
 
+async def test_worker_accepts_slow_control_handshake(monkeypatch):
+    from a13n_service.runs import realtime
+    from a13n_service.runs.realtime_transport import Offer
+
+    _, worker = pair()
+    worker.bridge.start = AsyncMock()
+    worker.redis.getdel.return_value = Offer(
+        control_id="control", principal_id="user", workspace_id="workspace", audio=True
+    ).model_dump_json()
+    loop = asyncio.get_running_loop()
+    clock = loop.time
+    scanned = asyncio.Event()
+
+    def scan(*args, **kwargs):
+        scanned.set()
+        return []
+
+    worker.redis.xread.side_effect = scan
+    monkeypatch.setattr(realtime, "Pipe", lambda *args, **kwargs: worker)
+    monkeypatch.setattr(realtime, "prove", AsyncMock())
+    lease = MagicMock(workspace_id="workspace", attempt_id="attempt", number=1)
+
+    async def open_call():
+        async with realtime.worker_channel(MagicMock(), lease) as channel:
+            assert await channel.incoming.get() == "hello"
+
+    async with asyncio.timeout(15), asyncio.TaskGroup() as tasks:
+        tasks.create_task(open_call())
+        await scanned.wait()
+        # Control is still authorizing the attachment after the normal heartbeat timeout.
+        monkeypatch.setattr(loop, "time", lambda: clock() + 8)
+        controls(worker, b"o", b'j{"type":"text","text":"hello"}')
+
+
 async def test_relay_rejects_input_before_worker_attach():
     from a13n_service.infra.errors import ServiceError
     from a13n_service.runs.realtime import relay
@@ -228,6 +262,16 @@ async def test_control_buffers_new_epoch_pcm_until_interruption_receipt():
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_disconnect_survives_redis_close_notification_failure():
+    from redis.exceptions import ConnectionError
+
+    control, _ = pair()
+    batch = control.redis.pipeline.return_value.__aenter__.return_value
+    batch.execute.side_effect = ConnectionError()
+    await control.shutdown()
+    batch.execute.assert_awaited_once()
 
 
 async def test_unattached_control_close_and_idle_control_stream(redis_url):

@@ -12,11 +12,7 @@ import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { SessionBodyLoading, SessionError } from "../session-feedback";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
-import {
-  useActiveRealtimeAvailability,
-  RealtimeComposer,
-  useRealtimeAvailability,
-} from "../realtime";
+import { useActiveRealtimeAvailability } from "../realtime";
 import { BranchOrigin } from "../thread-branches";
 import { RunNavigator } from "./debug/run-navigator";
 import { DebugPendingRun } from "./debug/run-section";
@@ -265,14 +261,7 @@ function RunBody({
   error: unknown;
 }) {
   const { t } = useTranslation();
-  const { can, basePath } = useWorkspace();
-  const navigate = useNavigate();
-  const activeVoice = useActiveRealtimeAvailability(run.id);
-  const availableVoice = useRealtimeAvailability(
-    { agentId: run.agent_id, threadId: thread.id },
-    !!thread.current_run_id,
-  ).data;
-  const realtime = activeVoice ?? availableVoice;
+  const { can } = useWorkspace();
   const interactive = useInteractiveThread(thread);
   const transcript = useRef<HTMLDivElement>(null);
   const scroll = useTranscriptScroll(transcript, level, inspectionId);
@@ -368,23 +357,6 @@ function RunBody({
             thread={thread}
             level={level}
             agentName={agentName}
-            realtime={
-              interactive &&
-              realtime?.realtime && (
-                <RealtimeComposer
-                  agentId={run.agent_id}
-                  agentName={agentName}
-                  threadId={thread.id}
-                  displayedRunId={run.id}
-                  availability={realtime}
-                  onAccepted={(receipt) => {
-                    navigate(runPath(basePath, receipt) + "?follow=latest", {
-                      state: { continuedFrom: run.id },
-                    });
-                  }}
-                />
-              )
-            }
             resubmit={resubmit}
             pendingRunId={submitting?.runId}
             onResubmitted={() => setResubmit(null)}
