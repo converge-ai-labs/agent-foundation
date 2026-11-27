@@ -134,6 +134,8 @@ from a13n_harness_ui.inbox_models import (
     InboxMarkDoneRequest,
     InboxMarkReadRequest,
     InboxPage,
+    InboxUnreadPost,
+    ThreadInboxMarkReadRequest,
 )
 from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
@@ -695,9 +697,11 @@ def create_webui(
     )
     async def bot_submit(request: Request) -> BotInput:
         document = await _document(request, BotSubmitRequest)
-        return await app().submit_bot_input(
+        accepted = await app().submit_bot_input(
             BotSubmit(input_id=document.input_id, text=document.text, parts=document.parts), draft=document.draft
         )
+        await app().inbox().acknowledge_owner_input(BOT_THREAD_ID, through=accepted.created_at)
+        return accepted
 
     @server.post("/api/bot/pause", response_model=BotSnapshot, openapi_extra=_body(BotPause))
     async def bot_pause(request: Request) -> BotSnapshot:
@@ -711,6 +715,18 @@ def create_webui(
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ) -> InboxPage:
         return await app().inbox().page(state=state, before=before, limit=limit)
+
+    @server.get("/api/inbox/threads/{thread_id}/unread", response_model=tuple[InboxUnreadPost, ...])
+    async def thread_inbox_unread(thread_id: str) -> tuple[InboxUnreadPost, ...]:
+        return await app().inbox().thread_unread(thread_id)
+
+    @server.post(
+        "/api/inbox/threads/{thread_id}/mark-read", status_code=204, openapi_extra=_body(ThreadInboxMarkReadRequest)
+    )
+    async def thread_inbox_mark_read(thread_id: str, request: Request) -> Response:
+        document = await _document(request, ThreadInboxMarkReadRequest)
+        await app().inbox().mark_thread_read(thread_id, item_ids=document.item_ids)
+        return Response(status_code=204)
 
     @server.post("/api/inbox/mark-read", status_code=204, openapi_extra=_body(InboxMarkReadRequest))
     async def inbox_mark_read(request: Request) -> Response:
@@ -2552,7 +2568,7 @@ def create_webui(
         controls = document.controls().model_dump(exclude_none=True)
         overrides = RunModelOverrides(model_id=document.model_id, **controls) if document.model_id or controls else None
         try:
-            return await app().submit_thread(
+            receipt = await app().submit_thread(
                 thread_id=thread_id,
                 prompt=document.input(),
                 app_context=document.app_context,
@@ -2566,13 +2582,18 @@ def create_webui(
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
 
+        await app().inbox().acknowledge_owner_input(thread_id, through=receipt.submitted_at)
+        return receipt
+
     @server.post(
         "/api/threads/{thread_id}/decisions", response_model=RootRunReceipt, openapi_extra=_body(DecisionResponseBatch)
     )
     async def decisions(thread_id: str, request: Request) -> RootRunReceipt:
-        return await app().respond_decisions(
+        receipt = await app().respond_decisions(
             thread_id=thread_id, response=await _document(request, DecisionResponseBatch)
         )
+        await app().inbox().acknowledge_owner_input(thread_id, through=receipt.submitted_at)
+        return receipt
 
     @server.get("/api/operations/{receipt_id}", response_model=RootOperationView)
     async def operation(receipt_id: str) -> RootOperationView:
@@ -2589,6 +2610,7 @@ def create_webui(
                 message=document.input(),
                 skill_references=document.skill_references,
                 draft=document.draft,
+                acknowledge_inbox=True,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc

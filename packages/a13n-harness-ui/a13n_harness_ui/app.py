@@ -3316,7 +3316,9 @@ class HarnessUiApp:
         attachment_ids: tuple[str, ...] = (),
         draft: DraftCapture | None = None,
         allow_acp_interrupt: bool = True,
+        acknowledge_inbox: bool = False,
     ) -> RootControlResult:
+        through = datetime.now(UTC) if acknowledge_inbox else None
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
             if operation.receipt.thread_id == BOT_THREAD_ID:
@@ -3353,6 +3355,8 @@ class HarnessUiApp:
                 if self._browsers is not None:
                     self._browsers.handback.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
+                if through is not None:
+                    await self.inbox().acknowledge_owner_input(operation.receipt.thread_id, through=through)
             return result
 
     async def steer_root_operation_strict(self, receipt_id: str, *, input_id: str, message: str) -> InputDelivery:

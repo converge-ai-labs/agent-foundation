@@ -42,6 +42,17 @@ class InboxPage(InboxModel):
     unread_by_group: InboxUnreadCounts
 
 
+class InboxUnreadPost(InboxModel):
+    item_id: str
+    tool_call_id: str
+    has_transcript: bool
+    created_at: datetime
+
+
+class ThreadInboxMarkReadRequest(InboxModel):
+    item_ids: tuple[Annotated[str, Field(min_length=1, max_length=80)], ...] = Field(min_length=1)
+
+
 class InboxMarkReadRequest(InboxModel):
     group: InboxGroup
 

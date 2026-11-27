@@ -425,13 +425,20 @@
   text-decoration: none;
 }
 @media (hover: hover) {
-  .postSource:hover {
+  a.postSource:hover {
     color: var(--a13n-text);
   }
 }
 .postSource svg {
   width: 14px;
   height: 14px;
+}
+.postUnread {
+  inline-size: 6px;
+  block-size: 6px;
+  flex: none;
+  border: 3px solid var(--a13n-signal);
+  border-radius: 50%;
 }
 .postTitle {
   color: var(--a13n-text);
