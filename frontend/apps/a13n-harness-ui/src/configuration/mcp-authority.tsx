@@ -5,10 +5,12 @@ import type { Schema } from "../transport/client";
 export type McpAuthority = NonNullable<Schema<"McpToolSettings">["authority"]>;
 
 export function McpAuthorityField({
+  label,
   value,
   disabled,
   onChange,
 }: {
+  label?: string;
   value?: string;
   disabled?: boolean;
   onChange: (value: McpAuthority) => void;
@@ -17,21 +19,23 @@ export function McpAuthorityField({
   const options = [
     {
       value: "operator",
-      label: t("Trusted (default)"),
+      label: t("System (default)"),
       detail: t(
-        "The model receives system instructions when this server is used directly.",
+        "Added as system instructions for direct connections. Does not change tool permissions.",
       ),
     },
     {
       value: "user",
-      label: t("User-level"),
-      detail: t("The model receives the server's text as user-level context."),
+      label: t("User context"),
+      detail: t(
+        "Passed as user-level context with lower priority than system instructions. Does not change tool permissions.",
+      ),
     },
     {
       value: "none",
-      label: t("Untrusted data"),
+      label: t("Reference data"),
       detail: t(
-        "The model receives the server's text as data, not instructions.",
+        "Passed as passive reference data with no instruction authority. Does not change tool permissions.",
       ),
     },
   ] as const;
@@ -39,8 +43,8 @@ export function McpAuthorityField({
     options.find((option) => option.value === value) ?? options[0];
   return (
     <ChoiceField
-      label={t("Server instruction trust")}
-      description={`${selected.detail} ${t("Tool permissions are unchanged.")}`}
+      label={label ?? t("Server instructions")}
+      description={selected.detail}
       value={selected.value}
       disabled={disabled}
       options={options}

@@ -125,6 +125,7 @@ export function McpTools({ serverId }: { serverId: string }) {
       {settings.data && (
         <SettingsSection title={t("Server instructions")}>
           <McpAuthorityField
+            label={t("Apply as")}
             value={draft?.authority ?? settings.data.authority}
             disabled={save.isPending || discovery.isFetching}
             onChange={(value) => update(tools, value)}

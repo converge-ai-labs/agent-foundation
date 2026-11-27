@@ -178,12 +178,12 @@ it("names headers in the configuration and sends their values only as the write-
   await user.type(screen.getByLabelText("Header name 1"), "X-Jentic-API-Key");
   await user.type(screen.getByLabelText("Header value 1"), "value-1");
   const trust = screen.getByRole("combobox", {
-    name: "Server instruction trust",
+    name: "Server instructions",
   });
-  expect(trust.textContent).toContain("Trusted (default)");
+  expect(trust.textContent).toContain("System (default)");
   await user.click(trust);
   await user.click(
-    await screen.findByRole("option", { name: "Untrusted data" }),
+    await screen.findByRole("option", { name: "Reference data" }),
   );
   await user.click(screen.getByRole("button", { name: "Connect" }));
   await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(created));

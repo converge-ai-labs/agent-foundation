@@ -130,3 +130,15 @@ To advertise directories from the Harness process, pass `roots=` a list of `file
 
 - **Optional servers & init retries:** Wrap initialization in `MCPServer(id=..., prepare=..., on_error="skip")` with `InitializationRetryClient` (retries transient init errors up to 3 times with 1s/2s backoff; `skip` omits a failed server for that Run while keeping other tools active).
 - **Tool search:** For servers with many tools, pass the local `MCP` or `ContextualMCP` instance directly as a [ToolSearchGroup source](tool-search.md#group-a-run-bound-mcp-capability) (`native=False, local=True`) so schemas load on demand while preserving per-Run headers.
+
+## Server instruction authority
+
+Call `.with_authority("operator")`, `.with_authority("user")`, or `.with_authority("none")` on an `MCP`, `ContextualMCP`, or `MCPServer` capability before adding it to the agent. For example, use `MCP(...).with_authority("none")` to pass a server's initialization text as reference data.
+
+| Authority            | How the model receives server instructions                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `operator` (default) | System instructions for direct connections; discovery result data for deferred Tool Search groups. |
+| `user`               | User-level context, below system instructions in priority.                                         |
+| `none`               | Reference data with no instruction authority.                                                      |
+
+Tool selection and execution permissions stay the same at every level.

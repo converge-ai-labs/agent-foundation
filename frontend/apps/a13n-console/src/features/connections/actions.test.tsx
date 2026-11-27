@@ -121,12 +121,12 @@ it("updates MCP instruction trust without saving an unrelated name draft", async
   const name = screen.getByRole<HTMLInputElement>("textbox", { name: "Name" });
   await user.type(name, " draft");
   const trust = screen.getByRole("combobox", {
-    name: "Server instruction trust",
+    name: "Server instructions",
   });
   await user.click(trust);
-  await user.click(await screen.findByRole("option", { name: "User-level" }));
+  await user.click(await screen.findByRole("option", { name: "User context" }));
   await user.click(
-    screen.getByRole("button", { name: "Save instruction trust" }),
+    screen.getByRole("button", { name: "Save server instructions setting" }),
   );
   await waitFor(() =>
     expect(http.PATCH).toHaveBeenCalledWith(
@@ -140,11 +140,13 @@ it("updates MCP instruction trust without saving an unrelated name draft", async
   );
   await waitFor(() =>
     expect(
-      screen.queryByRole("button", { name: "Save instruction trust" }),
+      screen.queryByRole("button", {
+        name: "Save server instructions setting",
+      }),
     ).toBeNull(),
   );
   expect(name.value).toBe("Test connection draft");
-  expect(trust.textContent).toContain("User-level");
+  expect(trust.textContent).toContain("User context");
   cache.clear();
 });
 

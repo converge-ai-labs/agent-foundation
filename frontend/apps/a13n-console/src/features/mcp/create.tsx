@@ -1,12 +1,6 @@
 import { FormSection } from "../../shared/forms";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  ChoiceField,
-  FormField,
-  Input,
-  ReadOnlyField,
-  SettingsSection,
-} from "a13n-ui";
+import { ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -24,7 +18,7 @@ import {
   type HeaderDraft,
 } from "../../shared/forms";
 import { MCPCredentialFields } from "./credentials";
-import { McpAuthorityRow, type McpAuthority } from "./authority";
+import { useMcpAuthorityChoice, type McpAuthority } from "./authority";
 
 export function CreateMCP({
   preset,
@@ -58,6 +52,10 @@ export function CreateMCP({
     [bearer, setBearer] = useState(""),
     [started, setStarted] = useState(false),
     [oauthConnection, setOAuthConnection] = useState<Schema["Connection"]>();
+  const { field: authorityField } = useMcpAuthorityChoice(
+    authority,
+    setAuthority,
+  );
   const named = headerRows.filter((row) => row.name.trim());
   // Credentials written with the connection are not asked for again.
   const credentialReady =
@@ -174,14 +172,8 @@ export function CreateMCP({
             placeholder="https://example.com/mcp"
           />
         </FormField>
+        <ChoiceField {...authorityField} disabled={started} />
       </FormSection>
-      <SettingsSection variant="outlined">
-        <McpAuthorityRow
-          value={authority}
-          disabled={started}
-          onChange={setAuthority}
-        />
-      </SettingsSection>
       <FormSection title={t("Authentication")}>
         {preset ? (
           <ReadOnlyField

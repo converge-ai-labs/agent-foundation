@@ -448,7 +448,7 @@ function ConnectionSettings({
                 <Button
                   type="button"
                   size="sm"
-                  aria-label={t("Save instruction trust")}
+                  aria-label={t("Save server instructions setting")}
                   disabled={save.isPending}
                   loading={save.isPending && !!save.variables?.config}
                   onClick={() =>

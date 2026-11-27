@@ -77,12 +77,12 @@ it("saves instruction trust without discovering tools or replacing the connectio
   setup();
   const user = userEvent.setup();
   const trust = await screen.findByRole("combobox", {
-    name: "Server instruction trust",
+    name: "Apply as",
   });
-  expect(trust.textContent).toContain("Trusted (default)");
+  expect(trust.textContent).toContain("System (default)");
   await user.click(trust);
   await user.click(
-    await screen.findByRole("option", { name: "Untrusted data" }),
+    await screen.findByRole("option", { name: "Reference data" }),
   );
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
