@@ -153,6 +153,7 @@ A process can stop after a write commits but before the Host records the tool re
 
 - A file's version is a content hash, so identical content has the same version.
 - Every mutation holds an exclusive cross-process lock on `.a13n-memory/lock` while it checks and applies. A write stages its content under `.a13n-memory/` and replaces the file atomically. `move` is one rename under the lock and prunes emptied directories, as `delete` does.
+- On Windows, reads and listings use the same lock once the bookkeeping directory exists because open read handles can block replacement and deletion. Reads and listings do not initialize bookkeeping.
 - `.a13n-memory/` is never listed and cannot be written. Symbolic links are not followed. A file whose path breaks the format or whose content is not UTF-8 is left out of the listing, and an invalid frontmatter lists without a description.
 - The cursor is a digest of the listing. `changes()` answers `Changes(cursor, ())` while the listing is unchanged and `FullResync` after any change.
 - `Origin` is ignored; the store keeps no history. It does not implement `SearchableFileStore`.

@@ -19,6 +19,7 @@ from a13n_harness.providers.memory import (
     Origin,
     SearchableFileStore,
 )
+from filelock import FileLock, Timeout
 
 pytestmark = pytest.mark.anyio
 
@@ -99,11 +100,21 @@ async def test_move_is_one_rename_that_refuses_an_existing_destination(tmp_path:
 
 
 async def test_reads_of_missing_files_are_not_found(tmp_path: Path) -> None:
-    store = DirectoryFileStore(tmp_path / "missing-root")
+    root = tmp_path / "missing-root"
+    store = DirectoryFileStore(root)
     assert await store.list() == []
     with pytest.raises(MemoryStoreError) as caught:
         await store.read("absent.md")
     assert caught.value.code == "not_found"
+    assert not root.exists()
+
+
+async def test_reads_do_not_initialize_bookkeeping(tmp_path: Path) -> None:
+    store = DirectoryFileStore(tmp_path)
+    (tmp_path / "entry.md").write_bytes(b"entry\n")
+    assert (await store.read("entry.md")).text == "entry\n"
+    assert [entry.path for entry in await store.list()] == ["entry.md"]
+    assert not (tmp_path / ".a13n-memory").exists()
 
 
 async def test_bookkeeping_and_unreadable_files_stay_out_of_the_listing(tmp_path: Path) -> None:
@@ -136,6 +147,20 @@ async def test_files_with_crlf_line_endings_keep_their_frontmatter(tmp_path: Pat
     with pytest.raises(MemoryStoreError) as caught:
         await store.write("new.md", "---\r\ndescription: [unclosed\r\n---\r\n", expected=None, origin=ORIGIN)
     assert caught.value.code == "invalid_file"
+
+
+async def test_linked_bookkeeping_never_opens_an_external_lock(tmp_path: Path, symlink) -> None:
+    root, outside = tmp_path / "memory", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / "entry.md").write_bytes(b"entry\n")
+    symlink(root / ".a13n-memory", outside, target_is_directory=True)
+
+    store = DirectoryFileStore(root)
+    assert (await store.read("entry.md")).text == "entry\n"
+    assert [entry.path for entry in await store.list()] == ["entry.md"]
+    assert (await _failure(store.write("new.md", "new", expected=None, origin=ORIGIN))).code == "invalid_path"
+    assert list(outside.iterdir()) == []
 
 
 async def test_symbolic_links_are_never_followed(tmp_path: Path, symlink) -> None:
@@ -200,6 +225,28 @@ async def test_the_cursor_is_a_listing_digest_and_any_change_resyncs(tmp_path: P
     edited = await store.changes(written.cursor)
     assert isinstance(edited, FullResync)
     assert edited.cursor not in {first.cursor, written.cursor}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows readers can block file replacement and removal")
+async def test_windows_read_and_list_hold_the_mutation_lock_while_reading_bytes(tmp_path: Path, monkeypatch) -> None:
+    store = DirectoryFileStore(tmp_path)
+    await store.write("entry.md", "entry\n", expected=None, origin=ORIGIN)
+    target = tmp_path / "entry.md"
+    contender = FileLock(tmp_path / ".a13n-memory" / "lock")
+    read_bytes = Path.read_bytes
+    reads = []
+
+    def check_lock(path):
+        if path == target:
+            with pytest.raises(Timeout), contender.acquire(timeout=0):
+                pass
+            reads.append(path)
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", check_lock)
+    assert (await store.read("entry.md")).text == "entry\n"
+    assert [entry.path for entry in await store.list()] == ["entry.md"]
+    assert reads == [target, target]
 
 
 async def test_concurrent_tasks_linearize_their_compare_and_swap(tmp_path: Path) -> None:
