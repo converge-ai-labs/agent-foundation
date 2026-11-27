@@ -3344,6 +3344,7 @@ class HarnessUiApp:
         skill_references: tuple[SkillReference, ...] = (),
         attachment_ids: tuple[str, ...] = (),
         draft: DraftCapture | None = None,
+        allow_acp_interrupt: bool = True,
     ) -> RootControlResult:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
@@ -3373,6 +3374,7 @@ class HarnessUiApp:
                 receipt_id=receipt_id,
                 message=prepared,
                 immediate=source is None or source.document.input.steering_mode == "immediate",
+                allow_acp_interrupt=allow_acp_interrupt,
                 touch=True,
             )
             if result.accepted:

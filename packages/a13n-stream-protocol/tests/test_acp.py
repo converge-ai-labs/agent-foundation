@@ -192,3 +192,23 @@ def test_acp_compaction_completed_clears_usage_slot_in_display_fold():
     ]
     assert usage_item_refreshed.ordinal < compaction_item.ordinal
     assert usage_item_refreshed.content["value"] == {"used": 150, "size": 1000}
+
+
+def test_acp_prompt_boundary_closes_unfinished_items_and_keeps_run_open():
+    events = []
+    stream = AcpRunStream("thread-test", "run-test", events.append)
+    stream.update(schema.AgentMessageChunk(content=schema.TextContentBlock(text="partial")))
+    stream.update(schema.ToolCallStart(tool_call_id="call-1", title="Waiting"))
+    stream.update(schema.AgentThoughtChunk(content=schema.TextContentBlock(text="unfinished thought")))
+    assert stream.last_text == "partial"
+
+    stream.reset_reply()
+
+    assert [event["type"] for event in events[-3:]] == ["REASONING_MESSAGE_END", "TOOL_CALL_END", "TOOL_CALL_RESULT"]
+    assert not any(event["type"] in {"RUN_FINISHED", "RUN_ERROR"} for event in events)
+    assert stream.last_text == ""
+    stream.update(schema.AgentMessageChunk(content=schema.TextContentBlock(text="follow-up")))
+    stream.finish()
+    assert stream.last_text == "follow-up"
+    assert sum(event["type"] == "TOOL_CALL_END" for event in events) == 1
+    assert events[-1]["type"] == "RUN_FINISHED"

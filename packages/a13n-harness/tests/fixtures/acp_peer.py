@@ -8,6 +8,7 @@ import sys
 import traceback
 from itertools import count
 from pathlib import Path
+from threading import Thread
 from time import sleep
 from urllib.request import Request, urlopen
 
@@ -53,6 +54,31 @@ MCP = None
 TERMINAL = None
 SYSTEM_PROMPT = None
 STEER_PROMPTS = []
+STEER_JOURNAL = next((Path(arg.split("=", 1)[1]) for arg in FLAGS if arg.startswith("steer-journal=")), None)
+STEER_GATE = next((Path(arg.split("=", 1)[1]) for arg in FLAGS if arg.startswith("steer-gate=")), None)
+
+
+def record(kind, **data):
+    if STEER_JOURNAL is not None:
+        with STEER_JOURNAL.open("a") as output:
+            print(json.dumps({"kind": kind, **data}), file=output)
+
+
+def settle_prompt(reason):
+    global PENDING
+    prompt, PENDING = PENDING, None
+    record("response", reason=reason)
+    if reason == "request_cancelled":
+        send(id=prompt, error={"code": -32800, "message": "Request cancelled"})
+    else:
+        send(id=prompt, result={"stopReason": reason})
+
+
+def settle_when_released():
+    while not STEER_GATE.exists():
+        sleep(0.01)
+    if PENDING is not None:
+        settle_prompt("end_turn")
 
 
 def send(**data):
@@ -141,6 +167,16 @@ for line in sys.stdin:
     method = frame.get("method")
     params = frame.get("params", {})
     ident = frame.get("id")
+    if method in {
+        "initialize",
+        "session/new",
+        "session/resume",
+        "session/load",
+        "session/prompt",
+        "session/cancel",
+        "_session/steering",
+    }:
+        record(method, **params)
     if method == "initialize":
         client_caps = params.get("clientCapabilities") or {}
         client_session = client_caps.get("session") if isinstance(client_caps, dict) else None
@@ -185,7 +221,7 @@ for line in sys.stdin:
                 "_meta": {"steering": {"supported": True}}
                 if MODE == "standard-steer" or "standard-steer" in FLAGS
                 else {"dev.a13n.harness-ui": {"version": 1}}
-                if STEERING
+                if STEERING and "no-steering" not in FLAGS
                 else {},
             },
         )
@@ -275,7 +311,18 @@ for line in sys.stdin:
         assert params["sessionId"] == SESSION
         prompt_items = params["prompt"]
         STEER_PROMPTS.append(prompt_items)
-        if MODE == "standard-steer":
+        if "steer-prompt-required" in FLAGS:
+            send(id=ident, result={"outcome": "promptRequired"})
+        elif "steer-method-missing" in FLAGS:
+            send(id=ident, error={"code": -32601, "message": "Method not found"})
+        elif "steer-unknown" in FLAGS:
+            send(id=ident, result={"outcome": "unrecognized"})
+        elif "steer-late-injected" in FLAGS:
+            send(id=PENDING, result={"stopReason": "end_turn"})
+            PENDING = None
+            sleep(0.05)
+            send(id=ident, result={"outcome": "injected"})
+        elif MODE == "standard-steer":
             if prompt_items[0]["type"] == "text" and prompt_items[0]["text"] == "next turn":
                 send(id=ident, result={"outcome": "promptRequired"})
             else:
@@ -302,6 +349,8 @@ for line in sys.stdin:
         assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
         send(id=ident, result={})
     elif method == "session/prompt":
+        if STEER_JOURNAL is not None:
+            assert PENDING is None, "Overlapping session/prompt calls"
         raw_blocks = params["prompt"]
         blocks = [item["text"] for item in raw_blocks if item.get("type") == "text"]
         if MODE == "load":
@@ -317,6 +366,13 @@ for line in sys.stdin:
             text(json.dumps(SYSTEM_PROMPT))
             send(id=ident, result={"stopReason": "end_turn"})
             continue
+        if MODE == "ui" and message == "finish-steering-goal":
+            text("Steered work complete.\n[GOAL_COMPLETE]")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and any(block.strip() == "fail-steering-prompt" for block in blocks):
+            send(id=ident, error={"code": -32603, "message": "Follow-up failed"})
+            continue
         if MODE == "ui" and any(block.strip().startswith("echo-prompt") for block in blocks):
             text(json.dumps(raw_blocks))
             send(id=ident, result={"stopReason": "end_turn"})
@@ -328,7 +384,11 @@ for line in sys.stdin:
             continue
         if MODE == "ui" and any(block.strip() == "wait-steer" for block in blocks):
             text("waiting")
+            if "steer-open-tool" in FLAGS:
+                update("tool_call", toolCallId="interrupted-tool", title="Pending tool", status="in_progress")
             PENDING = ident
+            if STEER_GATE is not None:
+                Thread(target=settle_when_released, daemon=True).start()
             continue
         if MODE == "ui" and any(block.strip() == "call-screenshot" for block in blocks):
             tool = mcp("tools/call", {"name": "screenshot", "arguments": {}})
@@ -603,9 +663,9 @@ for line in sys.stdin:
         else:
             send(id=ident, result={"delivery": "accepted"})
     elif method == "session/cancel":
-        if PENDING is not None:
-            send(id=PENDING, result={"stopReason": "cancelled"})
-            PENDING = None
+        if PENDING is not None and "ignore-steer-cancel" not in FLAGS:
+            reason = next((arg.split("=", 1)[1] for arg in FLAGS if arg.startswith("steer-stop-reason=")), "cancelled")
+            settle_prompt(reason)
     elif method is None and ident == 90:
         if PENDING is not None and frame["result"]["outcome"]["outcome"] == "selected":
             text("allowed")

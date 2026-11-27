@@ -2932,7 +2932,9 @@ def create_webui(
             raise forbidden()
         operation = await app().get_root_operation(receipt_id)
         await app().sharing.thread(share_id, operation.receipt.thread_id, prompt=True)
-        return await app().steer_root_operation(receipt_id=receipt_id, message=document.input(), draft=document.draft)
+        return await app().steer_root_operation(
+            receipt_id=receipt_id, message=document.input(), draft=document.draft, allow_acp_interrupt=False
+        )
 
     # Explicit read admission reuses the existing serializers and App operations.
     # No prefix proxy or automatic inclusion can expose newly added owner routes.

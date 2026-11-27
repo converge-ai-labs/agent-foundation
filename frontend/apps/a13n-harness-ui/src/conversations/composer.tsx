@@ -72,16 +72,6 @@ import { useTrackUnsent } from "./unsent";
 import { previewInput, type LocalInput } from "./local-input";
 import type { OrderedInputPart } from "./inline-attachments";
 
-type Interrupt = { receipt: string; fingerprint: string };
-
-function inputFingerprint(draft: ThreadDraft) {
-  return JSON.stringify([
-    values(draft.doc),
-    attachmentSelections(draft.doc),
-    draft.annotations,
-  ]);
-}
-
 function beginInput(
   draft: ThreadDraft,
   action: "send" | "steer",
@@ -700,12 +690,6 @@ export function Composer({
     },
     [imagePreview],
   );
-  const [interrupt, setInterrupt] = useState<Interrupt>();
-  const interruptRef = useRef<Interrupt | undefined>(undefined);
-  const trackInterrupt = (value: Interrupt | undefined) => {
-    interruptRef.current = value;
-    setInterrupt(value);
-  };
   const busy = activity.state !== "inactive";
   const pending = draft.submission.kind === "pending" || !!queuedInput?.pending;
   const unknown = draft.submission.kind === "unknown";
@@ -721,13 +705,7 @@ export function Composer({
     draft.annotations.length
   );
   const valid = hasInput && !missing;
-  const cancellation = useStopOperation(
-    threadId,
-    draft,
-    activity,
-    reconcile,
-    interrupt?.receipt,
-  );
+  const cancellation = useStopOperation(threadId, draft, activity, reconcile);
   const { stopping, canStop } = cancellation;
   const stopNotice = cancellation.request
     ? stopMessage(cancellation.request, t)
@@ -768,7 +746,6 @@ export function Composer({
   );
   const canSteer =
     !queuedInput?.locked &&
-    !interrupt &&
     !cancellation.request &&
     busy &&
     ready &&
@@ -778,21 +755,6 @@ export function Composer({
     !unknown &&
     valid &&
     !!activity.available_actions?.includes("steer");
-  const canInterrupt =
-    externalAgent &&
-    canStop &&
-    !transport.shareId &&
-    !!activity.receipt_id &&
-    busy &&
-    !activity.available_actions?.includes("steer") &&
-    !interrupt &&
-    ready &&
-    valid &&
-    !preparing &&
-    !clearing &&
-    !pending &&
-    !unknown &&
-    !cancellation.request;
   const stopAction =
     !transport.shareId && busy && (!hasInput || cancellation.retryable);
   const canSend =
@@ -806,15 +768,11 @@ export function Composer({
     !pending &&
     !unknown &&
     valid;
-  const sendDisabled =
-    !!interrupt ||
-    (stopAction ? !canStop : busy ? !canSteer && !canInterrupt : !canSend);
+  const sendDisabled = stopAction ? !canStop : busy ? !canSteer : !canSend;
   const sendHint = t(
-    canInterrupt
-      ? "Interrupt & send - {{shortcut}}"
-      : busy
-        ? "Steer current operation - {{shortcut}}"
-        : "Send message - {{shortcut}}",
+    busy
+      ? "Steer current operation - {{shortcut}}"
+      : "Send message - {{shortcut}}",
     { shortcut: sendShortcut.label },
   );
   const activeBlock: ComposerBlock | null =
@@ -865,11 +823,7 @@ export function Composer({
                             ),
                     showWhenEmpty: false,
                   }
-                : busy &&
-                    !canSteer &&
-                    !canInterrupt &&
-                    !interrupt &&
-                    !queuedInput?.locked
+                : busy && !canSteer && !queuedInput?.locked
                   ? {
                       kind: "loading",
                       message:
@@ -909,10 +863,8 @@ export function Composer({
         {action.label}
       </Button>
     );
-  const submit = async (action: "send" | "steer", expectedInput?: string) => {
-    if (dictating) return;
-    if (action === "send" ? !canSend || !!interruptRef.current : !canSteer)
-      return;
+  const submit = async (action: "send" | "steer") => {
+    if (dictating || (action === "send" ? !canSend : !canSteer)) return;
     if (queuedInput) {
       queuedInput.submit();
       return;
@@ -980,10 +932,7 @@ export function Composer({
         loadSkills,
         controller.signal,
         undefined,
-        prepareThread ||
-          promote ||
-          !draft.synchronized ||
-          expectedInput !== undefined
+        prepareThread || promote || !draft.synchronized
           ? async () => {
               if (prepareThread) {
                 await prepareThread(coordinatorRequested);
@@ -1004,13 +953,6 @@ export function Composer({
               controller.signal.throwIfAborted();
               for (const [id, attachment] of attachmentMetadata())
                 metadata.set(id, attachment);
-              if (
-                expectedInput !== undefined &&
-                inputFingerprint(draft) !== expectedInput
-              )
-                throw new Error(
-                  "The draft changed while stopping. Review it before sending.",
-                );
               if (promote) {
                 // The role write is separate from admission. A lost response is
                 // not a rejection, and turning off local intent cannot undo it.
@@ -1064,37 +1006,7 @@ export function Composer({
       onPreparing?.(false);
     }
   };
-  useEffect(() => {
-    if (!interrupt || interruptRef.current !== interrupt) return;
-    const request = cancellation.request;
-    if (
-      (busy && activity.receipt_id !== interrupt.receipt) ||
-      inputFingerprint(draft) !== interrupt.fingerprint ||
-      cancellation.observationFailed ||
-      request?.phase === "uncertain" ||
-      request?.phase === "rejected" ||
-      (request?.outcome && request.outcome !== "cancelled")
-    ) {
-      trackInterrupt(undefined);
-    } else if (request?.outcome === "cancelled" && !busy) {
-      trackInterrupt(undefined);
-      if (canSend) void submit("send", interrupt.fingerprint);
-    }
-  });
-  const sendInput = () => {
-    if (interruptRef.current || dictating) return;
-    if (canInterrupt && activity.receipt_id) {
-      const current = {
-        receipt: activity.receipt_id,
-        fingerprint: inputFingerprint(draft),
-      };
-      trackInterrupt(current);
-      void cancellation.stop().then((accepted) => {
-        if (!accepted && interruptRef.current === current)
-          trackInterrupt(undefined);
-      });
-    } else void submit(busy ? "steer" : "send");
-  };
+  const sendInput = () => void submit(busy ? "steer" : "send");
 
   async function uploadOne(key: string, file: File) {
     setError("");
@@ -1364,21 +1276,7 @@ export function Composer({
             )}
           </div>
         )}
-        {interrupt && (
-          <div className={styles.composerStatus}>
-            <p role="status">{t("Interrupting to send…")}</p>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                trackInterrupt(undefined);
-                requestAnimationFrame(() => editor.current?.focus());
-              }}
-            >
-              {t("Cancel send & edit")}
-            </Button>
-          </div>
-        )}
-        {cancellation.request && !interrupt && (
+        {cancellation.request && (
           <div className={styles.composerStatus}>
             <p
               role={
@@ -1495,15 +1393,13 @@ export function Composer({
             aria-label={t("Attach files")}
             title={t("Attach files - you can also paste or drop files")}
             loading={uploading}
-            disabled={
-              preparing || pending || queuedInput?.locked || !!interrupt
-            }
+            disabled={preparing || pending || queuedInput?.locked}
             onClick={() => upload.current?.click()}
           >
             <Plus />
           </Button>
           <div
-            inert={preparing || pending || queuedInput?.locked || !!interrupt}
+            inert={preparing || pending || queuedInput?.locked}
             className={styles.composerEditor}
           >
             <AnnotationChip />
@@ -1694,9 +1590,7 @@ export function Composer({
               <Dictation
                 key={threadId}
                 target={dictation}
-                disabled={
-                  preparing || pending || queuedInput?.locked || !!interrupt
-                }
+                disabled={preparing || pending || queuedInput?.locked}
                 onActive={setDictating}
                 readDraft={() => {
                   const view = editor.current;
@@ -1730,27 +1624,20 @@ export function Composer({
                   ref={sendButton}
                   size="icon"
                   disabled={sendDisabled}
-                  loading={
-                    !!interrupt ||
-                    (stopAction ? stopping : pending || preparing)
-                  }
+                  loading={stopAction ? stopping : pending || preparing}
                 />
               }
               className={styles.sendButton}
               aria-label={
-                interrupt
-                  ? t("Interrupting to send…")
-                  : stopAction
-                    ? stopLabel
-                    : pending
-                      ? t("Submitting")
-                      : preparing
-                        ? t("Preparing")
-                        : canInterrupt
-                          ? sendHint
-                          : busy
-                            ? t("Steer")
-                            : t("Send")
+                stopAction
+                  ? stopLabel
+                  : pending
+                    ? t("Submitting")
+                    : preparing
+                      ? t("Preparing")
+                      : busy
+                        ? t("Steer")
+                        : t("Send")
               }
               title={
                 stopAction

@@ -1,9 +1,4 @@
 {
-  "Interrupt & send": "रोकें और भेजें",
-  "Interrupt & send - {{shortcut}}": "रोकें और भेजें - {{shortcut}}",
-  "Interrupting to send…": "भेजने के लिए रोक रहे हैं…",
-  "Cancel send & edit": "भेजना रद्द करें और संपादित करें",
-  "The draft changed while stopping. Review it before sending.": "रोकते समय ड्राफ़्ट बदल गया। भेजने से पहले उसकी समीक्षा करें।",
   "Commands & skills": "कमांड और स्किल",
   "Dismiss suggestions": "सुझाव बंद करें",
   "Dismiss suggestions (Esc)": "सुझाव बंद करें (Esc)",
