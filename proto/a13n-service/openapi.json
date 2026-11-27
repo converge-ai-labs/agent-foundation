@@ -2041,6 +2041,12 @@
         "title": "ApiKeyPage",
         "type": "object"
       },
+      "AppIdFilter": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
       "AppPlugins": {
         "properties": {
           "id": {
@@ -3248,6 +3254,18 @@
       },
       "Browser": {
         "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "control": {
             "$ref": "#/components/schemas/ControlStatus"
           },
@@ -33802,6 +33820,22 @@
             }
           },
           {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AppIdFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -38852,6 +38886,22 @@
             }
           },
           {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AppIdFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -40545,6 +40595,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AppIdFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
             }
           },
           {
@@ -46475,6 +46541,22 @@
                 }
               ],
               "title": "Enabled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AppIdFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
             }
           },
           {
@@ -53817,6 +53899,22 @@
           },
           {
             "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AppIdFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -55206,6 +55304,22 @@
                 }
               ],
               "title": "Application"
+            }
+          },
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AppIdFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
             }
           },
           {

@@ -155,6 +155,11 @@
   flex: 1;
   min-width: 0;
 }
+.headerApp {
+  display: inline-flex;
+  max-width: 40%;
+  min-width: 0;
+}
 .agentLink {
   display: inline-flex;
   align-items: center;

@@ -11,4 +11,5 @@ export { ResourceEditorButton } from "./resource-editor-button";
 export { ResourceIdentity } from "./resource-identity";
 export { ResourceKeyChip } from "./resource-key-chip";
 export { ResourceReference } from "./resource-reference";
+export { AppBadge } from "./app-badge";
 export { ScopeBadge } from "./scope-badge";

@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
 
+from a13n_service.app_provenance import AppIdFilter
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.resources.memories import spaces
 from a13n_service.resources.memories.schemas import MemorySpace, MemorySpaceCreate, MemorySpacePage, MemorySpaceUpdate
@@ -36,6 +37,7 @@ async def list_spaces(
     runtime: CurrentRuntime,
     label: Annotated[list[str] | None, Query()] = None,
     enabled: bool | None = None,
+    app_id: AppIdFilter | None = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> MemorySpacePage:
@@ -45,6 +47,7 @@ async def list_spaces(
         workspace_id,
         labels=label or [],
         enabled=enabled,
+        app_id=app_id,
         limit=limit,
         cursor=cursor,
     )

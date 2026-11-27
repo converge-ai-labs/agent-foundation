@@ -512,3 +512,40 @@ it.each([
     cache.clear();
   },
 );
+
+it("requests App-owned instances and shows attribution in the row", async () => {
+  const env = {
+    id: "env_review",
+    name: "Research sandbox",
+    template_id: "envtpl_python",
+    provider_id: "eprov_docker",
+    app_id: "review.app",
+    status: "ready",
+    updated_at: "2026-11-25T12:00:00Z",
+  };
+  const setupGet = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation((path, options) =>
+    path === "/api/v1/environments"
+      ? Promise.resolve({ data: { items: [env], next_cursor: null } })
+      : setupGet(path, options),
+  );
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter initialEntries={[`/environments?app_id=${env.app_id}`]}>
+        <EnvironmentInstances />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(
+    (await screen.findByRole("row", { name: /Research sandbox/ })).textContent,
+  ).toContain(env.app_id);
+  expect(http.GET).toHaveBeenCalledWith(
+    "/api/v1/environments",
+    expect.objectContaining({
+      params: { query: expect.objectContaining({ app_id: env.app_id }) },
+    }),
+  );
+});

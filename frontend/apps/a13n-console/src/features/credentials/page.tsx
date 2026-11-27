@@ -8,12 +8,14 @@ import { useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
+  AppFilter,
   CollectionFooter,
   Empty,
   Pagination,
   ResourceIdentity,
   ResourceTable,
   Toolbar,
+  useAppFilterParam,
   useCursor,
 } from "../../shared/collection";
 import {
@@ -22,6 +24,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
+import { AppBadge } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import { credentialQueries } from "./api";
 import { useCredentialEditor } from "./editor";
@@ -32,13 +35,19 @@ export function CredentialsPage() {
     { workspace, basePath, can } = useWorkspace(),
     { t } = useTranslation(),
     navigate = useNavigate();
+  const [appId, setAppId] = useAppFilterParam();
   const [search, setSearch] = useState(""),
     [state, setState] = useState("all");
   const term = search.trim().toLocaleLowerCase(),
-    filtered = !!term || state !== "all";
-  const page = useCursor({ term, state });
+    filtered = !!term || state !== "all" || !!appId;
+  const page = useCursor({ term, state, appId });
   const query = useQuery({
-    ...credentialQueries(client, workspace.id).list(page.cursor, term, state),
+    ...credentialQueries(client, workspace.id).list(
+      page.cursor,
+      term,
+      state,
+      appId,
+    ),
     enabled: can("read"),
   });
   const rows = query.data?.items ?? [];
@@ -59,17 +68,20 @@ export function CredentialsPage() {
           onSearchChange={setSearch}
           searchLabel={t("Search credentials")}
           filters={
-            <ChoiceField
-              label={t("Status")}
-              variant="filter"
-              value={state}
-              onValueChange={setState}
-              options={[
-                { value: "all", label: t("All statuses") },
-                { value: "active", label: t("state.active") },
-                { value: "revoked", label: t("state.revoked") },
-              ]}
-            />
+            <>
+              <ChoiceField
+                label={t("Status")}
+                variant="filter"
+                value={state}
+                onValueChange={setState}
+                options={[
+                  { value: "all", label: t("All statuses") },
+                  { value: "active", label: t("state.active") },
+                  { value: "revoked", label: t("state.revoked") },
+                ]}
+              />
+              <AppFilter value={appId} onChange={setAppId} />
+            </>
           }
         />
       }
@@ -99,6 +111,7 @@ export function CredentialsPage() {
                     name={row.name}
                     description={row.description}
                     resourceId={row.id}
+                    badge={row.app_id && <AppBadge appId={row.app_id} />}
                     icon={<KeyIcon size={16} aria-hidden="true" />}
                     to={`${basePath}/credentials/${row.id}`}
                   />

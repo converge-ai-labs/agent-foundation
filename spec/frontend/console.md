@@ -185,8 +185,12 @@ Session UI uses the domain terms **Session**, **Thread**, and **Run** (会话、
 
 ### Session List and Ownership
 
+- **App provenance:** Sessions, Environment instances, Browsers, Memory Spaces, Schedules, and Egress Credentials show the owning App as quiet row and detail metadata. Console resolves App names from the organization catalog, including disabled and headless Apps, and falls back to the canonical ID. The URL-backed App filter queries the full collection and is hidden when there are no installed Apps and no App selection. Clicking a Session's App badge sets that filter. Session Origin keeps its own caption and filter; a caption that duplicates the App name or ID is shown once. Run Details names the owning App and the triggering App separately when present.
+
 - **Collection and sorting:** Session lists use the main content area with server-side sorting by Updated, Runs, and Cost (persisted in URL; unpriced requests marked; unavailable cost sorts last) and URL-persisted search/filters (title, source, label, text, exact Session/Thread ID, application, Agent, status, trigger, activity). Compact rows show the latest Run's Agent avatar, stable title (or untitled + ID), secondary Agent + label chips, plain-text source column (origin name + application caption, dash if absent), status (with localized trigger tooltip), run count, and update time. Clicking source applications or labels narrows the list. Row actions offer **Debug** plus **Inspect execution** and (for runners of Console-started Sessions) **Continue thread** (opening Chat on a unique `origin = new` root or offering a paginated root choice).
+
 - **Console ownership:** Only Sessions started in Console (labeled `a13n.console=debug` with origin `{application: "a13n-console", name: "Console"}`) expose interaction controls. Other Sessions are observation-only in both Chat and Debug (read-only transcripts, pending requests, queued messages, mounts, Run details, and navigation remain available). Runners can edit a Console-started Session's title and origin under its ETag (origin edits replace the object; blank clears the field).
+
 - **Opening and following:** Opening a Session reuses its collection summary and loads route code, target resolution, Run detail, newest message window, and anchored Run index in parallel. Opening a Thread follows its latest Run (automatic successors preserve transcript and unsent draft); explicit Run links and Debug navigator selections pin historical Runs until **Return to latest**.
 
 ### Chat, Debug, and Branching

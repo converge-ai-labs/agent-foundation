@@ -11,6 +11,7 @@ import { ResourceReference } from "./resource-reference";
 export function ResourceIdentity({
   name,
   description,
+  badge,
   icon,
   to,
   resourceId,
@@ -18,6 +19,8 @@ export function ResourceIdentity({
 }: {
   name: string;
   description?: ReactNode;
+  /** A quiet static badge beside the supporting text. */
+  badge?: ReactNode;
   icon?: ReactNode;
   to?: string;
   resourceId?: string;
@@ -28,12 +31,19 @@ export function ResourceIdentity({
       {icon && <IconTile size={32}>{icon}</IconTile>}
       <span className={styles.resourceCopy}>
         <strong title={name}>{name}</strong>
-        {description && (
-          <small
-            title={typeof description === "string" ? description : undefined}
-          >
-            {description}
-          </small>
+        {(badge || description) && (
+          <span className={styles.resourceMeta}>
+            {badge}
+            {description && (
+              <small
+                title={
+                  typeof description === "string" ? description : undefined
+                }
+              >
+                {description}
+              </small>
+            )}
+          </span>
         )}
       </span>
     </>

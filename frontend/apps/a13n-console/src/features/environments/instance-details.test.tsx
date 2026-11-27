@@ -444,3 +444,15 @@ it("hides lifecycle commands and renaming without write access", async () => {
   expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
   cache.clear();
 });
+
+it("shows the owning App as a source fact", async () => {
+  const owned = { ...environment, app_id: "review.app" };
+  serve(() => owned);
+  const { cache, user } = open(owned);
+  await user.click(screen.getByRole("button", { name: "Details" }));
+  expect(await screen.findByText("App", { selector: "dt" })).toBeTruthy();
+  expect(
+    (await screen.findAllByTitle(owned.app_id)).map((item) => item.textContent),
+  ).toContain(owned.app_id);
+  cache.clear();
+});

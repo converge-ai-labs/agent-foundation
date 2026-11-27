@@ -29,6 +29,7 @@ import { useState, type Ref } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
+import { AppBadge } from "../../shared/identity";
 import { StatePill } from "../../shared/feedback";
 import { AgentAvatar } from "../agents/avatar";
 import { useAgent } from "../agents/queries";
@@ -90,6 +91,7 @@ export function SessionHeader({
   });
   const root = roots.data?.items[0];
   const session = useSession(sessionId);
+  const appId = thread?.app_id ?? session.data?.app_id;
   const { level, setLevel: switchLevel } = useViewLevel(thread, session.data);
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
@@ -155,6 +157,11 @@ export function SessionHeader({
           </Link>
         ) : (
           <span className={styles.agentLink}>{t("Session")}</span>
+        )}
+        {appId && (
+          <span className={styles.headerApp}>
+            <AppBadge appId={appId} />
+          </span>
         )}
         {note && (
           <span className={styles.subNote} title={note}>

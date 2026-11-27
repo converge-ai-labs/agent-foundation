@@ -1,3 +1,4 @@
+export { AppFilter, useAppFilterParam } from "./app-filter";
 export { ArchivedFilter } from "./archived-filter";
 export { Empty } from "./empty";
 export { ListRow, ListRows, ListRowsEmpty } from "./list-rows";
