@@ -42,11 +42,13 @@ class InboxPage(InboxModel):
     unread_by_group: InboxUnreadCounts
 
 
-class InboxUnreadPost(InboxModel):
+class ThreadInboxPost(InboxModel):
     item_id: str
     tool_call_id: str
     has_transcript: bool
     created_at: datetime
+    read_at: datetime | None
+    done_at: datetime | None
 
 
 class ThreadInboxMarkReadRequest(InboxModel):

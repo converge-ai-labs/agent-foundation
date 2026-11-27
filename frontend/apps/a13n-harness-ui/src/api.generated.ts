@@ -290,15 +290,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/threads/{thread_id}/unread": {
+    "/api/inbox/threads/{thread_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Thread Inbox Unread */
-        get: operations["thread_inbox_unread_api_inbox_threads__thread_id__unread_get"];
+        /** Thread Inbox Posts */
+        get: operations["thread_inbox_posts_api_inbox_threads__thread_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4244,6 +4244,11 @@ export interface components {
              * @default false
              */
             coordinator_by_default?: boolean;
+            /**
+             * Inbox Auto Mark Read
+             * @default true
+             */
+            inbox_auto_mark_read?: boolean;
         };
         /** AppView */
         AppView: {
@@ -6828,20 +6833,6 @@ export interface components {
             needs_you: number;
             /** Updates */
             updates: number;
-        };
-        /** InboxUnreadPost */
-        InboxUnreadPost: {
-            /** Item Id */
-            item_id: string;
-            /** Tool Call Id */
-            tool_call_id: string;
-            /** Has Transcript */
-            has_transcript: boolean;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** InputPredictionResponse */
         InputPredictionResponse: {
@@ -9600,6 +9591,24 @@ export interface components {
             error_message?: string | null;
             /** @default null */
             main_account?: components["schemas"]["MainAccountSelection"] | null;
+        };
+        /** ThreadInboxPost */
+        ThreadInboxPost: {
+            /** Item Id */
+            item_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Has Transcript */
+            has_transcript: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Read At */
+            read_at: string | null;
+            /** Done At */
+            done_at: string | null;
         };
         /**
          * ThreadModelDisplay
@@ -12790,7 +12799,7 @@ export interface operations {
             };
         };
     };
-    thread_inbox_unread_api_inbox_threads__thread_id__unread_get: {
+    thread_inbox_posts_api_inbox_threads__thread_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -12807,7 +12816,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InboxUnreadPost"][];
+                    "application/json": components["schemas"]["ThreadInboxPost"][];
                 };
             };
             /** @description Validation Error */

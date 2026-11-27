@@ -795,10 +795,10 @@
         }
       }
     },
-    "/api/inbox/threads/{thread_id}/unread": {
+    "/api/inbox/threads/{thread_id}": {
       "get": {
-        "summary": "Thread Inbox Unread",
-        "operationId": "thread_inbox_unread_api_inbox_threads__thread_id__unread_get",
+        "summary": "Thread Inbox Posts",
+        "operationId": "thread_inbox_posts_api_inbox_threads__thread_id__get",
         "parameters": [
           {
             "name": "thread_id",
@@ -818,9 +818,9 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/InboxUnreadPost"
+                    "$ref": "#/components/schemas/ThreadInboxPost"
                   },
-                  "title": "Response Thread Inbox Unread Api Inbox Threads  Thread Id  Unread Get"
+                  "title": "Response Thread Inbox Posts Api Inbox Threads  Thread Id  Get"
                 }
               }
             }
@@ -12582,6 +12582,11 @@
             "type": "boolean",
             "title": "Coordinator By Default",
             "default": false
+          },
+          "inbox_auto_mark_read": {
+            "type": "boolean",
+            "title": "Inbox Auto Mark Read",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -19975,36 +19980,6 @@
           "updates"
         ],
         "title": "InboxUnreadCounts"
-      },
-      "InboxUnreadPost": {
-        "properties": {
-          "item_id": {
-            "type": "string",
-            "title": "Item Id"
-          },
-          "tool_call_id": {
-            "type": "string",
-            "title": "Tool Call Id"
-          },
-          "has_transcript": {
-            "type": "boolean",
-            "title": "Has Transcript"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "item_id",
-          "tool_call_id",
-          "has_transcript",
-          "created_at"
-        ],
-        "title": "InboxUnreadPost"
       },
       "InputPredictionResponse": {
         "properties": {
@@ -27588,6 +27563,62 @@
         ],
         "title": "ThreadExecution",
         "type": "object"
+      },
+      "ThreadInboxPost": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "tool_call_id": {
+            "type": "string",
+            "title": "Tool Call Id"
+          },
+          "has_transcript": {
+            "type": "boolean",
+            "title": "Has Transcript"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "tool_call_id",
+          "has_transcript",
+          "created_at",
+          "read_at",
+          "done_at"
+        ],
+        "title": "ThreadInboxPost"
       },
       "ThreadModelDisplay": {
         "additionalProperties": false,

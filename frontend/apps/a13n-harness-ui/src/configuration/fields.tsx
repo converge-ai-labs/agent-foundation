@@ -791,6 +791,22 @@ export function ResourceFields({
                       }
                     />
                   </SettingsRow>
+                  <SettingsRow
+                    label={t("Automatically mark Inbox items as read in chats")}
+                    controlId="inbox-auto-mark-read"
+                    stackOnNarrow={false}
+                    description={t(
+                      "Mark Inbox items as read when you view the latest messages in a focused chat, send a message, or respond to a decision. You can always open or mark an item yourself.",
+                    )}
+                  >
+                    <Switch
+                      id="inbox-auto-mark-read"
+                      checked={get(["inbox", "auto_mark_read"]) !== false}
+                      onCheckedChange={(enabled) =>
+                        set(["inbox", "auto_mark_read"], enabled)
+                      }
+                    />
+                  </SettingsRow>
                 </SettingsSection>
                 <DictationFields source={source} onChange={onChange} />
                 {group === "chats" && (

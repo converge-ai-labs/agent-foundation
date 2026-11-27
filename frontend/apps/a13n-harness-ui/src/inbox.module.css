@@ -410,12 +410,75 @@
   }
 }
 .postHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 8px;
+  font-size: var(--a13n-text-sm);
+}
+.postHeader:not(:has(.postActions)) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.postLeading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-  font-size: var(--a13n-text-sm);
+  gap: 0 8px;
+  min-inline-size: 0;
+}
+.postDone {
+  color: var(--a13n-secondary);
+}
+.postActions {
+  --post-action-inline-size: 26px;
+  --post-action-block-size: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, var(--post-action-inline-size));
+}
+.postActions button {
+  display: grid;
+  place-items: center;
+  inline-size: var(--post-action-inline-size);
+  block-size: var(--post-action-block-size);
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--a13n-secondary);
+}
+.postActions button svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.postActions button:disabled {
+  opacity: 0.6;
+}
+.postActions button:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .postActions button:hover:not(:disabled) {
+    background: var(--a13n-hover);
+    color: var(--a13n-text);
+  }
+}
+.postActions button:active:not(:disabled) {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+.postDoneAction {
+  grid-column: 2;
+}
+@media (pointer: coarse) {
+  .postActions {
+    --post-action-inline-size: 44px;
+    --post-action-block-size: 44px;
+  }
+}
+.postError {
+  grid-column: 1 / -1;
+  margin-block: 4px;
 }
 .postSource {
   display: inline-flex;

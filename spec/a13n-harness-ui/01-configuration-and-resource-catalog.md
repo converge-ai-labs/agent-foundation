@@ -283,6 +283,8 @@ The optional root field `chat_title_model` references a configured Model for aut
 
 `inbox.enabled` defaults to `true`. Each Run captures the value when it resolves its composition. A Run that captured `false` exposes no `post_to_inbox` tool, no Inbox instructions, and no Inbox reminders to any agent, including Coordinators and Bot. The setting does not delete or hide existing Inbox items, and the Inbox API and WebUI view remain available. [Inbox Posting](05-runtime-subagents-and-surfaces.md#inbox-posting) defines the agent-facing behavior when the setting is on.
 
+`inbox.auto_mark_read` defaults to `true`. The current accepted value controls automatic reading in owner chats and is exposed as `app.inbox_auto_mark_read` on the owner status API. Changes apply without restarting. This setting is independent of agent posting (`inbox.enabled`) and leaves explicit item actions available. See [Inbox in chats](webui/04-workbench-interaction.md#inbox-in-chats).
+
 ## Dictation
 
 Root `dictation` configures private WebUI draft transcription independently of the conversation Model. `backend` is `model` by default: a non-null `model` selects an audio-input Model resource; null disables dictation. Existing `dictation.model` configurations retain this behavior. Native subscription login alone never selects or enables the Codex backend.

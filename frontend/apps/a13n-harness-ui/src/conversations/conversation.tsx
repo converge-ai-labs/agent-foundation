@@ -23,7 +23,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
-import { flashInboxPost, UnreadInboxPosts } from "../inbox";
+import { flashInboxPost, ThreadInboxContext } from "../inbox";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, ModalFrame } from "a13n-ui";
 import { ArrowDown, Sparkle } from "@phosphor-icons/react";
@@ -558,8 +558,9 @@ function ConversationContent({
     () => !!olderAnchor.current || !!pendingJump.current,
     [],
   );
-  const unreadInboxPosts = useThreadInbox({
+  const threadInbox = useThreadInbox({
     threadId,
+    autoMarkRead: status.data?.app?.inbox_auto_mark_read ?? false,
     enabled: !!detail.data || !!publication?.threadAvailable,
     canRead:
       pageReady &&
@@ -1796,9 +1797,7 @@ function ConversationContent({
         draft={draft}
         enabled={canCompose && !thread?.archived}
       >
-        <UnreadInboxPosts.Provider value={unreadInboxPosts}>
-          {content}
-        </UnreadInboxPosts.Provider>
+        <ThreadInboxContext value={threadInbox}>{content}</ThreadInboxContext>
       </ReplyAnnotations>
     </ConversationOpening>
   );

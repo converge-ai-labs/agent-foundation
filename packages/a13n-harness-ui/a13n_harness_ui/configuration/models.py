@@ -536,6 +536,7 @@ class InputPredictionConfiguration(ConfigurationModel):
 
 class InboxConfiguration(ConfigurationModel):
     enabled: bool = True
+    auto_mark_read: bool = True
 
 
 class HarnessUiDocument(ConfigurationModel):
@@ -565,7 +566,9 @@ class HarnessUiDocument(ConfigurationModel):
     input_prediction: InputPredictionConfiguration = Field(
         default_factory=InputPredictionConfiguration, exclude_if=lambda value: not value.enabled
     )
-    inbox: InboxConfiguration = Field(default_factory=InboxConfiguration, exclude_if=lambda value: value.enabled)
+    inbox: InboxConfiguration = Field(
+        default_factory=InboxConfiguration, exclude_if=lambda value: value == InboxConfiguration()
+    )
     chat_title_model: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
     dictation: DictationConfiguration = Field(
         default_factory=DictationConfiguration, exclude_if=lambda v: v == DictationConfiguration()
