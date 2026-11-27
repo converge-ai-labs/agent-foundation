@@ -1475,8 +1475,8 @@ fn is_git_ignored(path: &Path, is_directory: bool, specs: &IgnoreStack) -> bool 
 }
 
 fn join_logical(root: &str, relative: &str) -> String {
-    if root == "/" {
-        format!("/{relative}")
+    if root.ends_with('/') {
+        format!("{root}{relative}")
     } else {
         format!("{root}/{relative}")
     }
@@ -2587,6 +2587,11 @@ mod tests {
     fn joins_device_absolute_paths() {
         assert_eq!(join_logical("/", "a/b"), "/a/b");
         assert_eq!(join_logical("/root", "a"), "/root/a");
+        assert_eq!(join_logical("/C:/", "a"), "/C:/a");
+        assert_eq!(
+            join_logical("/UNC/server/share/", "a"),
+            "/UNC/server/share/a"
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]

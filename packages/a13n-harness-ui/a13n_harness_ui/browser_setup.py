@@ -165,6 +165,8 @@ class BrowserScan(SurfaceModel):
 async def scan_browsers() -> BrowserScan:
     """Enumerate compatible installed executables without starting a desktop."""
     platform = host_platform()
+    if platform not in {"linux", "macos"}:
+        return BrowserScan(platform=platform)
     candidates = await asyncio.to_thread(system_browsers, platform)
     browsers = []
     for candidate in candidates:

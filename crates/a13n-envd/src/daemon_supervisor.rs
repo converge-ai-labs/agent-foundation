@@ -68,7 +68,11 @@ async fn supervise(arguments: &[OsString]) -> io::Result<()> {
         #[cfg(unix)]
         command.process_group(0);
         #[cfg(windows)]
-        let (mut child, job) = crate::windows_job::WindowsJob::spawn(&mut command).await?;
+        let (mut child, job) = crate::windows_job::WindowsJob::spawn_with_flags(
+            &mut command,
+            windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP,
+        )
+        .await?;
         #[cfg(not(windows))]
         let mut child = command.spawn()?;
         // Child::wait closes child.stdin; retain the lifetime writer separately.

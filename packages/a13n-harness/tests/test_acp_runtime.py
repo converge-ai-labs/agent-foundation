@@ -491,3 +491,31 @@ async def test_stdio_mcp_forwarder_uses_isolated_script_without_package_import()
                 assert await module_proc.stderr.read() == b""
         finally:
             await bridge._unbind()
+
+
+async def test_windows_local_transport_overlays_environment_case_insensitively(tmp_path, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from a13n_harness.acp import transport
+    from a13n_harness.providers.environment.direct_local.processes import NativeProcessTrees
+
+    monkeypatch.setattr(transport, "os", SimpleNamespace(name="nt", environ={"PATH": "baseline", "KEEP": "host"}))
+    captured = {}
+
+    @asynccontextmanager
+    async def open_pipes(_owner, _argv, _cwd, environment):
+        captured.update(environment)
+        yield SimpleNamespace(stdin=object(), stdout=object())
+
+    @asynccontextmanager
+    async def channel(_stdout, _stdin):
+        yield object()
+
+    monkeypatch.setattr(NativeProcessTrees, "open_pipes", open_pipes)
+    monkeypatch.setattr(transport, "_stream_channel", channel)
+    local_transport = LocalStdioTransport(
+        "agent.exe", str(tmp_path), environment={"Path": "selected"}, inherit_environment=True
+    )
+    async with local_transport.open():
+        pass
+    assert captured == {"PATH": "selected", "KEEP": "host"}

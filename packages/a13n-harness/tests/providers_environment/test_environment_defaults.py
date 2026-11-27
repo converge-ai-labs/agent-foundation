@@ -207,3 +207,16 @@ def test_merged_defaults_retain_command_bounds_and_windows_ambiguity_errors():
         "PATH": "first",
         "Path": "second",
     }
+
+
+@pytest.mark.parametrize("defaults", [{}, {"OTHER": "default"}])
+@pytest.mark.parametrize(
+    "patch",
+    [CommandEnvironment(set={"Path": "one", "PATH": "two"}), CommandEnvironment(set={"Path": "one"}, unset=("PATH",))],
+)
+def test_windows_command_defaults_reject_case_insensitive_collisions(defaults, patch):
+    from a13n_harness.environment.models import EnvironmentError
+
+    with pytest.raises(EnvironmentError) as failure:
+        with_defaults(request(patch), defaults, windows=True)
+    assert failure.value.code == "environment_request_invalid"
