@@ -15,7 +15,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from .test_app import _settings, _write_configuration
 from .test_mcp_apps_connections import _SERVER
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.mark.parametrize("admission_wait", ["lock", "capture"])

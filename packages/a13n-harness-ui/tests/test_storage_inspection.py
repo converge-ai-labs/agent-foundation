@@ -10,7 +10,7 @@ from a13n_harness_ui.storage.models import ThreadRecord
 from anyio import create_task_group
 from sqlalchemy import event, text
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 _THREAD = "thr_inspection"
 _INITIAL = "initial:" + "a" * 64
 _NEXT = "b" * 64

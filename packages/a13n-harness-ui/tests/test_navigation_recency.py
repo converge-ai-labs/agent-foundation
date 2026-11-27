@@ -17,7 +17,7 @@ from .test_configuration_protocol import HEADERS, settled
 from .test_interactive_protocol import listener_with_app
 from .test_thread_repository import _configuration, _initial
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_touch_is_monotonic_and_independent_from_checkpoints_metadata_and_pagination(tmp_path):

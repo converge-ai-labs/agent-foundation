@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from .test_thread_usage import _model, _receipt, _thread
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def _query(**kwargs):

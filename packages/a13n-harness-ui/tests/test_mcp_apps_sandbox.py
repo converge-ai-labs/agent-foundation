@@ -14,7 +14,7 @@ from a13n_harness_ui.webui import create_webui
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_sandbox_has_no_host_api_credentials_or_cors() -> None:

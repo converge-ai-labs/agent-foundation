@@ -14,6 +14,8 @@ from a13n_harness_ui.interactive.setup import SetupWizard
 from a13n_harness_ui.model_presets import known_model_capabilities
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 IMAGE = frozenset({ModelCapability.IMAGE_UNDERSTANDING})
 MEDIA = frozenset(
     {

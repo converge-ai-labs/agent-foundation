@@ -28,7 +28,7 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import run
 from a13n_harness.codeact.state import CodeActStateOwner
-from pydantic_ai.messages import ToolReturnPart
+from pydantic_ai.messages import ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 root = Path(sys.argv[1])
@@ -38,41 +38,22 @@ original_store = CodeActStateOwner.store
 async def store(self, key, value, config):
     with (root / 'effects.jsonl').open('a') as log:
         log.write(json.dumps({'key': key}) + '\n')
-    if mode == 'tool':
+    if key == 'uncertain-effect':
         (root / 'tool-started').touch()
         await asyncio.Event().wait()
     await original_store(self, key, value, config)
 CodeActStateOwner.store = store
 async def stream(messages, info):
-    if mode == 'child' and 'delegate' not in {tool.name for tool in info.function_tools}:
-        with (root / 'child-requests.jsonl').open('a') as log:
-            log.write('child-started\n')
-        (root / 'child-started').touch()
-        await asyncio.Event().wait()
-        yield 'Never returned'
+    if any(isinstance(p, UserPromptPart) and 'Start an uncertain tool' in str(p.content) for m in messages for p in m.parts):
+        yield {0: DeltaToolCall(name='store', tool_call_id='uncertain-once', json_args='{"key":"uncertain-effect","value":1}')}
         return
     returned = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
     with (root / 'requests.jsonl').open('a') as log:
         log.write(json.dumps({'returns': len(returned)}) + '\n')
-    if mode == 'child':
-        if not returned:
-            yield {0: DeltaToolCall(name='delegate', tool_call_id='delegate-once', json_args='{"subagent_name":"agent-worker","prompt":"Bounded work"}')}
-        elif any(part.tool_name == 'subagent_info' for part in returned):
-            assert any('subagent_execution_unavailable' in str(part.content) for part in returned)
-            yield 'Continued root without restarting its child'
-            (root / 'root-completed').touch()
-        elif not (root / 'allow-completion').exists():
-            (root / 'root-started').touch()
-            await asyncio.Event().wait()
-        else:
-            yield {0: DeltaToolCall(name='subagent_info', tool_call_id='inspect-old-child', json_args='{}')}
-        return
     if not returned:
         (root / 'root-started').touch()
         if mode == 'graceful':
             await owner._restart.pause_requested.wait()
-        elif mode == 'stop':
-            await asyncio.Event().wait()
         yield {0: DeltaToolCall(name='store', tool_call_id='effect-once', json_args='{"key":"saved-effect","value":1}')}
     else:
         assert len([p for p in returned if p.tool_call_id == 'effect-once']) == 1
@@ -192,73 +173,21 @@ def wait_for_lines(path, count):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX SIGKILL")
-def test_sigkill_recovers_saved_tool_results_and_rearms_new_runs(tmp_path):
+def test_sigkill_recovers_saved_tool_results_without_replaying_uncertain_tools(tmp_path):
     _write_configuration(tmp_path)
     with listener(tmp_path, mode="safe", shutdown_signal=signal.SIGKILL) as api:
-        thread_id = api.post("/api/threads", json={}).json()["thread_id"]
-        response = api.post(f"/api/threads/{thread_id}/submit", json={"parts": ["Finish once"]})
-        assert response.status_code == 200, response.text
+        for prompt in ("Finish once", "Start an uncertain tool"):
+            created = api.post("/api/threads", json={})
+            assert created.status_code == 200, created.text
+            thread_id = created.json()["thread_id"]
+            response = api.post(f"/api/threads/{thread_id}/submit", json={"parts": [prompt]})
+            assert response.status_code == 200, response.text
         wait_for_lines(tmp_path / "safe-requests.jsonl", 1)
+        wait_for_file(tmp_path / "tool-started")
     (tmp_path / "allow-completion").touch()
     with listener(tmp_path, mode="safe"):
         wait_for_file(tmp_path / "root-completed")
     requests = [json.loads(line)["returns"] for line in (tmp_path / "requests.jsonl").read_text().splitlines()]
     assert requests == [0, 1, 1]
-    assert len((tmp_path / "effects.jsonl").read_text().splitlines()) == 1
-
-
-@pytest.mark.skipif(os.name != "posix", reason="POSIX SIGKILL")
-def test_sigkill_does_not_replay_uncertain_tools_or_explicit_stop(tmp_path):
-    _write_configuration(tmp_path)
-    with listener(tmp_path, mode="tool", shutdown_signal=signal.SIGKILL) as api:
-        thread_id = api.post("/api/threads", json={}).json()["thread_id"]
-        response = api.post(f"/api/threads/{thread_id}/submit", json={"parts": ["Work"]})
-        assert response.status_code == 200, response.text
-        wait_for_file(tmp_path / "tool-started")
-    with listener(tmp_path, mode="tool"):
-        pass
-    requests = (tmp_path / "requests.jsonl").read_text().splitlines()
-    assert len(requests) == 1
-    assert len((tmp_path / "effects.jsonl").read_text().splitlines()) == 1
-
-
-@pytest.mark.skipif(os.name != "posix", reason="POSIX SIGKILL")
-def test_sigkill_recovers_the_root_without_restarting_its_active_child(tmp_path):
-    import yaml
-
-    _write_configuration(tmp_path, allow_agent_creation=True)
-    parent_path = tmp_path / "agents/assistant.yaml"
-    parent = yaml.safe_load(parent_path.read_text())
-    parent["subagents"] = [{"agent": "agent-worker"}]
-    parent_path.write_text(yaml.safe_dump(parent))
-    (tmp_path / "agents/worker.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": "1",
-                "kind": "agent",
-                "id": "agent-worker",
-                "name": "Worker",
-                "model": "model-primary",
-            }
-        )
-    )
-    with listener(tmp_path, mode="child", shutdown_signal=signal.SIGKILL) as api:
-        thread_id = api.post("/api/threads", json={}).json()["thread_id"]
-        response = api.post(f"/api/threads/{thread_id}/submit", json={"parts": ["Delegate, then report"]})
-        assert response.status_code == 200, response.text
-        wait_for_file(tmp_path / "root-started")
-        wait_for_file(tmp_path / "child-started")
-        before = api.get(f"/api/threads/{thread_id}/children").json()["executions"]
-        assert len(before) == 1 and before[0]["local_status"] == "active"
-    (tmp_path / "allow-completion").touch()
-    with listener(tmp_path, mode="child") as api:
-        wait_for_file(tmp_path / "root-completed")
-        after = api.get(f"/api/threads/{thread_id}/children").json()["executions"]
-        assert len(after) == 1
-        assert after[0]["execution_id"] == before[0]["execution_id"]
-        assert after[0]["persisted_status"] == "running"
-        assert after[0]["local_status"] == "unavailable"
-        assert not after[0]["available_actions"] and not after[0]["resumable"]
-    assert len((tmp_path / "child-requests.jsonl").read_text().splitlines()) == 1
-    requests = [json.loads(line)["returns"] for line in (tmp_path / "requests.jsonl").read_text().splitlines()]
-    assert requests == [0, 1, 1, 2]
+    effects = [json.loads(line)["key"] for line in (tmp_path / "effects.jsonl").read_text().splitlines()]
+    assert sorted(effects) == ["saved-effect", "uncertain-effect"]

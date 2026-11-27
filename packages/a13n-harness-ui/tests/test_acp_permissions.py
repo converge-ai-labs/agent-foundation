@@ -21,11 +21,13 @@ from acp.schema import AgentThoughtChunk, RequestPermissionResponse, TextContent
 from pydantic_ai import Agent, DeferredToolRequests, RunContext, Tool
 from pydantic_ai.capabilities import HandleDeferredToolCalls
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.tools import ToolApproved, ToolDenied
 
-from .acp_test_support import _FAKE, PROFILE, _agent, _wait_for_marker
+from .acp_test_support import _FAKE, PROFILE, _agent, _in_process_agent, _wait_for_marker
 from .test_interactive import _seed
+
+pytestmark = pytest.mark.usefixtures("migrated_databases")
 
 
 def _approval_turn(**app_methods):
@@ -426,23 +428,22 @@ async def _one_shot_shell_check(path, tmp_path):
     assert b"denied automatically" in stdout
 
 
-@pytest.mark.xdist_group("harness-ui-acp-unsupported-input")
 @pytest.mark.anyio
 async def test_unsupported_external_input_fails_tool(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
-    hooks = """
-async def ask(messages, info):
-    returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
-    if not returns:
-        assert 'ask_user_question' in {tool.name for tool in info.function_tools}
-        yield {0: DeltaToolCall(name='ask_user_question', json_args='{}')}
-    else:
-        assert returns[-1].outcome == 'failed', returns[-1]
-        yield 'unsupported input failed'
 
-codex.CodexRequestModel = lambda *a, **kw: FunctionModel(stream_function=ask)
-"""
-    async with _agent(path, tmp_path, hooks=hooks) as rpc:
+    async def ask(messages, info):
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not returns:
+            assert "ask_user_question" in {tool.name for tool in info.function_tools}
+            yield {0: DeltaToolCall(name="ask_user_question", json_args="{}")}
+        else:
+            assert returns[-1].outcome == "failed", returns[-1]
+            yield "unsupported input failed"
+
+    async with _in_process_agent(
+        path, tmp_path, monkeypatch, model_factory=lambda *a, **kw: FunctionModel(stream_function=ask)
+    ) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
         reply, _ = await rpc.response(2)
         await rpc.send(
@@ -453,9 +454,8 @@ codex.CodexRequestModel = lambda *a, **kw: FunctionModel(stream_function=ask)
         assert not any(frame.get("method") == "session/request_permission" for frame in frames)
 
 
-@pytest.mark.xdist_group("harness-ui-acp-ephemeral-mcp")
 @pytest.mark.anyio
-async def test_unattended_session_mcp_is_explicit_ephemeral_and_reported(tmp_path, monkeypatch):
+async def test_unattended_session_mcp_is_explicit_ephemeral_and_reported(tmp_path, monkeypatch, caplog):
     path = await _seed(tmp_path, monkeypatch)
     agent = next((path.parent / "agents").glob("*.yaml"))
     agent.write_text(
@@ -502,7 +502,7 @@ mcp.run(show_banner=False)
         }
 
     entries = [entry("opted", started), entry("skipped", skipped)]
-    async with _agent(path, tmp_path, unattended=True) as rpc:
+    async with _in_process_agent(path, tmp_path, monkeypatch, unattended=True) as rpc:
         await rpc.send(
             "session/new",
             id=2,
@@ -549,9 +549,9 @@ mcp.run(show_banner=False)
             update.get("toolCallId") == call["toolCallId"] and update.get("status") == "completed" for update in updates
         )
         assert started.exists() and not skipped.exists()
-    assert "unattended_safety_not_declared" in rpc.diagnostics and "skipped" in rpc.diagnostics
+    assert "unattended_safety_not_declared" in caplog.text and "skipped" in caplog.text
     started.unlink()
-    async with _agent(path, tmp_path, unattended=True) as rpc:
+    async with _in_process_agent(path, tmp_path, monkeypatch, unattended=True) as rpc:
         await rpc.send("session/resume", id=2, sessionId=session_id, cwd=str(tmp_path), mcpServers=entries)
         reply, _ = await rpc.response(2)
         assert reply["result"]["_meta"][PROFILE]["omittedMcpServers"] == [

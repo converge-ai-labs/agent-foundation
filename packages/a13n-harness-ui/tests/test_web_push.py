@@ -27,6 +27,8 @@ from pydantic_ai.models.function import FunctionModel
 
 from .test_app import _write_configuration
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 def encoded(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode()

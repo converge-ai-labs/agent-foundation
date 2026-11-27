@@ -18,7 +18,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import ProxyTracerProvider, StatusCode
 from pydantic_ai.models.function import FunctionModel
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.fixture(autouse=True)

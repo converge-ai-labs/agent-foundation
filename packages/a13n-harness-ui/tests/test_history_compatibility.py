@@ -24,7 +24,7 @@ from pydantic_ai.messages import (
 
 from .test_app import _CompletedReconstructor, _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def history_fixture():

@@ -14,7 +14,7 @@ from a13n_harness_ui.webui import create_webui
 from .test_app import _CompletedReconstructor, _settings
 from .test_device_configuration import binding, source
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def no_device_credentials(*args, **kwargs):

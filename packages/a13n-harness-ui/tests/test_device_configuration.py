@@ -17,7 +17,7 @@ from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigura
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
 from pydantic import ValidationError
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def device():

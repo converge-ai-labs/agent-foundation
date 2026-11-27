@@ -22,7 +22,7 @@ from a13n_harness_ui.surfaces import NewThreadDefaults
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 SKILL_NAME = "harness-ui-configuration"
 
 

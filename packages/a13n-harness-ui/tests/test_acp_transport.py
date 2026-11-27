@@ -16,55 +16,28 @@ from a13n_harness_ui.app import HarnessUiApp
 from acp import Client
 from acp.schema import TextContentBlock
 
-from .acp_test_support import PROFILE, _agent, _wait_for_marker
+from .acp_test_support import PROFILE, _agent, _in_process_agent, _wait_for_marker
 from .test_interactive import _seed
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
 
-@pytest.mark.xdist_group("harness-ui-acp-large-initialize")
+
+@pytest.mark.xdist_group("harness-ui-acp-input-backpressure")
 @pytest.mark.anyio
-async def test_large_initialize_during_app_startup_keeps_connection(tmp_path, monkeypatch):
-    path = await _seed(tmp_path, monkeypatch)
-    hooks = """
-from a13n_harness_ui.acp_stdio import _StdinReader
-from a13n_harness_ui.root_run import RootRunCoordinator
-
-original_start = RootRunCoordinator.start
-original_feed_data = _StdinReader.feed_data
-input_paused = asyncio.Event()
-
-def feed_data(self, data):
-    original_feed_data(self, data)
-    if len(self._buffer) > 2 * self._limit:
-        input_paused.set()
-
-async def start(self):
-    # The SDK listener starts after App initialization. Make sure normal
-    # StreamReader backpressure is already in effect at that point.
-    await asyncio.wait_for(input_paused.wait(), 10)
-    return await original_start(self)
-
-_StdinReader.feed_data = feed_data
-RootRunCoordinator.start = start
-"""
-    async with _agent(path, tmp_path, hooks=hooks, init_meta={"workspaceContext": "x" * (3 * 1024 * 1024)}) as rpc:
-        await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
-        reply, _ = await rpc.response(2)
-        assert reply["result"]["sessionId"]
-
-
-@pytest.mark.xdist_group("harness-ui-acp-input-burst")
-@pytest.mark.anyio
-async def test_valid_input_burst_keeps_connection_while_handler_waits(tmp_path, monkeypatch):
+async def test_large_initialize_and_input_burst_keep_connection(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
     hooks = """
 from a13n_harness_ui.acp_server import AcpAgent
 from a13n_harness_ui.acp_stdio import _StdinReader
+from a13n_harness_ui.root_run import RootRunCoordinator
 
+original_start = RootRunCoordinator.start
 original_inventory = AcpAgent._inventory
 original_readuntil = _StdinReader.readuntil
 original_feed_data = _StdinReader.feed_data
 waiting = Path('handler-waiting')
 gate_next_read = False
+startup_input_paused = asyncio.Event()
 
 async def readuntil(self, separator):
     global gate_next_read
@@ -72,14 +45,22 @@ async def readuntil(self, separator):
         while not Path('reader-release').exists():
             await asyncio.sleep(0.01)
     line = await original_readuntil(self, separator)
-    if line and json.loads(line).get('id') == 3:
+    if line.startswith(b'{') and json.loads(line).get('id') == 3:
         gate_next_read = True
     return line
 
 def feed_data(self, data):
     original_feed_data(self, data)
     if self._pipe is not None and not self._pipe.is_reading():
-        Path('reader-paused').touch()
+        if gate_next_read:
+            Path('reader-paused').touch()
+        else:
+            startup_input_paused.set()
+
+async def start(self):
+    # The startup reader hits high water before the SDK listener starts.
+    await asyncio.wait_for(startup_input_paused.wait(), 10)
+    return await original_start(self)
 
 async def inventory(self, session_id):
     if not waiting.exists():
@@ -88,11 +69,12 @@ async def inventory(self, session_id):
             await asyncio.sleep(0.02)
     return await original_inventory(self, session_id)
 
+RootRunCoordinator.start = start
 AcpAgent._inventory = inventory
 _StdinReader.readuntil = readuntil
 _StdinReader.feed_data = feed_data
 """
-    async with _agent(path, tmp_path, hooks=hooks) as rpc:
+    async with _agent(path, tmp_path, hooks=hooks, init_meta={"workspaceContext": "x" * (3 * 1024 * 1024)}) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
         reply, _ = await rpc.response(2)
         session_id = reply["result"]["sessionId"]
@@ -216,18 +198,11 @@ HarnessUiApp._stop = stop
             assert rpc.process.returncode == 0
 
 
-@pytest.mark.parametrize(
-    "backpressure",
-    [
-        pytest.param(False, marks=pytest.mark.xdist_group("harness-ui-acp-summary-backpressure-unblocked")),
-        pytest.param(True, marks=pytest.mark.xdist_group("harness-ui-acp-summary-backpressure-blocked")),
-    ],
-)
+@pytest.mark.xdist_group("harness-ui-acp-summary-backpressure")
 @pytest.mark.anyio
-async def test_wrapped_summary_and_run_progress_under_backpressure(tmp_path, monkeypatch, backpressure):
+async def test_run_progress_with_summary_backpressure(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
-    size = 256 * 1024 if backpressure else 0
-    hooks = f"""
+    hooks = """
 from a13n_harness_ui import acp_server
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from pydantic_ai.models.function import DeltaThinkingPart
@@ -241,15 +216,14 @@ async def checkpoint(self, ctx, state):
     Path('checkpoint-emitted').touch()
 
 async def thinking(messages, info):
-    yield {{0: DeltaThinkingPart(content='public summary' + 'x' * {size}, signature='private signature')}}
+    yield {0: DeltaThinkingPart(content='public summary' + 'x' * (256 * 1024), signature='private signature')}
     yield 'final answer'
-    await asyncio.sleep(0.1)
     Path('model-finished').touch()
 
 RootCheckpointCapability._checkpoint = checkpoint
 codex.CodexRequestModel = lambda *a, **kw: WrapperModel(WrapperModel(FunctionModel(stream_function=thinking)))
 """
-    async with _agent(path, tmp_path, hooks=hooks, discard_stdout=backpressure) as rpc:
+    async with _agent(path, tmp_path, hooks=hooks, discard_stdout=True) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
         reply, _ = await rpc.response(2)
         await rpc.send(
@@ -259,18 +233,44 @@ codex.CodexRequestModel = lambda *a, **kw: WrapperModel(WrapperModel(FunctionMod
             prompt=[{"type": "text", "text": "think"}],
             _meta={PROFILE: {"inputIds": ["initial"]}},
         )
-        if backpressure:
-            await _wait_for_marker(tmp_path / "checkpoint-emitted")
-            await _wait_for_marker(tmp_path / "model-finished", timeout=8)
-        else:
-            reply, frames = await rpc.response(3)
-            assert reply["result"]["stopReason"] == "end_turn", reply
-            summaries = [
-                update["content"]["text"]
-                for frame in frames
-                if (update := frame.get("params", {}).get("update", {})).get("sessionUpdate") == "agent_thought_chunk"
-            ]
-            assert summaries == ["public summary"]
+        await _wait_for_marker(tmp_path / "checkpoint-emitted")
+        await _wait_for_marker(tmp_path / "model-finished", timeout=8)
+
+
+@pytest.mark.anyio
+async def test_wrapped_model_transmits_only_the_public_summary(tmp_path, monkeypatch):
+    from a13n_harness_ui import acp_server
+    from pydantic_ai.models.function import DeltaThinkingPart, FunctionModel
+    from pydantic_ai.models.wrapper import WrapperModel
+
+    path = await _seed(tmp_path, monkeypatch)
+    monkeypatch.setattr(acp_server, "CodexRequestModel", FunctionModel)
+
+    async def thinking(messages, info):
+        yield {0: DeltaThinkingPart(content="public summary", signature="private signature")}
+        yield "final answer"
+
+    def model(*args, **kwargs):
+        return WrapperModel(WrapperModel(FunctionModel(stream_function=thinking)))
+
+    async with _in_process_agent(path, tmp_path, monkeypatch, model_factory=model) as rpc:
+        await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
+        reply, _ = await rpc.response(2)
+        await rpc.send(
+            "session/prompt",
+            id=3,
+            sessionId=reply["result"]["sessionId"],
+            prompt=[{"type": "text", "text": "think"}],
+            _meta={PROFILE: {"inputIds": ["initial"]}},
+        )
+        reply, frames = await rpc.response(3)
+        assert reply["result"]["stopReason"] == "end_turn", reply
+        summaries = [
+            update["content"]["text"]
+            for frame in frames
+            if (update := frame.get("params", {}).get("update", {})).get("sessionUpdate") == "agent_thought_chunk"
+        ]
+        assert summaries == ["public summary"]
 
 
 @pytest.mark.anyio

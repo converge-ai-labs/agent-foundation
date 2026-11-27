@@ -30,7 +30,7 @@ from websockets.exceptions import InvalidStatus
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 TOKEN = "fixture-device-token"
 HEADERS = {"Authorization": "Bearer test-only-key"}
 # Decide before any App or listener starts, so the default suite pays nothing for these tests.

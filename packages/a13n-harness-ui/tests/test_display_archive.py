@@ -20,7 +20,7 @@ from a13n_harness_ui.storage.display import (
 from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def history(count):

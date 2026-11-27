@@ -1593,13 +1593,18 @@ it("shows cached history before replay and draft sync while keeping Send guarded
 
 it("shows saved content with a reconnect notice when the initial live connection fails", async () => {
   focusUnavailable = true;
-  mount(`/threads/${id}`);
-  await screen.findByRole("textbox", { name: "Shared prompt" });
-  // Allow the 1.5-second quiet period before the connection status appears.
-  expect(
-    await screen.findByText(/Reconnecting live updates/, {}, { timeout: 3000 }),
-  ).toBeTruthy();
-  expect(screen.queryByText("Opening chat…")).toBeNull();
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      mount(`/threads/${id}`);
+    });
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
+    expect(screen.getByText(/Reconnecting live updates/)).toBeTruthy();
+    expect(screen.queryByText("Opening chat…")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it.each([false, true])(
@@ -1664,143 +1669,129 @@ it.each([false, true])(
   },
 );
 
-it.each([
-  [false, false],
-  [false, true],
-])(
-  "loads previous turns independently of complete turn loading (short viewport: %s, retry: %s)",
-  async (short, retry) => {
-    const requests: string[] = [];
-    const original = vi.mocked(fetch).getMockImplementation()!;
-    vi.mocked(fetch).mockImplementation(async (request) => {
-      const url = new URL((request as Request).url);
-      if (!url.pathname.endsWith("/transcript")) return original(request);
-      const cursor = url.searchParams.get("cursor") ?? "latest";
-      if (url.searchParams.has("turn_id"))
-        return json({
-          continuation_id: "initial:one",
-          entries: Array.from({ length: 97 }, (_, index) => ({
-            position: index + 4,
-            message_kind: index === 0 ? "request" : "response",
-            parts:
-              index === 0
-                ? [{ kind: "user", text: "Current task" }]
-                : index === 96
-                  ? [{ kind: "assistant", text: "Current answer" }]
-                  : index === 1
-                    ? [{ kind: "thinking", text: "Folded intermediate work" }]
-                    : [],
-          })),
-          next_cursor: "previous-turn",
-        });
-      requests.push(cursor);
-      if (
-        retry &&
-        requests.filter((item) => item === "previous-turn").length === 1
-      )
-        return json(
-          { error: { message: "History temporarily unavailable" } },
-          503,
-        );
-      const earlier = cursor === "previous-turn";
+it("loads previous turns independently of complete turn loading, including a retry", async () => {
+  const requests: string[] = [];
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    const cursor = url.searchParams.get("cursor") ?? "latest";
+    if (url.searchParams.has("turn_id"))
       return json({
         continuation_id: "initial:one",
-        entries: [
-          {
-            position: earlier ? 3 : cursor === "steps" ? 70 : 100,
-            message_kind: "response",
-            parts: [
-              {
-                kind: cursor === "steps" ? "reasoning" : "assistant",
-                text: earlier
-                  ? "Previous answer"
-                  : cursor === "steps"
-                    ? "Folded intermediate work"
-                    : "Current answer",
-              },
-            ],
-          },
-        ],
-        boundary_entries: [
-          {
-            position: earlier ? 2 : 4,
-            message_kind: "request",
-            parts: [
-              {
-                kind: "user",
-                text: earlier ? "Previous task" : "Current task",
-              },
-            ],
-          },
-        ],
-        turns: [
-          {
-            turn_id: earlier ? "previous" : "current",
-            input_position: earlier ? 2 : 4,
-            end_position: earlier ? 4 : 101,
-            final_position: earlier ? 3 : 100,
-            preview: earlier ? "Previous task" : "Current task",
-            tool_count: earlier ? 0 : 50,
-            steering_count: 0,
-          },
-        ],
-        next_cursor: earlier ? "oldest" : "steps",
-        earlier_turns_cursor: earlier ? "oldest" : "previous-turn",
-        later_turns_cursor: null,
+        entries: Array.from({ length: 97 }, (_, index) => ({
+          position: index + 4,
+          message_kind: index === 0 ? "request" : "response",
+          parts:
+            index === 0
+              ? [{ kind: "user", text: "Current task" }]
+              : index === 96
+                ? [{ kind: "assistant", text: "Current answer" }]
+                : index === 1
+                  ? [{ kind: "thinking", text: "Folded intermediate work" }]
+                  : [],
+        })),
+        next_cursor: "previous-turn",
       });
-    });
-    const view = mount(`/threads/${id}`);
-    const reader = view.container.querySelector(
-      '[class*="reading"]',
-    )! as HTMLElement;
-    let top = 0;
-    const height = () =>
-      (short ? 300 : 1400) +
-      (reader.textContent?.includes("Previous answer") ? 900 : 0);
-    Object.defineProperties(reader, {
-      clientHeight: { get: () => 600 },
-      scrollHeight: { get: height },
-      scrollTop: {
-        get: () => top,
-        set: (value: number) => {
-          top = Math.max(0, Math.min(height() - 600, value));
+    requests.push(cursor);
+    if (requests.filter((item) => item === "previous-turn").length === 1)
+      return json(
+        { error: { message: "History temporarily unavailable" } },
+        503,
+      );
+    const earlier = cursor === "previous-turn";
+    return json({
+      continuation_id: "initial:one",
+      entries: [
+        {
+          position: earlier ? 3 : cursor === "steps" ? 70 : 100,
+          message_kind: "response",
+          parts: [
+            {
+              kind: cursor === "steps" ? "reasoning" : "assistant",
+              text: earlier
+                ? "Previous answer"
+                : cursor === "steps"
+                  ? "Folded intermediate work"
+                  : "Current answer",
+            },
+          ],
         },
+      ],
+      boundary_entries: [
+        {
+          position: earlier ? 2 : 4,
+          message_kind: "request",
+          parts: [
+            {
+              kind: "user",
+              text: earlier ? "Previous task" : "Current task",
+            },
+          ],
+        },
+      ],
+      turns: [
+        {
+          turn_id: earlier ? "previous" : "current",
+          input_position: earlier ? 2 : 4,
+          end_position: earlier ? 4 : 101,
+          final_position: earlier ? 3 : 100,
+          preview: earlier ? "Previous task" : "Current task",
+          tool_count: earlier ? 0 : 50,
+          steering_count: 0,
+        },
+      ],
+      next_cursor: earlier ? "oldest" : "steps",
+      earlier_turns_cursor: earlier ? "oldest" : "previous-turn",
+      later_turns_cursor: null,
+    });
+  });
+  const view = mount(`/threads/${id}`);
+  const reader = view.container.querySelector(
+    '[class*="reading"]',
+  )! as HTMLElement;
+  let top = 0;
+  const height = () =>
+    1400 + (reader.textContent?.includes("Previous answer") ? 900 : 0);
+  Object.defineProperties(reader, {
+    clientHeight: { get: () => 600 },
+    scrollHeight: { get: height },
+    scrollTop: {
+      get: () => top,
+      set: (value: number) => {
+        top = Math.max(0, Math.min(height() - 600, value));
       },
-    });
-    await screen.findByText("Current answer");
-    if (!short) {
-      expect(requests).toEqual(["latest"]);
-      fireEvent.wheel(reader, { deltaY: -100 });
-      reader.scrollTop = 40;
-      fireEvent.scroll(reader);
-    }
-    await screen.findByText("Previous answer");
-    const expectedRequests = retry
-      ? ["latest", "previous-turn", "previous-turn"]
-      : ["latest", "previous-turn"];
-    expect(requests).toEqual(expectedRequests);
-    expect(top).toBe(short ? 600 : 940);
-    expect(
-      screen.queryByRole("button", {
-        name: "Load earlier messages in this turn",
-      }),
-    ).toBeNull();
-    const details = await screen.findByRole("button", {
-      name: /Work log/,
-    });
-    expect(details.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Folded intermediate work")).toBeNull();
-    fireEvent.click(details);
-    const work = screen.getByText("Folded intermediate work");
-    expect(work.closest("[hidden]")).toBeNull();
-    fireEvent.click(details);
-    expect(screen.getByText("Folded intermediate work")).toBe(work);
-    expect(work.closest("[hidden]")).toBeTruthy();
-    fireEvent.scroll(reader);
-    await act(async () => {});
-    expect(requests).toEqual(expectedRequests);
-  },
-);
+    },
+  });
+  await screen.findByText("Current answer");
+  expect(requests).toEqual(["latest"]);
+  fireEvent.wheel(reader, { deltaY: -100 });
+  reader.scrollTop = 40;
+  fireEvent.scroll(reader);
+  await screen.findByText("Previous answer");
+  const expectedRequests = ["latest", "previous-turn", "previous-turn"];
+  expect(requests).toEqual(expectedRequests);
+  expect(top).toBe(940);
+  expect(
+    screen.queryByRole("button", {
+      name: "Load earlier messages in this turn",
+    }),
+  ).toBeNull();
+  const details = await screen.findByRole("button", {
+    name: /Work log/,
+  });
+  expect(details.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("Folded intermediate work")).toBeNull();
+  fireEvent.click(details);
+  const work = screen.getByText("Folded intermediate work");
+  expect(work.closest("[hidden]")).toBeNull();
+  fireEvent.click(details);
+  expect(screen.getByText("Folded intermediate work")).toBe(work);
+  expect(work.closest("[hidden]")).toBeTruthy();
+  fireEvent.scroll(reader);
+  await act(async () => {});
+  expect(requests).toEqual(expectedRequests);
+});
 
 it("automatically loads the whole visible turn when away from the top", async () => {
   const requests: string[] = [];

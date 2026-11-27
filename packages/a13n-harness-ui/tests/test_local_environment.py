@@ -14,7 +14,7 @@ from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProfileConf
 from a13n_harness_ui.managed_runtime import ManagedEnvdRuntime
 from a13n_harness_ui.settings import EnvdRuntimeSettings, HarnessUiSettings, StorageSettings
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def test_local_profiles_preserve_direct_default_and_explicit_desktop():

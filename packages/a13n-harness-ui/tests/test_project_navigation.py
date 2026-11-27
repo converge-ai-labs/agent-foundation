@@ -10,7 +10,7 @@ from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from .test_interactive_protocol import listener_with_app
 from .test_terminal_surfaces import _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def test_project_pages_are_independent_and_cursors_bind_scope(tmp_path: Path) -> None:

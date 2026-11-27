@@ -13,7 +13,7 @@ from anyio import create_task_group
 from .test_app import _CompletedReconstructor, _settings
 from .test_thread_collaboration import configuration, controller
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def coordinator_configuration(tmp_path: Path) -> Path:

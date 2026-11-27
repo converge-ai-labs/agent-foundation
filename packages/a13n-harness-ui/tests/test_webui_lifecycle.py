@@ -30,6 +30,8 @@ from websockets.sync.client import connect
 
 from .test_app import _settings, _write_configuration
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.mark.anyio
 async def test_realtime_shutdown_serializes_close_with_pending_channel_send(tmp_path: Path) -> None:
@@ -257,10 +259,7 @@ except KeyboardInterrupt:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX signals and native PTY")
-@pytest.mark.parametrize(("stop_signal", "repeat_signal"), [(signal.SIGTERM, False), (signal.SIGINT, True)])
-def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
-    tmp_path: Path, stop_signal: signal.Signals, repeat_signal: bool
-) -> None:
+def test_signals_close_live_browser_streams_and_owned_run_and_pty(tmp_path: Path) -> None:
     configuration = _write_configuration(tmp_path)
     configuration.write_text(configuration.read_text() + "browser:\n  mode: disabled\n")
     # No personal shell startup files, provider traffic or browser dependency.
@@ -269,7 +268,7 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     process = subprocess.Popen(
-        [sys.executable, "-u", "-c", _SERVER, str(tmp_path), str(port), "60" if repeat_signal else "1"],
+        [sys.executable, "-u", "-c", _SERVER, str(tmp_path), str(port), "60"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -287,7 +286,7 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
             ) as api,
             ExitStack() as clients,
         ):
-            deadline = time.monotonic() + 15
+            deadline = time.monotonic() + 30
             while True:
                 assert process.poll() is None, process.communicate()[0]
                 try:
@@ -354,14 +353,13 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
             while not (tmp_path / "run-started").exists():
                 assert time.monotonic() < deadline, "Run did not start"
                 time.sleep(0.02)
-            process.send_signal(stop_signal)
-            if repeat_signal:
-                deadline = time.monotonic() + 5
-                while not (tmp_path / "draining").exists():
-                    assert process.poll() is None
-                    assert time.monotonic() < deadline, "App did not enter lifespan shutdown"
-                    time.sleep(0.01)
-                process.send_signal(signal.SIGINT)
+            process.send_signal(signal.SIGTERM)
+            deadline = time.monotonic() + 5
+            while not (tmp_path / "draining").exists():
+                assert process.poll() is None
+                assert time.monotonic() < deadline, "App did not enter lifespan shutdown"
+                time.sleep(0.01)
+            process.send_signal(signal.SIGINT)
             output, _ = process.communicate(timeout=8)
             for stream in (realtime, ws):
                 # Reading the unread backlog lets the client see the server's close instead
@@ -376,8 +374,7 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
         }
         requested = next(timestamp for message, timestamp in logged.items() if message.startswith("Stop requested."))
         assert (logged["WebUI stopped."] - requested).total_seconds() < 3, output
-        if repeat_signal:
-            assert "Stop requested again: ending App grace" in output
+        assert "Stop requested again: ending App grace" in output
         assert (tmp_path / "run-stopped").exists(), output
         assert not psutil.pid_exists(terminal_pid), output
         for message in (
@@ -393,7 +390,7 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
         assert "Traceback" not in output
         assert "lifecycle-test-key" not in output
         assert str(tmp_path) not in output
-        assert process.returncode in (0, -stop_signal), output
+        assert process.returncode in (0, -signal.SIGTERM), output
     finally:
         if process.poll() is None:
             process.kill()

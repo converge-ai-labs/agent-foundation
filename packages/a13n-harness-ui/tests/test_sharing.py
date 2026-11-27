@@ -14,7 +14,7 @@ from a13n_harness_ui.surfaces import NewThreadDefaults
 from .test_app import _settings, _write_configuration
 from .test_coordinators import coordinator_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def owned_child(app, root_id, *, title="Async child"):
