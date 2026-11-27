@@ -1546,7 +1546,9 @@ def create_webui(
             ]
         else:
             command = [
-                str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"),
+                str(
+                    Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+                ),
                 "-NoProfile",
                 "-STA",
                 "-Command",
@@ -1580,7 +1582,7 @@ def create_webui(
                     raise OSError("Finder could not reveal the item.")
             else:
                 await asyncio.create_subprocess_exec(
-                    str(Path(os.environ["SystemRoot"]) / "explorer.exe"), "/select,", entry.path
+                    str(Path(os.environ.get("SystemRoot", "C:/Windows")) / "explorer.exe"), "/select,", entry.path
                 )
         except OSError as exc:
             raise HarnessUiError("Could not reveal the item.", code="host_files_io_error") from exc

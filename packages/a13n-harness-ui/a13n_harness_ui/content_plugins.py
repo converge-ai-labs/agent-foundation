@@ -450,7 +450,8 @@ def _run_git(arguments: Sequence[str], *, capture: bool = False) -> str:
             ("git", *arguments),
             check=True,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_GIT_TIMEOUT_SECONDS,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
