@@ -37,6 +37,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.messages import Authority
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool
 
 from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolDispatch, ToolInfo, unique
@@ -121,6 +122,7 @@ class McpConfig(BaseModel):
         "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
     )
     on_error: StartupErrorPolicy = "raise"
+    authority: Authority = "operator"
 
     url: str = Field(min_length=1, max_length=2048)
     durable_tasks: bool = False
@@ -301,6 +303,7 @@ def mcp_capability(
     capture: Capture | None = None,
     object_ref_tools: dict[str, bool] | None = None,
     on_error: StartupErrorPolicy = "raise",
+    authority: Authority = "operator",
     durable_tasks: bool = False,
     max_tools: int = MAX_TOOLS,
 ) -> MCPServer:
@@ -325,7 +328,7 @@ def mcp_capability(
                 cache_tools=True,
                 cache_resources=False,
                 cache_prompts=False,
-                include_instructions=False,
+                include_instructions=True,
             )
             native.capture = capture
             native.durable_tasks = durable_tasks
@@ -347,4 +350,6 @@ def mcp_capability(
             defer_loading=False,
         )
 
-    return MCPServer(id=connection_id, prepare=prepare, project=project, on_error=on_error, tools=tools)
+    return MCPServer(id=connection_id, prepare=prepare, project=project, on_error=on_error, tools=tools).with_authority(
+        authority
+    )

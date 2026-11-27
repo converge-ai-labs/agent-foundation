@@ -1,4 +1,12 @@
 {
+  "Server instructions": "服务器指令",
+  "System (default)": "系统指令（默认）",
+  "User context": "用户上下文",
+  "Reference data": "仅作参考数据",
+  "Added as system instructions for direct connections. Does not change tool permissions.": "直连时作为系统指令提供给模型。不影响工具权限。",
+  "Passed as user-level context with lower priority than system instructions. Does not change tool permissions.": "作为用户级上下文提供，优先级低于系统指令。不影响工具权限。",
+  "Passed as passive reference data with no instruction authority. Does not change tool permissions.": "仅作为被动参考数据提供，不具备指令效力。不影响工具权限。",
+  "Save server instructions setting": "保存服务器指令设置",
   "Disk ID": "磁盘 ID",
   "boxd disks": "boxd 持久化磁盘",
   "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.": "按 ID 挂载已有的 boxd 磁盘。删除机器后，挂载目录中的文件会保留。",

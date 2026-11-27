@@ -172,6 +172,7 @@ async def open_connections(
                         tools=selected.tools,
                         object_ref_tools=dict(connection.config.object_ref_tools),
                         on_error=connection.config.on_error,
+                        authority=connection.config.authority,
                         durable_tasks=connection.config.durable_tasks,
                         check=checked,
                         capture=partial(capture, selected) if capture is not None else None,

@@ -139,6 +139,27 @@ function renderFields(
   );
 }
 
+it("configures server instructions and omits the default in an MCP resource", async () => {
+  renderFields(
+    'schema_version: "2"\nkind: mcp_server\nid: mcp-docs\nname: Docs\ntransport: {url: https://example.com/mcp}\n',
+  );
+  const user = userEvent.setup();
+  const choice = screen.getByRole("combobox", { name: "Server instructions" });
+  expect(choice.textContent).toContain("System (default)");
+  await user.click(choice);
+  await user.click(await screen.findByRole("option", { name: "User context" }));
+  expect(parse(screen.getByTestId("source").textContent!).authority).toBe(
+    "user",
+  );
+  await user.click(choice);
+  await user.click(
+    await screen.findByRole("option", { name: "System (default)" }),
+  );
+  expect(parse(screen.getByTestId("source").textContent!)).not.toHaveProperty(
+    "authority",
+  );
+});
+
 it("edits the instance send shortcut without changing other WebUI settings", async () => {
   renderFields('schema_version: "1"\nwebui: {bot: {enabled: true}}\n');
   const user = userEvent.setup();

@@ -554,6 +554,42 @@ async def test_mcp_startup_error_policy_is_normalized_and_captured(tmp_path, bun
 
 
 @pytest.mark.parametrize("bundle", [False, True])
+@pytest.mark.parametrize("authority", [None, "user", "none"])
+async def test_mcp_instruction_authority_is_normalized_frozen_and_reconstructed(tmp_path, bundle, authority):
+    from a13n_harness_ui.composition.reconstruction import AgentReconstructor
+
+    from .test_composition import _catalog, _selection, _write_source
+
+    root = _write_source(tmp_path)
+    transport = {"url": "https://example.test/mcp"}
+    if bundle:
+        entry = transport
+        document = {"mcpServers": {"docs": entry}}
+    else:
+        entry = document = {
+            "schema_version": "1",
+            "kind": "mcp_server",
+            "id": "mcp-docs",
+            "name": "Docs",
+            "transport": transport,
+        }
+    if authority is not None:
+        entry["authority"] = authority
+    (tmp_path / "mcp" / "docs.yaml").write_text(yaml.safe_dump(document))
+    source = await load_harness_ui_configuration(root)
+    resource = source.mcp_servers["mcp-docs"]
+    captured = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    recipe = captured.root.mcp_servers[0]
+    assert resource.authority == recipe.authority == (authority or "operator")
+    assert ("authority" in resource.model_dump()) is (authority is not None)
+    assert ("authority" in recipe.model_dump()) is (authority is not None)
+    frozen = ResolvedMcpRecipe.model_validate_json(recipe.model_dump_json())
+    assert frozen == recipe
+    assert AgentReconstructor()._mcp_capability(frozen)._effective_authority == recipe.authority
+    assert recipe.binding_key() == recipe.model_copy(update={"authority": "none"}).binding_key()
+
+
+@pytest.mark.parametrize("bundle", [False, True])
 @pytest.mark.parametrize("on_error", ["ignore", None, True])
 async def test_invalid_mcp_startup_error_policy_rejects_configuration(tmp_path, bundle, on_error):
     entry = {"command": "python", "on_error": on_error}

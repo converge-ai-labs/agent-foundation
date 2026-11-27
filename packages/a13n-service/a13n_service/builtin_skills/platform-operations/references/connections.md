@@ -12,4 +12,6 @@ MCP `configuration.object_ref_tools` selects Object Reference Transport by origi
 
 MCP `configuration.on_error` is `raise` by default; `skip` omits an unavailable server's tools for the current logical Run and informs the model. Initialization makes at most three attempts for transient failures with 1s/2s backoff. Host authorization and credential preparation still fail, and business calls are never replayed by startup recovery. Changing startup policy preserves the credential.
 
+MCP `configuration.authority` controls server instructions in subsequent Attempts. `operator` (the default) uses system instructions for direct connections and discovery results for Tool Search. `user` uses framed user-level context, and `none` uses framed untrusted data. An authority change preserves credentials and tool permissions.
+
 `test_connection` can call an external service and requires write-effect review. Unknown outcomes must be reconciled, not automatically repeated. Saved `forward_context_headers` controls the connection's ordinary context forwarding together with deployment policy; it never overrides configured credentials or permits secret input.

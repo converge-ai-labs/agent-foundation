@@ -39,15 +39,18 @@ Enable the server by adding `mcp_servers: [mcp-docs]` on an Agent (`agents/*.yam
 
 ## MCP field reference
 
-| Field                    | Purpose                                                                                                                                                  |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_version`, `kind` | `"2"` and `mcp_server`                                                                                                                                   |
-| `id`, `name`             | Unique `mcp-` ID and display name                                                                                                                        |
-| `transport`              | Either `{url, init_timeout_seconds, headers, oauth}` (HTTPS, or loopback HTTP without headers) or `{command, arguments, environment}` (launched on Host) |
-| `tools`                  | `null`/omitted (all tools), `[]` (no tools), or `[exact_name, ...]` allowlist                                                                            |
-| `object_ref_tools`       | Optional list/patterns of tools opted into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport)                      |
-| `expose_roots`           | Share the Thread’s saved local roots. Defaults to `true` for stdio and `false` for HTTP.                                                                 |
-| `on_error`               | Startup failure handling (`fail` or `skip` where supported)                                                                                              |
+| Field                    | Purpose                                                                                                                                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version`, `kind` | `"2"` and `mcp_server`                                                                                                                                                                        |
+| `id`, `name`             | Unique `mcp-` ID and display name                                                                                                                                                             |
+| `transport`              | Either `{url, init_timeout_seconds, headers, oauth}` (HTTPS, or loopback HTTP without headers) or `{command, arguments, environment}` (launched on Host)                                      |
+| `tools`                  | `null`/omitted (all tools), `[]` (no tools), or `[exact_name, ...]` allowlist                                                                                                                 |
+| `object_ref_tools`       | Optional list/patterns of tools opted into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport)                                                           |
+| `expose_roots`           | Share the Thread’s saved local roots. Defaults to `true` for stdio and `false` for HTTP.                                                                                                      |
+| `on_error`               | Startup failure handling (`fail` or `skip` where supported)                                                                                                                                   |
+| `authority`              | How to apply server instructions: `operator` (default, system instructions for direct connections), `user` (user context), or `none` (reference data). Serialized resources omit the default. |
+
+Set `authority` on the resource or inside a named `mcpServers` entry. To edit an existing server in the WebUI, open **Settings → Connections**, select the server, and change **Server instructions → Apply as**. The editor keeps saved credentials hidden and leaves tool permissions unchanged.
 
 MCP Roots let a server discover the Thread’s saved local directories by name and `file://` URI. This includes local directories on projectless Threads and excludes Device bindings. A Project edit only changes the defaults for new Threads; use **Apply Project environments** to update an existing Thread.
 

@@ -1,4 +1,12 @@
 {
+  "Server instructions": "सर्वर के निर्देश",
+  "System (default)": "सिस्टम (डिफ़ॉल्ट)",
+  "User context": "उपयोगकर्ता संदर्भ",
+  "Reference data": "संदर्भ डेटा",
+  "Added as system instructions for direct connections. Does not change tool permissions.": "सीधे कनेक्शन में इन्हें सिस्टम निर्देशों के रूप में जोड़ा जाता है। इससे टूल की अनुमतियाँ नहीं बदलतीं।",
+  "Passed as user-level context with lower priority than system instructions. Does not change tool permissions.": "इन्हें उपयोगकर्ता संदर्भ के रूप में भेजा जाता है, जिसकी प्राथमिकता सिस्टम निर्देशों से कम है। इससे टूल की अनुमतियाँ नहीं बदलतीं।",
+  "Passed as passive reference data with no instruction authority. Does not change tool permissions.": "इन्हें केवल संदर्भ डेटा के रूप में भेजा जाता है और इनमें निर्देश देने का अधिकार नहीं होता। इससे टूल की अनुमतियाँ नहीं बदलतीं।",
+  "Save server instructions setting": "सर्वर के निर्देशों की सेटिंग सहेजें",
   "Disk ID": "डिस्क आईडी",
   "boxd disks": "boxd डिस्क",
   "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.": "मौजूदा boxd डिस्क को आईडी से माउंट करें। मशीन हटाने पर भी माउंट की गई डायरेक्टरी की फ़ाइलें बनी रहती हैं।",

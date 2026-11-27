@@ -295,6 +295,7 @@ class ContextualMCP(NativeMCP[AgentContext]):
             description=self._recipe.description,
             defer_loading=self._recipe.defer_loading,
         )
+        replacement = replacement.with_authority(self._effective_authority)
         ctx.deps._record_run_capability(cache_id, replacement)
         return replacement
 
@@ -675,7 +676,8 @@ class MCPServer(NativeMCP[AgentContext]):
                 "MCP server skipped for this Run after connection entry failure",
                 extra={"server_id": self.id, "error_type": type(exc).__name__},
             )
-            return _StartedMCPServer(_UnavailableMCP(server_id, self._selected_tools))
+            unavailable = _UnavailableMCP(server_id, self._selected_tools).with_authority(self._effective_authority)
+            return _StartedMCPServer(unavailable)
         else:
             # Register cleanup before projecting, so a projection error cannot
             # leak an otherwise successfully entered Toolset.
@@ -698,7 +700,10 @@ class MCPServer(NativeMCP[AgentContext]):
             source: AbstractToolset[AgentContext] = toolset
             while isinstance(source, WrapperToolset):
                 source = source.wrapped
-            return _StartedMCPServer(replacement, source.client if isinstance(source, MCPToolset) else None)
+            return _StartedMCPServer(
+                replacement.with_authority(self._effective_authority),
+                source.client if isinstance(source, MCPToolset) else None,
+            )
 
 
 __all__ = [

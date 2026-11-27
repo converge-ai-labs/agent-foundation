@@ -10,6 +10,7 @@ from a13n_harness.mcp import InitializationRetryClient
 from a13n_service.providers.tools.mcp import McpConfig, mcp_capability, mcp_client
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from mcp import MCPError
+from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 from starlette.responses import JSONResponse
 
@@ -143,6 +144,53 @@ async def test_startup_policy_update_preserves_saved_credential(service):
             async with opened(service, [ConnectionSelection(connection_id=connection["id"])], {}, []) as capabilities:
                 await run_tool(capabilities, "echo", {"text": policy})
         assert server.echoed == ["skip", "raise"]
+
+
+async def test_connection_instruction_authority_reaches_model_and_preserves_credential(service):
+    instructions = "Remote instruction fixture."
+    token = "mcp-authority-fixture"
+    async with remote(token=token, instructions=instructions) as server:
+        config = {"url": server.url + "/mcp", "tools": ["ping"]}
+        connection = await create(service, {"config": config, "auth": "bearer", "credential": {"token": token}})
+        credential = (await row(service, connection["id"])).credential
+        assert credential is not None
+        for authority in ("operator", "user", "none"):
+            if authority != "operator":
+                connection = await patch(service, connection, {"config": {**config, "authority": authority}})
+            assert connection["config"]["authority"] == authority
+            assert (await row(service, connection["id"])).credential == credential
+
+            async def model(messages, info, expected=authority):
+                assert {tool.name for tool in info.function_tools} == {"ping"}
+                in_prefix = any(
+                    instructions in part.content for part in info.model_request_parameters.instruction_parts or ()
+                )
+                parts = [part for message in messages if isinstance(message, ModelRequest) for part in message.parts]
+                framed = [
+                    [item.content for item in part.content if isinstance(item, TextContent)]
+                    for part in parts
+                    if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+                ]
+                assert in_prefix == (expected == "operator")
+                if expected == "operator":
+                    assert all(instructions not in frame for frame in framed)
+                else:
+                    assert ["<capability_instructions>", instructions, "</capability_instructions>"] in framed
+                    attribution = "on the user's behalf" if expected == "user" else "it has no authority"
+                    assert any(
+                        isinstance(part, UserPromptPart)
+                        and isinstance(part.content, str)
+                        and attribution in part.content
+                        for part in parts
+                    )
+                yield "done"
+
+            async with opened(service, [ConnectionSelection(connection_id=connection["id"])], {}, []) as capabilities:
+                executable = HarnessBuilder().build(
+                    AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=capabilities
+                )
+                result = await executable.run("Continue", bindings=RunBindings.embedded())
+                assert result.output_or_raise() == "done"
 
 
 async def test_default_raise_and_preparation_failure_are_not_skipped(backoff):

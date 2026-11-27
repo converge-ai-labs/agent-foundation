@@ -18,6 +18,7 @@ import {
   type HeaderDraft,
 } from "../../shared/forms";
 import { MCPCredentialFields } from "./credentials";
+import { useMcpAuthorityChoice, type McpAuthority } from "./authority";
 
 export function CreateMCP({
   preset,
@@ -40,6 +41,7 @@ export function CreateMCP({
   const [name, setName] = useState(preset?.name ?? ""),
     [endpoint, setEndpoint] = useState(preset?.url ?? initialEndpoint),
     [mode, setMode] = useState<Schema["McpAuth"]>(preset?.auth ?? "oauth"),
+    [authority, setAuthority] = useState<McpAuthority>("operator"),
     [headerRows, setHeaderRows] = useState<HeaderDraft[]>(() =>
       (preset?.header_names ?? [""]).map((name) => ({
         id: crypto.randomUUID(),
@@ -50,6 +52,10 @@ export function CreateMCP({
     [bearer, setBearer] = useState(""),
     [started, setStarted] = useState(false),
     [oauthConnection, setOAuthConnection] = useState<Schema["Connection"]>();
+  const { field: authorityField } = useMcpAuthorityChoice(
+    authority,
+    setAuthority,
+  );
   const named = headerRows.filter((row) => row.name.trim());
   // Credentials written with the connection are not asked for again.
   const credentialReady =
@@ -92,6 +98,7 @@ export function CreateMCP({
               name,
               config: {
                 url: endpoint,
+                authority,
                 headers: mode === "headers" ? headerNames : [],
               },
               auth: mode,
@@ -165,6 +172,7 @@ export function CreateMCP({
             placeholder="https://example.com/mcp"
           />
         </FormField>
+        <ChoiceField {...authorityField} disabled={started} />
       </FormSection>
       <FormSection title={t("Authentication")}>
         {preset ? (
