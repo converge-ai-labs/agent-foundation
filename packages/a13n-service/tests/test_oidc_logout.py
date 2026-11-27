@@ -240,8 +240,10 @@ async def test_password_logout_does_not_use_provider(sso_service, monkeypatch):
     assert not calls
 
 
-async def test_backchannel_revokes_only_matching_sessions(sso_service, monkeypatch, signing):
+async def test_backchannel_revokes_only_matching_sessions(sso_service, monkeypatch, signing, runs_kit):
     service = sso_service
+    # Inspect which sessions logout revokes before credential expiry can delete them.
+    await runs_kit.pause_sweeps(service)
     upstream(monkeypatch, jwk=signing[2])
     same_sid = [await sign_in(service, sid="target") for _ in range(2)]
     other_sid = await sign_in(service, sid="other-device")
