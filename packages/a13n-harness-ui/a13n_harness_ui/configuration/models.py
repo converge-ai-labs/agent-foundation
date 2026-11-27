@@ -114,6 +114,7 @@ class ProcessConfiguration(ConfigurationModel):
     object_store: ObjectStoreSettings = Field(default_factory=ObjectStoreSettings)
     max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES
     pricing_auto_update: bool = True
+    update_check: bool = True
     terminal_update_check: bool = True
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: Literal["pretty", "json"] = "pretty"

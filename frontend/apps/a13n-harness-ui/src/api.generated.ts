@@ -530,6 +530,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/update-notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Notices */
+        get: operations["update_notices_api_update_notices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/presence": {
         parameters: {
             query?: never;
@@ -8410,6 +8427,22 @@ export interface components {
             /** Next Offset */
             next_offset?: number | null;
         };
+        /** SecurityAdvisory */
+        SecurityAdvisory: {
+            /** Id */
+            id: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "high" | "critical";
+            /** Url */
+            url: string;
+            /** Updated At */
+            updated_at: string | null;
+        };
         /** SelectableResourceSummary */
         SelectableResourceSummary: {
             /** Resource Id */
@@ -8852,6 +8885,15 @@ export interface components {
             used_percent: number;
             /** Reset At */
             reset_at: number;
+        };
+        /** StableRelease */
+        StableRelease: {
+            /** Version */
+            version: string;
+            /** Url */
+            url: string;
+            /** Is Newer */
+            is_newer: boolean;
         };
         /** Status */
         Status: {
@@ -10055,6 +10097,19 @@ export interface components {
              * @enum {string}
              */
             kind: "unlimited";
+        };
+        /** UpdateNotices */
+        UpdateNotices: {
+            /** Current Version */
+            current_version: string;
+            latest_stable: components["schemas"]["StableRelease"] | null;
+            /** Advisories */
+            advisories: components["schemas"]["SecurityAdvisory"][];
+            /**
+             * Install Method
+             * @enum {string}
+             */
+            install_method: "uv_tool" | "other";
         };
         /**
          * UrlInputSupport
@@ -13072,6 +13127,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListenerStatus"];
+                };
+            };
+        };
+    };
+    update_notices_api_update_notices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateNotices"];
                 };
             };
         };

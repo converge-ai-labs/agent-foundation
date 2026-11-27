@@ -444,7 +444,13 @@ def test_webui_dispatches_to_one_web_host_app(
     )
     assert result.exit_code == 0, result.output
     assert listeners == [
-        {"host": "127.0.0.1", "port": 9001, "api_key": "listener-secret", "dangerously_bypass_permission": False}
+        {
+            "host": "127.0.0.1",
+            "port": 9001,
+            "api_key": "listener-secret",
+            "dangerously_bypass_permission": False,
+            "no_update_check": False,
+        }
     ]
     assert factory_calls[0]["host_mode"] == "webui"
     assert factory_calls[0]["browser_no_sandbox"] is no_sandbox

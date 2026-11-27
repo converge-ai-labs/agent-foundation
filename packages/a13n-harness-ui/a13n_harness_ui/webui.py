@@ -38,7 +38,7 @@ from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
-from a13n_harness_ui import __version__
+from a13n_harness_ui import __version__, updater
 from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, AcpPresetAuthRequest
 from a13n_harness_ui.acp_sessions import (
     AcpCommand,
@@ -254,6 +254,7 @@ from a13n_harness_ui.thread_files import (
     InputAttachmentReference,
     ThreadAttachment,
 )
+from a13n_harness_ui.update_notices import UpdateChecker, UpdateNotices
 from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
 from a13n_harness_ui.web_providers import WebProviderCatalogView
 from a13n_harness_ui.webui_lifecycle import ErrorResponse, RequestLog, WebUIServer
@@ -591,11 +592,13 @@ def create_webui(
     host: str = "127.0.0.1",
     static_root: Path = _STATIC,
     stopping: Event | None = None,
+    no_update_check: bool = False,
 ) -> FastAPI:
     """Build the adapter; only its ASGI lifespan opens and owns the App."""
     if api_key == "":
         raise ValueError("API key cannot be empty")
     owner: HarnessUiApp | None = None
+    checker: UpdateChecker | None = None
     allowed_origins: frozenset[str] = frozenset()
     model_logo_origins = ""
     sandbox_url: str | None = None
@@ -605,7 +608,7 @@ def create_webui(
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncGenerator[None]:
-        nonlocal owner, allowed_origins, model_logo_origins, sandbox_url, sandbox_error
+        nonlocal owner, checker, allowed_origins, model_logo_origins, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
             _server.state.shutdown = opened.shutdown
             source = await opened.current_configuration()
@@ -628,12 +631,24 @@ def create_webui(
                     }
                 )
             )
+            checker = UpdateChecker(
+                opened.data_root, __version__, install_method="uv_tool" if updater.update_command() else "other"
+            )
+            check_updates = not no_update_check and (source is None or source.document.process.update_check)
+            if check_updates:
+                await checker.load()
             owner = opened
             try:
-                async with mcp_app.lifespan(mcp_app):
-                    yield
+                async with mcp_app.lifespan(mcp_app), create_task_group() as tasks:
+                    if check_updates:
+                        tasks.start_soon(checker.run)
+                    try:
+                        yield
+                    finally:
+                        tasks.cancel_scope.cancel()
             finally:
                 owner = None
+                checker = None
                 allowed_origins = frozenset()
                 sandbox_url = None
                 sandbox_error = None
@@ -905,6 +920,13 @@ def create_webui(
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
         )
+
+    @server.get("/api/update-notices", response_model=UpdateNotices)
+    async def update_notices(response: Response) -> UpdateNotices:
+        if checker is None:
+            raise HarnessUiError("The WebUI server is not ready.", code="app_not_ready")
+        response.headers["Cache-Control"] = "no-store"
+        return checker.snapshot
 
     @server.get("/api/presence", response_model=PresenceFrame)
     async def presence(participant_id: Annotated[str | None, Query(max_length=80)] = None) -> PresenceFrame:
@@ -3045,6 +3067,7 @@ def create_webui(
             "settings/envd",
             "settings/runtime",
             "settings/connections",
+            "settings/diagnostics",
             "archived",
             "inbox",
             "memory",
@@ -3171,6 +3194,7 @@ async def run(
     port: int = 8765,
     api_key: str | None = None,
     dangerously_bypass_permission: bool = False,
+    no_update_check: bool = False,
 ) -> None:
     """Serve in the foreground; disconnecting browsers never ends this owner."""
     try:
@@ -3205,7 +3229,9 @@ async def run(
             err=True,
         )
     stopping = Event()
-    server = create_webui(app_factory, api_key=selected_key, host=host, stopping=stopping)
+    server = create_webui(
+        app_factory, api_key=selected_key, host=host, stopping=stopping, no_update_check=no_update_check
+    )
     await WebUIServer(
         uvicorn.Config(
             server,

@@ -54,6 +54,11 @@ import {
   EnvironmentsPage,
 } from "../configuration/settings";
 import { SettingsNavigation } from "../configuration/settings-navigation";
+import {
+  UpdateNoticeIndicator,
+  useUpdateNoticeState,
+} from "../configuration/update-notices";
+import noticeStyles from "../configuration/update-notices.module.css";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
 import { ErrorNotice, PageHeader } from "./ui";
 import {
@@ -136,6 +141,7 @@ function WorkbenchContent({
   const setup = useSetup();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
+  const notices = useUpdateNoticeState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => readPreference("sidebar", "expanded") === "collapsed",
   );
@@ -222,19 +228,27 @@ function WorkbenchContent({
           <ConversationNavigation />
         )}
       </div>
-      {settingsMode && <SettingsNavigation backTo={lastChat.current} />}
+      {settingsMode && (
+        <SettingsNavigation
+          backTo={lastChat.current}
+          updateIndicator={notices.indicator}
+        />
+      )}
       <div className={styles.sidebarFooter}>
         <Menu>
           <MenuTrigger
             className={styles.workspaceMenu}
             aria-label={t("Workspace menu")}
+            aria-description={notices.indicator?.description}
           >
-            <span
-              className={styles.profileAvatar}
-              style={{ backgroundColor: profile.color }}
-              aria-hidden="true"
-            >
-              {Array.from(profile.display_name)[0]?.toUpperCase()}
+            <span className={noticeStyles.avatar} aria-hidden="true">
+              <span
+                className={styles.profileAvatar}
+                style={{ backgroundColor: profile.color }}
+              >
+                {Array.from(profile.display_name)[0]?.toUpperCase()}
+              </span>
+              <UpdateNoticeIndicator indicator={notices.indicator} />
             </span>
             <span className={styles.workspacePerson}>
               <strong>{profile.display_name}</strong>
@@ -245,9 +259,14 @@ function WorkbenchContent({
             <CaretUpDown size={16} aria-hidden="true" />
           </MenuTrigger>
           <MenuPopup side="top" align="start" className={styles.workspacePopup}>
-            <MenuItem render={<Link to="/settings" />}>
+            <MenuItem
+              render={<Link to="/settings" />}
+              className={noticeStyles.indicatorRow}
+              aria-description={notices.indicator?.description}
+            >
               <Gear />
               {t("Settings")}
+              <UpdateNoticeIndicator indicator={notices.indicator} />
             </MenuItem>
             <MenuItem render={<Link to="/usage" />}>
               <ChartBar />
@@ -672,13 +691,11 @@ function WorkbenchContent({
                   path="/settings/diagnostics"
                   element={
                     <DiagnosticsPage
+                      notices={notices}
+                      installedVersion={status.version}
+                      disconnected={disconnected}
                       instance={
                         <>
-                          {" "}
-                          <p>
-                            {t("Version")} {status.version} -{" "}
-                            {status.app?.state ?? t("Connected")}
-                          </p>
                           <p>
                             {t(
                               status.features?.host_files

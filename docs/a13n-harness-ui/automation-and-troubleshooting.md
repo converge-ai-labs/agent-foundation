@@ -51,12 +51,16 @@ Close active TUI/WebUI sessions before upgrading a `uv tool` installation:
 a13n-harness-ui update
 ```
 
-Startup update checks display a notice only (updates run explicitly via `a13n-harness-ui update`); suppress the notice once with `--no-update-check` or permanently in `a13n-harness-ui.yaml`:
+In the WebUI, open **Settings → Diagnostics → About** for the installed version, available releases, and applicable security advisories. The terminal shows available releases in a System notice. Update using the package manager that installed Harness UI.
+
+To skip notice checks for one launch, pass `--no-update-check` before the `webui` subcommand or when starting the terminal. To disable checks on both surfaces, set this in `a13n-harness-ui.yaml`:
 
 ```yaml title="a13n-harness-ui.yaml"
 process:
-  terminal_update_check: false
+  update_check: false
 ```
+
+Use `process.terminal_update_check: false` to disable only the terminal notice.
 
 To check or acquire the matching `a13n-envd` binary for Sandbox mode (or upgrade a standalone daemon), stop running instances using that data root first:
 

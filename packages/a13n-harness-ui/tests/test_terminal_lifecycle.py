@@ -12,30 +12,35 @@ from types import SimpleNamespace
 
 import httpx2
 import pytest
+from a13n_harness_ui import update_notices
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive import lifecycle
 from a13n_harness_ui.interactive.lifecycle import resume_hint, terminal_logging
-from a13n_harness_ui.interactive.updates import AvailableUpdate, available_update, check_update
-
-
-def test_versions_use_pep440_and_ignore_preview() -> None:
-    assert available_update("1.9", "1.10")
-    assert available_update("1.9", "1.10rc1") is None
-    assert available_update("1.10", "1.9") is None
-    assert available_update("bad", "1.9") is None
+from a13n_harness_ui.interactive.updates import AvailableUpdate, check_update
 
 
 @pytest.mark.anyio
-async def test_daily_update_cache_requires_no_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cache = tmp_path / "cache" / "terminal-update.json"
+@pytest.mark.parametrize(
+    ("current", "latest", "expected"),
+    [
+        ("1.9", "1.10", AvailableUpdate("1.9", "1.10")),
+        ("1.9", "1.10rc1", None),
+        ("1.10", "1.9", None),
+        ("bad", "1.9", None),
+    ],
+)
+async def test_daily_update_cache_requires_no_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, current: str, latest: str, expected: AvailableUpdate | None
+) -> None:
+    cache = tmp_path / "cache" / "update-notices.json"
     cache.parent.mkdir()
-    cache.write_text(json.dumps({"latest": "2.0", "checked_at": time.time()}))
+    cache.write_text(json.dumps({"latest_stable": {"version": latest, "checked_at": time.time()}}))
 
     def no_client(*args: object, **kwargs: object) -> None:
         pytest.fail("fresh cache must not contact PyPI")
 
-    monkeypatch.setattr(httpx2, "AsyncClient", no_client)
-    assert await check_update(tmp_path, current="1.0") == AvailableUpdate("1.0", "2.0")
+    monkeypatch.setattr(update_notices, "AsyncClient", no_client)
+    assert await check_update(tmp_path, current=current) == expected
 
 
 @pytest.mark.anyio
@@ -124,26 +129,30 @@ async def test_update_checker_is_bounded_public_and_failure_tolerant(
 
     def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        assert request.url.host == "pypi.org"
         assert "authorization" not in request.headers
+        if request.url.host == "api.github.com":
+            tag = "release/a13n-harness-ui-v2.0"
+            assert request.url.path.endswith(f"/releases/tags/{tag}")
+            return httpx2.Response(200, json={"tag_name": tag, "draft": False, "prerelease": False})
+        assert request.url.host == "pypi.org"
         if behavior == "offline":
             raise httpx2.ConnectError("offline")
         if behavior == "oversize":
             return httpx2.Response(200, content=b"x" * (2 * 1024 * 1024 + 1))
         if behavior == "invalid":
-            return httpx2.Response(200, json={"info": {"version": "not a version"}})
-        return httpx2.Response(200, json={"info": {"version": "2.0"}})
+            return httpx2.Response(200, json={"files": "not a distribution list"})
+        return httpx2.Response(200, json={"files": [{"filename": "a13n_harness_ui-2.0.tar.gz", "yanked": False}]})
 
     def client(**kwargs):
         assert kwargs.get("trust_env", True) is True
-        assert kwargs["timeout"] == 2
+        assert kwargs["timeout"] == 3
         return original(transport=httpx2.MockTransport(respond), **kwargs)
 
-    monkeypatch.setattr(httpx2, "AsyncClient", client)
+    monkeypatch.setattr(update_notices, "AsyncClient", client)
     notice = await check_update(tmp_path, current="1.0")
-    assert len(requests) == 1
+    assert len(requests) == (2 if behavior == "success" else 1)
     assert bool(notice) == (behavior == "success")
-    assert (tmp_path / "cache" / "terminal-update.json").exists() == (behavior == "success")
+    assert (tmp_path / "cache" / "update-notices.json").exists() == (behavior == "success")
 
 
 @pytest.mark.parametrize("directory_name", ["plain", "with spaces"])

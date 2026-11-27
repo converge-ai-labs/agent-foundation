@@ -20,8 +20,19 @@ import { DraftContext } from "./drafts";
 import { readDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import layout from "./settings.module.css";
+import {
+  UpdateNoticeIndicator,
+  type UpdateNoticeState,
+} from "./update-notices";
+import noticeStyles from "./update-notices.module.css";
 
-export function SettingsNavigation({ backTo }: { backTo: string }) {
+export function SettingsNavigation({
+  backTo,
+  updateIndicator,
+}: {
+  backTo: string;
+  updateIndicator: UpdateNoticeState["indicator"];
+}) {
   const { t } = useTranslation();
   const groups = [
     {
@@ -107,12 +118,16 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
                   : location.pathname === path ||
                     (path !== "/settings" &&
                       location.pathname.startsWith(`${path}/`));
+              const diagnostics = path === "/settings/diagnostics";
               return (
                 <Link
                   key={path}
                   to={path}
                   aria-current={active ? "page" : undefined}
-                  className={active ? styles.activeNav : styles.navLink}
+                  aria-description={
+                    diagnostics ? updateIndicator?.description : undefined
+                  }
+                  className={`${active ? styles.activeNav : styles.navLink}${diagnostics ? ` ${noticeStyles.indicatorRow}` : ""}`}
                 >
                   <Icon
                     aria-hidden="true"
@@ -120,6 +135,9 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
                     weight={active ? "duotone" : "regular"}
                   />
                   {label}
+                  {diagnostics && (
+                    <UpdateNoticeIndicator indicator={updateIndicator} />
+                  )}
                 </Link>
               );
             })}
