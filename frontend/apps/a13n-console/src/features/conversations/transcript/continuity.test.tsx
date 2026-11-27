@@ -157,6 +157,8 @@ function show(
         return submitted.promise;
       }
       queries.push(url.pathname);
+      if (url.pathname.endsWith("/realtime"))
+        return Response.json({ realtime: false });
       if (url.pathname.endsWith("/runs/next")) return refreshed.promise;
       if (url.pathname.endsWith("/runs/run")) return Response.json(initial);
       if (url.pathname.endsWith("/runs/middle")) return Response.json(middle);
@@ -248,6 +250,12 @@ function show(
     },
   };
 }
+async function submit(name = "Send message") {
+  const button = screen.getByRole<HTMLButtonElement>("button", { name });
+  await waitFor(() => expect(button.disabled).toBe(false));
+  fireEvent.click(button);
+}
+
 afterEach(() => {
   cleanup();
   cache?.clear();
@@ -260,7 +268,7 @@ it("keeps the accepted optimistic message and composer visible until navigation 
   await screen.findByText("First request", { selector: "div" });
   const composer = screen.getByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Next request" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await submit();
   await screen.findByText("Next request", { selector: "div" });
   await act(async () => view.accept());
   expect(screen.getByText("Next request", { selector: "div" })).toBeTruthy();
@@ -294,11 +302,7 @@ it.each(["chat", "debug"] as const)(
     });
     observer.observe(view.container, { childList: true, subtree: true });
     fireEvent.change(composer, { target: { value: "Next request" } });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: level === "debug" ? "Start run" : "Send message",
-      }),
-    );
+    await submit(level === "debug" ? "Start run" : "Send message");
     expect(
       await screen.findByText("Next request", { selector: "div" }),
     ).toBeTruthy();
@@ -335,7 +339,7 @@ it("keeps the draft and existing transcript when sending fails", async () => {
   const first = await screen.findByText("First reply");
   const composer = screen.getByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Next request" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await submit();
   await screen.findByText("Next request", { selector: "div" });
   await act(async () =>
     view.submitted.resolve(
