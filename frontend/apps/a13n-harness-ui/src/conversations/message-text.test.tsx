@@ -121,6 +121,22 @@ $\text{**公式。**后文}$
   expect(writeText).toHaveBeenCalledWith("**代码块。**后文\n");
 });
 
+it("keeps punctuation and streamed CJK prose outside a bare URL", () => {
+  const url = "https://github.com/converge-ai-labs/agent-foundation/pull/1923";
+  const prefix = "合并结果：PR #1923（";
+  const view = render(<MessageText text={prefix + url} />);
+  expect(screen.getByRole("link", { name: url }).getAttribute("href")).toBe(
+    url,
+  );
+
+  view.rerender(
+    <MessageText text={`${prefix}${url}）已于 2026-11-27 合并。`} />,
+  );
+  const link = screen.getByRole("link", { name: url });
+  expect(link.getAttribute("href")).toBe(url);
+  expect(link.nextSibling?.textContent).toBe("）已于 2026-11-27 合并。");
+});
+
 it("completes streamed CJK bold without swallowing following prose", () => {
   const view = render(<MessageText text="**重点。" />);
   expect(view.container.querySelector("strong")).toBeNull();

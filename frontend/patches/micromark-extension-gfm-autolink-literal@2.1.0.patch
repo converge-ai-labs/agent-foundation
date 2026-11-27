@@ -1,0 +1,237 @@
+diff --git a/dev/lib/syntax.js b/dev/lib/syntax.js
+index 904e27200ae4980183beda525d33feef70c2e7f7..26b4fbcb5eeb7dca09debc8357e0596474a4df4e 100644
+--- a/dev/lib/syntax.js
++++ b/dev/lib/syntax.js
+@@ -12,6 +12,29 @@ import {
+ } from 'micromark-util-character'
+ import {codes} from 'micromark-util-symbol'
+-
++
++// Sentence punctuation ends bare URLs without rejecting Unicode IRI letters.
++const cjkPunctuation = /[‘’‚‛“”„‟、。〈〉《》「」『』【】〔〕〖〗〘〙〚〛！＂＇（），．：；？［］｛｝｟｠｡｢｣､]/u
++const cjkLetter = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
++
++const cjkProse = {
++  partial: true,
++  tokenize(effects, ok, nok) {
++    return start
++
++    function start(code) {
++      if (code === codes.eof) return nok(code)
++      if (cjkLetter.test(String.fromCharCode(code))) return ok(code)
++      // Micromark reads UTF-16 code units; match supplementary Han letters too.
++      if (code < 0xd800 || code > 0xdbff) return nok(code)
++      const high = code
++      effects.consume(code)
++      return (low) => low !== codes.eof && cjkLetter.test(String.fromCharCode(high, low))
++        ? ok(low)
++        : nok(low)
++    }
++  }
++}
++
+ const wwwPrefix = {tokenize: tokenizeWwwPrefix, partial: true}
+ const domain = {tokenize: tokenizeDomain, partial: true}
+ const path = {tokenize: tokenizePath, partial: true}
+@@ -609,7 +632,15 @@ function tokenizeDomain(effects, ok, nok) {
+ function tokenizePath(effects, ok) {
+   let sizeOpen = 0
+   let sizeClose = 0
++  // Track local pairs separately from GFM's total close count for ASCII trails.
++  let openParens = 0
+-
++
++  const pathTrail = {
++    partial: true,
++    tokenize(effects, ok, nok) {
++      return tokenizeTrail(effects, ok, nok, openParens)
++    }
++  }
+   return pathInside
+-
++
+   /**
+@@ -625,6 +656,7 @@ function tokenizePath(effects, ok) {
+   function pathInside(code) {
+     if (code === codes.leftParenthesis) {
+       sizeOpen++
++      openParens++
+       effects.consume(code)
+       return pathInside
+     }
+@@ -656,13 +688,14 @@ function tokenizePath(effects, ok) {
+       code === codes.underscore ||
+       code === codes.tilde
+     ) {
+-      return effects.check(trail, ok, pathAtPunctuation)(code)
++      return effects.check(pathTrail, ok, pathAtPunctuation)(code)
+     }
+-
++
+     if (
+       code === codes.eof ||
+       markdownLineEndingOrSpace(code) ||
+-      unicodeWhitespace(code)
++      unicodeWhitespace(code) ||
++      (code >= 0x2018 && cjkPunctuation.test(String.fromCharCode(code)))
+     ) {
+       return ok(code)
+     }
+@@ -685,6 +718,7 @@ function tokenizePath(effects, ok) {
+     // Count closing parens.
+     if (code === codes.rightParenthesis) {
+       sizeClose++
++      if (openParens > 0) openParens--
+     }
+-
++
+     effects.consume(code)
+@@ -707,7 +741,9 @@ function tokenizePath(effects, ok) {
+  * @this {TokenizeContext}
+  * @type {Tokenizer}
+  */
+-function tokenizeTrail(effects, ok, nok) {
++function tokenizeTrail(effects, ok, nok, openParens = 0) {
++  let sawBalancedClose = false
++  let afterUnmatchedClose = false
+   return trail
+-
++
+   /**
+@@ -721,6 +757,22 @@ function tokenizeTrail(effects, ok, nok) {
+    * @type {State}
+    */
+   function trail(code) {
++    if (code === codes.rightParenthesis) {
++      if (openParens > 0) {
++        openParens--
++        sawBalancedClose = true
++      }
++      afterUnmatchedClose = !sawBalancedClose
++    } else if (afterUnmatchedClose && code !== codes.dot) {
++      // A closing parenthesis (optionally followed by periods) can separate CJK prose.
++      afterUnmatchedClose = false
++      return effects.check(cjkProse, ok, trail)(code)
++    }
++
++    if (code !== codes.eof && code >= 0x2018 && cjkPunctuation.test(String.fromCharCode(code))) {
++      return sawBalancedClose ? nok(code) : ok(code)
++    }
++
+     // Regular trailing punctuation.
+     if (
+       code === codes.exclamationMark ||
+diff --git a/lib/syntax.js b/lib/syntax.js
+index dffbaf15146b34d3b3f634286629ccb148866f4c..7c1f23dbc19baa5b7880fb865c38df505995cb60 100644
+--- a/lib/syntax.js
++++ b/lib/syntax.js
+@@ -3,6 +3,29 @@
+  */
+-
++
+ import { asciiAlpha, asciiAlphanumeric, asciiControl, markdownLineEndingOrSpace, unicodePunctuation, unicodeWhitespace } from 'micromark-util-character';
++// Sentence punctuation ends bare URLs without rejecting Unicode IRI letters.
++const cjkPunctuation = /[‘’‚‛“”„‟、。〈〉《》「」『』【】〔〕〖〗〘〙〚〛！＂＇（），．：；？［］｛｝｟｠｡｢｣､]/u;
++const cjkLetter = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
++
++const cjkProse = {
++  partial: true,
++  tokenize(effects, ok, nok) {
++    return start;
++
++    function start(code) {
++      if (code === null) return nok(code);
++      if (cjkLetter.test(String.fromCharCode(code))) return ok(code);
++      // Micromark reads UTF-16 code units; match supplementary Han letters too.
++      if (code < 0xd800 || code > 0xdbff) return nok(code);
++      const high = code;
++      effects.consume(code);
++      return (low) => low !== null && cjkLetter.test(String.fromCharCode(high, low))
++        ? ok(low)
++        : nok(low);
++    }
++  }
++};
++
+ const wwwPrefix = {
+   tokenize: tokenizeWwwPrefix,
+   partial: true
+@@ -552,6 +575,14 @@ function tokenizeDomain(effects, ok, nok) {
+ function tokenizePath(effects, ok) {
+   let sizeOpen = 0;
+   let sizeClose = 0;
++  // Track local pairs separately from GFM's total close count for ASCII trails.
++  let openParens = 0;
++  const pathTrail = {
++    partial: true,
++    tokenize(effects, ok, nok) {
++      return tokenizeTrail(effects, ok, nok, openParens);
++    }
++  };
+   return pathInside;
+-
++
+   /**
+@@ -567,6 +598,7 @@ function tokenizePath(effects, ok) {
+   function pathInside(code) {
+     if (code === 40) {
+       sizeOpen++;
++      openParens++;
+       effects.consume(code);
+       return pathInside;
+     }
+@@ -582,9 +614,9 @@ function tokenizePath(effects, ok) {
+     // followed by more trailing markers, and then followed
+     // by an end.
+     if (code === 33 || code === 34 || code === 38 || code === 39 || code === 41 || code === 42 || code === 44 || code === 46 || code === 58 || code === 59 || code === 60 || code === 63 || code === 93 || code === 95 || code === 126) {
+-      return effects.check(trail, ok, pathAtPunctuation)(code);
++      return effects.check(pathTrail, ok, pathAtPunctuation)(code);
+     }
+-    if (code === null || markdownLineEndingOrSpace(code) || unicodeWhitespace(code)) {
++    if (code === null || markdownLineEndingOrSpace(code) || unicodeWhitespace(code) || (code >= 0x2018 && cjkPunctuation.test(String.fromCharCode(code)))) {
+       return ok(code);
+     }
+     effects.consume(code);
+@@ -605,6 +637,7 @@ function tokenizePath(effects, ok) {
+     // Count closing parens.
+     if (code === 41) {
+       sizeClose++;
++      if (openParens > 0) openParens--;
+     }
+     effects.consume(code);
+     return pathInside;
+@@ -626,7 +659,9 @@ function tokenizePath(effects, ok) {
+  * @this {TokenizeContext}
+  * @type {Tokenizer}
+  */
+-function tokenizeTrail(effects, ok, nok) {
++function tokenizeTrail(effects, ok, nok, openParens = 0) {
++  let sawBalancedClose = false;
++  let afterUnmatchedClose = false;
+   return trail;
+-
++
+   /**
+@@ -640,6 +675,22 @@ function tokenizeTrail(effects, ok, nok) {
+    * @type {State}
+    */
+   function trail(code) {
++    if (code === 41) {
++      if (openParens > 0) {
++        openParens--;
++        sawBalancedClose = true;
++      }
++      afterUnmatchedClose = !sawBalancedClose;
++    } else if (afterUnmatchedClose && code !== 46) {
++      // A closing parenthesis (optionally followed by periods) can separate CJK prose.
++      afterUnmatchedClose = false;
++      return effects.check(cjkProse, ok, trail)(code);
++    }
++
++    if (code !== null && code >= 0x2018 && cjkPunctuation.test(String.fromCharCode(code))) {
++      return sawBalancedClose ? nok(code) : ok(code);
++    }
++
+     // Regular trailing punctuation.
+     if (code === 33 || code === 34 || code === 39 || code === 41 || code === 42 || code === 44 || code === 46 || code === 58 || code === 59 || code === 63 || code === 95 || code === 126) {
+       effects.consume(code);
