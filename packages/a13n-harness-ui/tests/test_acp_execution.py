@@ -1841,5 +1841,39 @@ async def test_acp_permission_projection_redacts_env_validates_options_and_suppo
                 McpInputResponse(action="accept", content={"option": "allow_once"}),
             )
         assert pending.result() == "allow_once"
+
+        changed.clear()
+        async with asyncio.TaskGroup() as group:
+            declined = group.create_task(
+                interaction.permission(
+                    schema.ToolCallUpdate(tool_call_id="call-decline", kind="edit", title="Edit README.md"),
+                    (
+                        schema.PermissionOption(option_id="peer-allow", name="Allow", kind="allow_once"),
+                        schema.PermissionOption(option_id="peer-reject", name="Reject", kind="reject_once"),
+                    ),
+                )
+            )
+            async with asyncio.timeout(5):
+                await changed.wait()
+            (decline_view,) = [r for r in inputs.requests({"thread-perm"}) if r.state == "pending"]
+            await inputs.respond({"thread-perm"}, decline_view.request_id, McpInputResponse(action="decline"))
+        assert declined.result() == "peer-reject"
+
+        changed.clear()
+        async with asyncio.TaskGroup() as group:
+            cancelled = group.create_task(
+                interaction.permission(
+                    schema.ToolCallUpdate(tool_call_id="call-cancel", kind="edit", title="Edit README.md"),
+                    (
+                        schema.PermissionOption(option_id="peer-allow", name="Allow", kind="allow_once"),
+                        schema.PermissionOption(option_id="peer-reject", name="Reject", kind="reject_once"),
+                    ),
+                )
+            )
+            async with asyncio.timeout(5):
+                await changed.wait()
+            (cancel_view,) = [r for r in inputs.requests({"thread-perm"}) if r.state == "pending"]
+            await inputs.respond({"thread-perm"}, cancel_view.request_id, McpInputResponse(action="cancel"))
+        assert cancelled.result() is None
     finally:
         await inputs.close()

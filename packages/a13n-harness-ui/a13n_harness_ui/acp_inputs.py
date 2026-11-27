@@ -144,7 +144,13 @@ class AcpInputs:
         if not options:
             return None
         result = await self.request(_permission_request(call, options), call.tool_call_id)
-        return result.content["option"] if result.action == "accept" and result.content is not None else None
+        if result.action == "accept" and result.content is not None:
+            return result.content["option"]
+        if result.action == "decline":
+            reject_once = [option.option_id for option in options if option.kind == "reject_once"]
+            if len(reject_once) == 1:
+                return reject_once[0]
+        return None
 
     async def elicitation(self, message: str, mode: str, params: dict[str, Any]) -> schema.CreateElicitationResponse:
         if mode == "form":

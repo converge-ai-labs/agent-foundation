@@ -322,9 +322,9 @@ it("renders ACP command permissions with structured evidence and direct option b
   expect(screen.queryByText("acp-antigravity")).toBeNull();
   expect(screen.queryByText(/MCP server/)).toBeNull();
   expect(screen.queryByRole("combobox")).toBeNull();
-  expect(
-    screen.getByText("ps aux | grep -iE 'a13n|harness' | grep -v grep"),
-  ).toBeTruthy();
+  expect(document.querySelector("pre")?.textContent).toBe(
+    "ps aux | grep -iE 'a13n|harness' | grep -v grep",
+  );
   expect(
     screen.getByText("/home/wh1isper/code/oss/agent-foundation"),
   ).toBeTruthy();

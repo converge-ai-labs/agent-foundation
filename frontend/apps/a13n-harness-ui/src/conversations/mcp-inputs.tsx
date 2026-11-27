@@ -1,7 +1,26 @@
 import { useId, useState, type ReactNode } from "react";
+import {
+  ArrowsLeftRightIcon,
+  FileTextIcon,
+  GlobeIcon,
+  MagnifyingGlassIcon,
+  PencilSimpleIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+  TerminalWindowIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "../i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, McpElicitationForm } from "a13n-ui";
+import {
+  BrandIcon,
+  Button,
+  DisclosureSection,
+  FormField,
+  Input,
+  McpElicitationForm,
+  resolveBrand,
+} from "a13n-ui";
 import { useTransport } from "../transport/context";
 import {
   ApiError,
@@ -10,10 +29,12 @@ import {
   type Schema,
 } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { acpPresetBrand } from "../shell/model-identity";
 import styles from "./decisions.module.css";
 import conversation from "./conversation.module.css";
 import { CopyCommand, record } from "./decision-evidence";
 import { QuestionInput } from "./question-input";
+import { SyntaxCode } from "./syntax-code";
 
 type Request = Schema<"McpInputRequestView">;
 type Response = Schema<"McpInputResponse">;
@@ -86,6 +107,77 @@ function permissionHeading(
   }
 }
 
+function PermissionIcon({ toolKind }: { toolKind: string | null | undefined }) {
+  const props = {
+    size: 16,
+    className: styles.titleIcon,
+    "aria-hidden": true as const,
+  };
+  switch (toolKind) {
+    case "execute":
+      return <TerminalWindowIcon {...props} />;
+    case "edit":
+      return <PencilSimpleIcon {...props} />;
+    case "delete":
+      return <TrashIcon {...props} />;
+    case "move":
+      return <ArrowsLeftRightIcon {...props} />;
+    case "read":
+      return <FileTextIcon {...props} />;
+    case "search":
+      return <MagnifyingGlassIcon {...props} />;
+    case "fetch":
+      return <GlobeIcon {...props} />;
+    case "switch_mode":
+      return <SlidersHorizontalIcon {...props} />;
+    default:
+      return <ShieldCheckIcon {...props} />;
+  }
+}
+
+function resolveAcpSourceBrand(
+  serverName?: string | null,
+  serverId?: string | null,
+): string | undefined {
+  const candidates = [
+    serverName,
+    serverId?.replace(/^acp[-_]/i, ""),
+    serverId,
+  ].filter((value): value is string => Boolean(value?.trim()));
+  for (const raw of candidates) {
+    const normalized = raw
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    const preset = acpPresetBrand(normalized);
+    if (preset && resolveBrand({ identity: preset, alias: preset }))
+      return preset;
+    const compact = raw
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "");
+    if (resolveBrand({ identity: compact, alias: compact })) return compact;
+    if (resolveBrand({ identity: raw, alias: raw })) return raw;
+  }
+  return undefined;
+}
+
+function SourceIdentity({ request }: { request: Request }) {
+  const label = request.server_name ?? request.server_id;
+  const brand =
+    request.source === "acp"
+      ? resolveAcpSourceBrand(request.server_name, request.server_id)
+      : undefined;
+  return (
+    <span className={styles.source}>
+      {brand && (
+        <BrandIcon identity={brand} alias={brand} size={14} fallback={null} />
+      )}
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function PermissionCard({
   request,
   detail,
@@ -136,25 +228,28 @@ function PermissionCard({
       aria-label={t("Permission requested")}
     >
       <div className={styles.request}>
-        <div className={styles.heading}>
-          <h3>{permissionHeading(detail.tool_kind, t)}</h3>
-          <span className={styles.tool}>
-            {request.server_name ?? request.server_id}
-          </span>
+        <div className={styles.header}>
+          <div className={styles.titleRow}>
+            <PermissionIcon toolKind={detail.tool_kind} />
+            <div className={styles.titleBlock}>
+              <h3>{permissionHeading(detail.tool_kind, t)}</h3>
+              {detail.tool_name && !detail.command && (
+                <span className={styles.toolName}>{detail.tool_name}</span>
+              )}
+            </div>
+          </div>
+          <SourceIdentity request={request} />
         </div>
         {context}
-        {detail.tool_name && !detail.command && (
-          <span className={styles.tool}>{detail.tool_name}</span>
-        )}
         {request.message && <p className={styles.reason}>{request.message}</p>}
         {detail.command && (
-          <div className={styles.commandBlock}>
-            <div className={styles.heading}>
+          <div className={styles.commandFrame}>
+            <div className={styles.commandBar}>
               <span className={styles.commandLabel}>{t("Command")}</span>
               <CopyCommand command={detail.command} />
             </div>
-            <pre className={styles.code}>
-              <code>{detail.command}</code>
+            <pre className={styles.commandCode}>
+              <SyntaxCode source={detail.command} language="bash" />
             </pre>
           </div>
         )}
@@ -163,7 +258,7 @@ function PermissionCard({
             {detail.cwd && (
               <>
                 <dt>{t("Working directory")}</dt>
-                <dd>{detail.cwd}</dd>
+                <dd className={styles.pathValue}>{detail.cwd}</dd>
               </>
             )}
             {!!detail.locations?.length && (
@@ -189,12 +284,13 @@ function PermissionCard({
           </dl>
         )}
         {extraArguments && Object.keys(extraArguments).length > 0 && (
-          <details className={styles.evidence}>
-            <summary>{t("Details")}</summary>
-            <pre className={styles.code}>
-              {JSON.stringify(extraArguments, null, 2)}
-            </pre>
-          </details>
+          <div className={styles.detailsSection}>
+            <DisclosureSection title={t("Details")}>
+              <pre className={styles.code}>
+                <code>{JSON.stringify(extraArguments, null, 2)}</code>
+              </pre>
+            </DisclosureSection>
+          </div>
         )}
         <div className={styles.actions}>
           {orderedOptions.map((option) => (
@@ -377,11 +473,9 @@ export function McpInput({
       aria-label={isAcp ? t("Agent input request") : t("MCP input request")}
     >
       <div className={styles.request}>
-        <div className={styles.heading}>
+        <div className={styles.header}>
           <h3>{heading}</h3>
-          <span className={styles.tool}>
-            {request.server_name ?? request.server_id}
-          </span>
+          <SourceIdentity request={request} />
         </div>
         {context}
         {request.message && <p className={styles.reason}>{request.message}</p>}
@@ -450,7 +544,7 @@ export function McpInput({
                 )}
               </p>
             )}
-            <fieldset disabled={locked}>
+            <fieldset className={styles.questionFieldset} disabled={locked}>
               <QuestionInput
                 request={{
                   request_id: request.request_id,
