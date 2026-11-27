@@ -58,8 +58,10 @@ function DocumentLanguage() {
 
 export function LanguageChoice({
   settingsRow = false,
+  compact = false,
 }: {
   settingsRow?: boolean;
+  compact?: boolean;
 }) {
   const { t } = useTranslation();
   const context = useContext(PreferenceContext);
@@ -69,6 +71,7 @@ export function LanguageChoice({
   const field = (
     <Field
       label={t("Display language")}
+      hideLabel={compact}
       value={preference}
       onValueChange={(value) => {
         if (
@@ -88,5 +91,9 @@ export function LanguageChoice({
       ]}
     />
   );
-  return settingsRow ? field : <div className={styles.choice}>{field}</div>;
+  return settingsRow ? (
+    field
+  ) : (
+    <div className={compact ? styles.compact : styles.choice}>{field}</div>
+  );
 }

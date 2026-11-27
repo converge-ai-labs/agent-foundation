@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
@@ -42,7 +43,15 @@ from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
-from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, acp_auth, auth_input_scope, preview_acp_options
+from a13n_harness_ui.acp_auth import (
+    ACP_SETUP_AUTH_SCOPE,
+    AcpAuthRequest,
+    AcpAuthStatus,
+    AcpPresetAuthRequest,
+    acp_auth,
+    auth_input_scope,
+    preview_acp_options,
+)
 from a13n_harness_ui.acp_sessions import (
     AcpCommand,
     AcpOption,
@@ -103,6 +112,7 @@ from a13n_harness_ui.configuration.mcp_tools import (
     tool_settings,
 )
 from a13n_harness_ui.configuration.models import (
+    AcpAgentResource,
     BrowserConfiguration,
     ComposerSendShortcut,
     DeviceResource,
@@ -112,6 +122,7 @@ from a13n_harness_ui.configuration.models import (
 )
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
+    SETUP_DIRECTORIES,
     SetupPreview,
     SetupPublication,
     SetupSelection,
@@ -274,6 +285,7 @@ from a13n_harness_ui.model_authoring import (
     prepare_model,
 )
 from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
+from a13n_harness_ui.model_presets import API_PROVIDERS
 from a13n_harness_ui.model_providers import AccountContext, ModelProviderPlugin
 from a13n_harness_ui.model_providers.credentials import PluginAccountStore, PluginCredentialSource
 from a13n_harness_ui.model_providers.transport import provider_http_client
@@ -1931,33 +1943,50 @@ class HarnessUiApp:
             resource = source.acp_agents.get(agent_id) if source is not None else None
             if resource is None:
                 raise HarnessUiError("The external Agent is not configured.", code="acp_agent_missing")
-            if agent_id in self._acp_auth_active:
-                raise HarnessUiError(
-                    "An authentication operation is already active for this Agent.", code="acp_auth_busy"
-                )
-            self._acp_auth_active.add(agent_id)
-            try:
-                return await acp_auth(resource, self._store.settings.data_root, request, self._mcp_inputs)
-            finally:
-                self._acp_auth_active.discard(agent_id)
-                if request.action != "probe":
-                    self._acp_options_cache.clear()
+            return await self._run_acp_auth(resource, request, auth_input_scope(agent_id))
+
+    async def acp_preset_auth(self, request: AcpPresetAuthRequest) -> AcpAuthStatus:
+        async with self._operation():
+            return await self._run_acp_auth(
+                request.resource("acp-setup-preview", "ACP Agent"), request, ACP_SETUP_AUTH_SCOPE
+            )
+
+    async def _run_acp_auth(self, resource: AcpAgentResource, request: AcpAuthRequest, scope: str) -> AcpAuthStatus:
+        if scope in self._acp_auth_active:
+            raise HarnessUiError("An authentication operation is already active for this Agent.", code="acp_auth_busy")
+        self._acp_auth_active.add(scope)
+        try:
+            return await acp_auth(resource, self._store.settings.data_root, request, self._mcp_inputs, scope=scope)
+        finally:
+            self._acp_auth_active.discard(scope)
+            if request.action != "probe":
+                self._acp_options_cache.clear()
 
     async def acp_auth_inputs(self, agent_id: str) -> tuple[McpInputRequestView, ...]:
+        return await self._acp_input_requests(auth_input_scope(agent_id))
+
+    async def acp_preset_auth_inputs(self) -> tuple[McpInputRequestView, ...]:
+        return await self._acp_input_requests(ACP_SETUP_AUTH_SCOPE)
+
+    async def _acp_input_requests(self, scope: str) -> tuple[McpInputRequestView, ...]:
         async with self._operation():
-            if self._mcp_inputs is None or agent_id not in self._acp_auth_active:
+            if self._mcp_inputs is None or scope not in self._acp_auth_active:
                 return ()
-            return tuple(
-                view for view in self._mcp_inputs.requests({auth_input_scope(agent_id)}) if view.state == "pending"
-            )
+            return tuple(view for view in self._mcp_inputs.requests({scope}) if view.state == "pending")
 
     async def respond_acp_auth_input(
         self, agent_id: str, request_id: str, response: McpInputResponse
     ) -> McpInputRequestView:
+        return await self._respond_acp_input(auth_input_scope(agent_id), request_id, response)
+
+    async def respond_acp_preset_auth_input(self, request_id: str, response: McpInputResponse) -> McpInputRequestView:
+        return await self._respond_acp_input(ACP_SETUP_AUTH_SCOPE, request_id, response)
+
+    async def _respond_acp_input(self, scope: str, request_id: str, response: McpInputResponse) -> McpInputRequestView:
         async with self._operation():
-            if self._mcp_inputs is None:
+            if self._mcp_inputs is None or scope not in self._acp_auth_active:
                 raise HarnessUiError("Interactive input is unavailable.", code="mcp_input_not_found")
-            return await self._mcp_inputs.respond({auth_input_scope(agent_id)}, request_id, response)
+            return await self._mcp_inputs.respond({scope}, request_id, response)
 
     async def _mcp_input_scope(self, thread_id: str) -> set[str]:
         await self._threads.get(thread_id)
@@ -3504,22 +3533,35 @@ class HarnessUiApp:
 
             def untouched() -> bool:
                 return not path.exists() and not any(
-                    any((path.parent / directory).glob("**/*.*"))
-                    for directory in ("agents", "models", "projects", "extensions", "mcp", "subagents")
+                    any((path.parent / directory).glob("**/*.*")) for directory in SETUP_DIRECTORIES
                 )
 
             return SetupStatus(
                 needed=(
                     current is None or defaults is None or defaults.agent not in (current.agents | current.acp_agents)
                 ),
-                fresh=(current is None or not (current.agents or current.models or current.projects))
+                fresh=(
+                    current is None or not (current.agents or current.acp_agents or current.models or current.projects)
+                )
                 and self._candidate_error is None
                 and await to_thread.run_sync(untouched),
                 draft_scope=hashlib.sha256(f"{path.resolve()}\0{self._store.layout.root}".encode()).hexdigest()[:24],
                 configuration_path=str(path),
                 suggested_project_path=str(Path.cwd()),
                 providers=tuple(providers),
-                agents={} if current is None else {key: value.name for key, value in current.agents.items()},
+                detected_env_keys=tuple(
+                    sorted(
+                        {
+                            provider.credential_env
+                            for provider in API_PROVIDERS
+                            if (os.environ.get(provider.credential_env) or "").strip()
+                        }
+                    )
+                ),
+                agents={}
+                if current is None
+                else {key: value.name for key, value in (current.agents | current.acp_agents).items()},
+                acp_presets={} if current is None else {key: value.preset for key, value in current.acp_agents.items()},
                 projects={} if current is None else {key: value.name for key, value in current.projects.items()},
                 project_paths={}
                 if current is None
@@ -3657,15 +3699,23 @@ class HarnessUiApp:
                 self._discovered_models.get(request.connection, ()),
             )
 
+    def _validate_setup_configuration(self, candidate: LoadedHarnessUiConfiguration, selection: SetupSelection) -> None:
+        self._configurations.validate(candidate)
+        if selection.primary_acp_agent is not None and selection.set_as_default and not selection.is_addition:
+            configuration = resolve_thread_configuration(
+                candidate, RootThreadDefaults(agent_id=candidate.document.defaults.agent)
+            )
+            self._threads.acp_workspace(configuration)
+
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
         async with self._operation(), self._configuration_lock:
             preview = await preview_setup(
                 self._require_configuration_path(),
                 selection,
-                validate_candidate=self._configurations.validate,
+                validate_candidate=lambda candidate: self._validate_setup_configuration(candidate, selection),
                 content_plugin_root=self._content_plugin_root,
             )
-            if not selection.is_addition and selection.project is None:
+            if selection.updates_workspace and selection.project is None:
                 preview = preview.model_copy(update={"project_paths": (str(self._store.layout.staging),)})
             return preview
 
@@ -3673,8 +3723,8 @@ class HarnessUiApp:
         async with self._operation(), self._configuration_lock:
 
             def validate_candidate(candidate: LoadedHarnessUiConfiguration) -> None:
-                self._configurations.validate(candidate)
-                if not selection.is_addition and selection.environment_profile == "environment-sandbox":
+                self._validate_setup_configuration(candidate, selection)
+                if selection.updates_workspace and selection.environment_profile == "environment-sandbox":
                     roots = (
                         tuple(Path(root.path).resolve() for root in candidate.projects[selection.project].roots)
                         if selection.project is not None

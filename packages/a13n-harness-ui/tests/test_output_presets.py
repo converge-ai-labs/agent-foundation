@@ -125,13 +125,15 @@ async def test_all_creation_paths_display_and_persist_paired_settings(tmp_path: 
 
     async def ask(question, selection):
         questions.append(question.key)
+        if question.key == "action" and "retry" in question.choices:
+            pytest.fail("\n".join(output))
         if question.key == "preset":
             chosen = next(choice for choice in selection.choices if choice.value == preset_key)
             label = f"Output limit: {expected:,} tokens" if expected else "Output limit: provider default"
             assert label in chosen.description
         return {
             "model_source": "model-api-key" if reuse else "new",
-            "provider": "api",
+            "track": "api",
             "api_provider": "openai-responses",
             "base_url": "https://example.invalid/v1",
             "credential": "env:TEST_KEY",

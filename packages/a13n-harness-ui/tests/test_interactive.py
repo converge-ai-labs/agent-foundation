@@ -164,6 +164,7 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
 def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("a13n_harness_ui.interactive.setup.local_sandbox_supported", lambda: True)
     wizard = SetupWizard(advanced=True)
+    wizard.accept("subscription")
     wizard.accept("codex")
     wizard.accept("gpt-6-sol")
     for value in ("on", "all", "extended", "medium", "", "no", "", "sandbox"):
@@ -1416,7 +1417,7 @@ def test_idle_status_uses_execution_outcome_not_operation_text(execution, state)
 @pytest.mark.parametrize("reviewer", ["skip", "custom/reviewer"])
 def test_api_setup_requires_explicit_review_model_even_without_advanced(reviewer: str) -> None:
     wizard = SetupWizard()
-    answers = {"provider": "api", "credential_source": "env:OPENAI_API_KEY", "review_model": reviewer}
+    answers = {"track": "api", "credential_source": "env:OPENAI_API_KEY", "review_model": reviewer}
     seen = []
     while wizard.question is not None:
         question = wizard.question

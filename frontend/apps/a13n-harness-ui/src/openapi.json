@@ -5866,6 +5866,105 @@
         }
       }
     },
+    "/api/acp-agents/preset-auth": {
+      "post": {
+        "summary": "Acp Preset Auth",
+        "operationId": "acp_preset_auth_api_acp_agents_preset_auth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpPresetAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpAuthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/acp-agents/preset-auth/inputs": {
+      "get": {
+        "summary": "Acp Preset Auth Inputs",
+        "operationId": "acp_preset_auth_inputs_api_acp_agents_preset_auth_inputs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpInputRequestView"
+                  },
+                  "type": "array",
+                  "title": "Response Acp Preset Auth Inputs Api Acp Agents Preset Auth Inputs Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/acp-agents/preset-auth/inputs/{request_id}/response": {
+      "post": {
+        "summary": "Respond Acp Preset Auth Input",
+        "operationId": "respond_acp_preset_auth_input_api_acp_agents_preset_auth_inputs__request_id__response_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpInputRequestView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpInputResponse"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/acp-agents/{agent_id}/options": {
       "get": {
         "summary": "Acp Agent Options",
@@ -10836,6 +10935,60 @@
         ],
         "title": "AccountSelection",
         "type": "object"
+      },
+      "AcpAgentCandidate": {
+        "properties": {
+          "preset": {
+            "$ref": "#/components/schemas/AcpAgentPreset"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "preset"
+        ],
+        "title": "AcpAgentCandidate"
       },
       "AcpAgentPreset": {
         "type": "string",
@@ -24345,6 +24498,16 @@
             },
             "type": "array",
             "title": "Project Paths"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -24409,6 +24572,16 @@
             "type": "array",
             "title": "Published Paths"
           },
+          "agent_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "error_code": {
             "anyOf": [
               {
@@ -24451,6 +24624,56 @@
                 "type": "null"
               }
             ]
+          },
+          "primary_acp_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpAgentCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "additional_acp_presets": {
+            "items": {
+              "$ref": "#/components/schemas/AcpAgentPreset"
+            },
+            "type": "array",
+            "title": "Additional Acp Presets",
+            "default": []
+          },
+          "set_as_default": {
+            "type": "boolean",
+            "title": "Set As Default",
+            "default": true
+          },
+          "configure_workspace": {
+            "type": "boolean",
+            "title": "Configure Workspace",
+            "default": true
+          },
+          "enable_dictation": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enable Dictation"
+          },
+          "auto_organize_memory": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Organize Memory"
           },
           "instructions": {
             "type": "string",
@@ -24666,12 +24889,27 @@
             "type": "array",
             "title": "Providers"
           },
+          "detected_env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Detected Env Keys",
+            "default": []
+          },
           "agents": {
             "additionalProperties": {
               "type": "string"
             },
             "type": "object",
             "title": "Agents"
+          },
+          "acp_presets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Acp Presets"
           },
           "projects": {
             "additionalProperties": {
@@ -32612,6 +32850,83 @@
         ],
         "title": "McpToolSelection",
         "type": "object"
+      },
+      "AcpPresetAuthRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "probe",
+              "login",
+              "logout"
+            ],
+            "title": "Action"
+          },
+          "method_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method Id"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AcpAgentPreset"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "preset"
+        ],
+        "title": "AcpPresetAuthRequest"
       },
       "AcpOptionChange": {
         "additionalProperties": false,

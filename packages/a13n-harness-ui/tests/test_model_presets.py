@@ -197,7 +197,12 @@ def test_api_wizard_backtracking_drops_incompatible_settings_and_endpoints() -> 
     while wizard.question is None or wizard.question.key != "api_provider":
         assert wizard.back()
     wizard.accept("openai-responses")
-    assert wizard.values == {"model_source": "new", "provider": "api", "api_provider": "openai-responses"}
+    assert wizard.values == {
+        "model_source": "new",
+        "track": "api",
+        "provider": "api",
+        "api_provider": "openai-responses",
+    }
     assert wizard.question.default == "https://api.openai.com/v1"
 
 
@@ -219,7 +224,7 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
     questions, output = [], []
 
     async def ask(question, selection):
-        if question.key in {"tools", "review_model"}:
+        if question.key in {"tools", "review_model", "additional_acp"}:
             return question.default
         questions.append(question)
         assert answers, question
@@ -260,7 +265,7 @@ async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_p
     answers = deque(["api", "anthropic", "https://api.anthropic.com", "new", "fixture-key"])
 
     async def ask(question, selection):
-        if question.key in {"tools", "review_model"}:
+        if question.key in {"tools", "review_model", "additional_acp"}:
             return question.default
         if not answers:
             raise SetupCancelled()
@@ -716,7 +721,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
     answers = deque(["api", provider, "", "off", "new", "env:TEST_KEY", model_id, "", "none", "", "", "full-control"])
 
     async def ask(question, selection):
-        if question.key in {"tools", "review_model"}:
+        if question.key in {"tools", "review_model", "additional_acp"}:
             return question.default
         assert answers, question
         return answers.popleft()

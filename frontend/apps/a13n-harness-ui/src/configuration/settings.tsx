@@ -9,7 +9,7 @@ import { capabilityLabel } from "./capability-label";
 import { useContext, useState } from "react";
 import { Link, Outlet, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Skeleton, Switch } from "a13n-ui";
+import { Button, Skeleton, Switch } from "a13n-ui";
 import { debugShortcutLabel, useDebug } from "../shell/debug";
 import {
   useSelectors,
@@ -202,6 +202,14 @@ export function AgentsPage() {
         kinds={["agent", "acp_agent"]}
         title={t("Agents")}
         description={t("Configure Harness agents and external ACP agents.")}
+        extraAction={
+          <Button
+            variant="outline"
+            render={<Link to="/setup?wizard=1&from=agents" />}
+          >
+            {t("Guided setup")}
+          </Button>
+        }
       />
       <details className={layout.disclosure}>
         <summary>{t("Installed capabilities")}</summary>
