@@ -148,6 +148,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "usage_model",
             "web_push_key",
             "web_push_subscription",
+            "thread_link",
             "webui_draft",
         }
         with engine.connect() as connection:

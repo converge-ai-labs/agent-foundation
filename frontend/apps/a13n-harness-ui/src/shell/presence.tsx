@@ -140,6 +140,15 @@ export function useLiveWorkbench(
           );
           return;
         }
+        if (event?.kind === "thread_links") {
+          scheduleRefresh(
+            queries,
+            (query) =>
+              query.queryKey[0] === "thread-links" &&
+              query.queryKey[1] === event.thread_id,
+          );
+          return;
+        }
         if (event?.kind === "thread_work") {
           scheduleRefresh(queries, (query) =>
             ["bot-note", "bot-notes"].includes(String(query.queryKey[0])),

@@ -21,7 +21,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useNavigate, useLocation } from "react-router";
 import { TransportContext } from "../transport/context";
-import type { Transport } from "../transport/client";
+import type { Schema, Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
 import { FileBuffers, joinPath } from "./buffer";
 import {
@@ -183,6 +183,11 @@ function setup(
   content?: ReactNode,
   buffers = new Map(),
   shortcuts?: Partial<WorkbenchShortcuts>,
+  links: Schema<"ThreadLinksView"> = {
+    worktrees: [],
+    urls: [],
+    worktree_mode_available: false,
+  },
 ) {
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -285,7 +290,19 @@ function setup(
                               },
                 },
   );
-  const transport = { client: { GET: get } } as unknown as Transport;
+  const removeLink = vi.fn(async () => {
+    links = { ...links, urls: [] };
+    return { response: new Response(null, { status: 204 }) };
+  });
+  const transport = {
+    client: {
+      GET: (url: string, options?: Parameters<typeof get>[1]) =>
+        url === "/api/threads/{thread_id}/links"
+          ? Promise.resolve({ data: links })
+          : get(url, options),
+      DELETE: removeLink,
+    },
+  } as unknown as Transport;
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -344,8 +361,58 @@ function setup(
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  return { focus, get, queries };
+  return { focus, get, queries, removeLink };
 }
+
+it("opens a popover for a single GitHub link and hides its trigger after unlinking", async () => {
+  const url = "https://github.com/example/repo/pull/42";
+  const { removeLink } = setup(
+    "/threads/current",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      worktrees: [],
+      worktree_mode_available: false,
+      urls: [
+        {
+          kind: "url",
+          label: null,
+          url,
+          created_at: "2026-11-27",
+          updated_at: "2026-11-27",
+          github: {
+            kind: "pr",
+            number: 42,
+            status: "merged",
+            title: "Improve retries",
+          },
+        },
+      ],
+    },
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Thread links" }));
+  const link = await screen.findByRole("link", { name: /Improve retries/ });
+  expect(link.getAttribute("href")).toBe(url);
+  expect(link.textContent).toContain("#42");
+  expect(link.textContent).toContain("Merged");
+  fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
+  await waitFor(() =>
+    expect(removeLink).toHaveBeenCalledWith("/api/threads/{thread_id}/links", {
+      params: { path: { thread_id: "current" } },
+      body: { kind: "url", target: url },
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Thread links" })).toBeNull(),
+  );
+});
+
 it("keeps the full chat title available while bounding the document title", async () => {
   const { queries } = setup("/threads/current");
   await screen.findByRole("heading", { name: "Current chat" });

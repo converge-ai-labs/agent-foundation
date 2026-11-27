@@ -1,0 +1,89 @@
+.trigger {
+  flex: none;
+  color: var(--a13n-secondary);
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.popup {
+  width: min(340px, calc(100vw - 24px), var(--available-width, 100vw));
+  border-radius: 16px;
+}
+.groups {
+  display: grid;
+  gap: 16px;
+}
+.groups h2 {
+  margin: 0 0 8px;
+  color: var(--a13n-secondary);
+  font-weight: 500;
+  font-size: 0.92em;
+}
+.groups ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.row > button,
+.icon {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.icon {
+  width: 16px;
+  height: 16px;
+}
+.identity {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+a.identity:hover .name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.name,
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.name svg {
+  display: inline;
+  margin-inline-start: 4px;
+  vertical-align: -2px;
+  color: var(--a13n-secondary);
+}
+.detail {
+  color: var(--a13n-secondary);
+  font-size: 0.9em;
+}
+.detail > span {
+  margin-inline-start: 6px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-inline-start: 16px;
+}
+.actions button {
+  color: var(--a13n-secondary);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

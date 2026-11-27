@@ -48,6 +48,7 @@ let historyPaused: Promise<void> | undefined;
 let focusPaused: Promise<void> | undefined;
 let focusUnavailable = false;
 let focused: Schema<"ThreadFocusSnapshot"> | undefined;
+let gitProject = false;
 const threadDetail: Schema<"ThreadDetail"> = {
   thread: {
     thread_id: id,
@@ -95,6 +96,7 @@ beforeEach(() => {
   focusPaused = undefined;
   focused = undefined;
   focusUnavailable = false;
+  gitProject = false;
   vi.spyOn(Realtime.prototype, "subscribe").mockImplementation(
     (subscription) => {
       let active = true;
@@ -228,7 +230,16 @@ beforeEach(() => {
             { project_id: "project-two", name: "Second project", roots: [] },
           ]);
         if (pathname === "/api/setup") return json({ needed: false });
-        if (pathname === "/api/status") return json({});
+        if (pathname === "/api/status")
+          return json({ features: { host_git: gitProject } });
+        if (pathname === "/api/host/git/repository")
+          return json({ state: "repository" });
+        if (pathname.endsWith("/links"))
+          return json({
+            worktrees: [],
+            urls: [],
+            worktree_mode_available: false,
+          });
         if (pathname === "/api/devices") return json([]);
         if (pathname === "/api/selectors")
           return json({
@@ -361,7 +372,10 @@ beforeEach(() => {
             agent_source: {
               id: (await request.clone().json()).agent_id || "agent-one",
             },
-            environment_profile_id: "environment-native",
+            environment_profile_id: gitProject
+              ? "environment-sandbox"
+              : "environment-native",
+            local_roots: gitProject ? ["/checkout"] : [],
           },
         });
       // A timer-driven activity lookup is a read sent as POST: it fails like any unmocked read and is
@@ -1949,6 +1963,43 @@ it("returns to the latest window when New output is clicked from a historical in
   await screen.findByText("Latest answer");
   expect(screen.queryByText("Earlier answer")).toBeNull();
   expect(screen.queryByRole("button", { name: "Back to latest" })).toBeNull();
+});
+
+it("offers Worktree after switching a new Git chat to Full Control and submits the selected mode", async () => {
+  gitProject = true;
+  mount();
+  await fill();
+  const user = userEvent.setup();
+  const options = screen.getByRole("button", { name: "Chat options" });
+  await user.click(options);
+  expect(screen.queryByRole("switch", { name: "Worktree" })).toBeNull();
+  const trigger = await screen.findByRole("button", { name: "Environments" });
+  await waitFor(() => expect(trigger.hasAttribute("disabled")).toBe(false));
+  await user.click(trigger);
+  await user.click(screen.getByRole("combobox", { name: "Local mode" }));
+  await user.click(await screen.findByRole("option", { name: /Full Control/ }));
+  await user.click(screen.getByRole("button", { name: "Use for next run" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Environments" })).toBeNull(),
+  );
+  await user.click(options);
+  await user.click(await screen.findByRole("switch", { name: "Worktree" }));
+  await user.click(options);
+  expect(
+    screen.getByRole("button", { name: "Turn off worktree mode" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() =>
+    expect(writes.some((request) => request.url.endsWith("/submit"))).toBe(
+      true,
+    ),
+  );
+  const submit = writes.find((request) => request.url.endsWith("/submit"))!;
+  expect(await submit.json()).toMatchObject({
+    mode: "worktree",
+    environment: { environment_profile_id: "environment-native" },
+  });
+  await waitFor(() => expect(drafts.get(id)!.mode).toBe("normal"));
 });
 
 it.each(["new", "existing"])(

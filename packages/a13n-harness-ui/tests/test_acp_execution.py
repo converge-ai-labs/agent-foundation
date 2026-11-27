@@ -1307,6 +1307,7 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
 
         await app.acp_options(thread.thread_id, AcpOptionChange(id="model", value="a"))
         first_text = await echoed_prompt()
+        assert "<thread-links" in first_text
         assert '<agent-context source="a13n-harness-ui">' in first_text
         assert "Current Model: a\nUse the current Model name when attributing work to a model.\n" in first_text
 
@@ -1316,9 +1317,12 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
         assert "<agent-context" not in unchanged_text
         assert "<surface-context" not in unchanged_text
         assert "<inbox-reminder>" not in unchanged_text
+        assert "<thread-links" not in unchanged_text
 
+        assert await reply("register thread link") == "Registered ACP link"
         await app.acp_options(thread.thread_id, AcpOptionChange(id="model", value="b"))
         changed_text = await echoed_prompt()
+        assert '<url url="https://example.com/acp" label="ACP Artifact" />' in changed_text
         assert '<agent-context source="a13n-harness-ui">' in changed_text
         assert "Current Model: b\n" in changed_text
         assert "Current Model: a\n" not in changed_text
@@ -1334,6 +1338,7 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
         assert "Current Model: b\n" in refreshed_text
         assert "<surface-context" in refreshed_text
         assert "<inbox-reminder>" in refreshed_text
+        assert '<url url="https://example.com/acp" label="ACP Artifact" />' in refreshed_text
         assert "Current Environment mounts" not in refreshed_text
         assert "This input was submitted through Harness UI WebUI." not in refreshed_text
 

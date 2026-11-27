@@ -77,6 +77,7 @@ import { FileView } from "./file-view";
 import { Changes, DiffView, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
 import { TerminalPanel, type TerminalRequest } from "./terminal";
+import { ThreadLinks, useThreadLinks } from "./thread-links";
 import { terminalShortcut } from "./terminal-shortcuts";
 import { BrowserPanel } from "../browser/panel";
 import { BrowserActivity } from "../browser/activity";
@@ -178,6 +179,9 @@ export function NativeWorkspace({
     location.pathname === "/memory" || !!thread.data?.thread.memory_scope;
   const isWorkspace =
     !memoryMode && (location.pathname === "/" || !!threadId || isNew);
+  const links = useThreadLinks(
+    isWorkspace && thread.data ? threadId : undefined,
+  );
   const projectLoading =
     projects.isPending ||
     (botMode ? bot.isPending : !!threadId && thread.isPending);
@@ -1212,6 +1216,40 @@ export function NativeWorkspace({
                   {title}
                 </ToolbarTitle>
               </div>
+              {isWorkspace && threadId && !unavailableThread && (
+                <ThreadLinks
+                  key={`links:${threadId}`}
+                  threadId={threadId}
+                  data={links.data}
+                  openChanges={
+                    status.data?.features?.host_git &&
+                    status.data?.features?.host_files
+                      ? (path) => {
+                          cancelOpening();
+                          revealTab({
+                            kind: "changes",
+                            root: path,
+                            selection: null,
+                            choices: [],
+                          });
+                        }
+                      : undefined
+                  }
+                  openFiles={
+                    status.data?.features?.host_files
+                      ? (path) => {
+                          setPane("files");
+                          void open(path);
+                        }
+                      : undefined
+                  }
+                  openTerminal={
+                    status.data?.features?.host_terminal && projectId
+                      ? openTerminal
+                      : undefined
+                  }
+                />
+              )}
               {isWorkspace && threadId && status.data?.features?.browser && (
                 <BrowserActivity
                   key={threadId}

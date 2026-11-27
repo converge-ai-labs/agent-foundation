@@ -97,6 +97,14 @@ Current Run receipts, status, subscribers, steering queues, and live output rema
 
 Title and archive state form one metadata compare-and-select head independent from sticky configuration. A metadata command names the exact expected metadata version and atomically updates either or both fields. A changed head increments once; a no-op can retain its version. Title can be explicitly cleared. Root archive is rejected while that Thread has a current-process root operation, so an accepted operation cannot become hidden mid-Run. Child metadata changes require the parent-scoped child boundary.
 
+## Thread Links
+
+Thread Links are bookmarks owned by a root Thread. A `worktree` link records an absolute local `path`; a `url` link records an absolute HTTP(S) `url`. Both record an optional `label`, `created_at`, and `updated_at`. Identity is the Thread, kind, and canonical path or normalized URL. In Full Control with Host Git available, registering a path inside a Git worktree uses its Git top-level. Elsewhere, an absolute Host path is normalized lexically. Upserting the same reference changes its label only when the label differs.
+
+Links are stored independently of `ThreadConfiguration`, Run composition, and continuation state. They confer no filesystem access and never add a mount, alter `local_roots`, or change the Run's working directory or preparation checks. A missing worktree leaves a usable bookmark record. Unlinking removes the record only. Fork and message branching copy the source Thread's explicit links into the new Thread transaction; subsequent edits are independent. Context compaction preserves the records.
+
+[Runtime tools and projection](05-runtime-subagents-and-surfaces.md#thread-link-tools) and the [WebUI workbench](webui/04-workbench-interaction.md#thread-links) present the same Thread-owned references.
+
 ## Thread Fork
 
 An authenticated human forks an independent ordinary root through `fork_thread(thread_id)` / `POST /api/threads/{thread_id}/fork`. Coordinators, their workers, async child Threads, and internal Memory/Live Threads cannot be forked. The command returns the new `ThreadSummary`, admits no Run, and never calls a Model. The WebUI Thread action menu offers **Fork conversation** only for eligible Threads, prevents duplicate clicks while pending, and opens the new Thread after success. Failures remain visible beside the source.

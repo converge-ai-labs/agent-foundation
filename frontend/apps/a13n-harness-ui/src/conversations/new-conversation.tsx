@@ -1,3 +1,4 @@
+import { useWorktreeMode } from "../native/thread-links";
 import {
   AcpOptionFields,
   acpModelOption,
@@ -323,6 +324,13 @@ function NewConversation({
     (item) => item.project_id === defaults.project_id,
   );
   const effective = preview.data?.configuration;
+  const worktreeAvailable = useWorktreeMode(
+    effective?.project_id &&
+      (composerDraft.environment?.environment_profile_id ??
+        effective.environment_profile_id) === "environment-native"
+      ? (composerDraft.environment?.local_roots ?? effective.local_roots)?.[0]
+      : undefined,
+  );
   const canCoordinate = !!effective?.project_id && !preview.error;
   const effectiveAgent = selectors.data?.agents.find(
     (item) => item.agent_id === effective?.agent_source.id,
@@ -689,6 +697,7 @@ function NewConversation({
                 : undefined
             }
             autoFocus={pageReady}
+            worktreeAvailable={worktreeAvailable}
             threadId={threadId}
             activity={{ state: "inactive" }}
             owner={

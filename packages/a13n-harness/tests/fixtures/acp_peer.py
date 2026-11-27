@@ -524,6 +524,21 @@ for line in sys.stdin.buffer:
             text("Files read")
             PENDING = ident
             continue
+        if MODE == "ui" and message == "register thread link":
+            catalog = {entry["name"] for entry in mcp("tools/list")["tools"]}
+            assert {"link_thread_resource", "unlink_thread_resource"} <= catalog
+            result = mcp(
+                "tools/call",
+                {
+                    "name": "link_thread_resource",
+                    "arguments": {"kind": "url", "target": "https://example.com/acp", "label": "ACP Artifact"},
+                },
+            )
+            assert not result.get("isError"), result
+            assert "https://example.com/acp" in json.dumps(result)
+            text("Registered ACP link")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
         if MODE == "ui" and message in {"inbox exact", "inbox fallback"}:
             if "browser" in sys.argv[2:]:
                 catalog = {entry["name"] for entry in mcp("tools/list")["tools"]}
