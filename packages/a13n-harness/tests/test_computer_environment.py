@@ -745,7 +745,7 @@ async def test_clipboard_permissions_are_independent_and_empty_text_is_content()
         assert (await tools.computer_write_clipboard("blocked"))["error"]["code"] == "environment_denied"
 
 
-@pytest.mark.parametrize("text", ["é" * 8193, "bad\0text", "\ud800"])
+@pytest.mark.parametrize("text", ["é" * 8193, "bad\0text", "\ud800"], ids=["over-utf8-limit", "nul", "surrogate"])
 async def test_clipboard_invalid_text_is_rejected_before_provider(text):
     runtime, computer = mount(COMPUTER_ACTIONS)
     async with runtime.bind(thread_id="t", run_id="r", instance=_instance(), host_refs={}) as environment:

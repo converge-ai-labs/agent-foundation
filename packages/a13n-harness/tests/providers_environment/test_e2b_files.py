@@ -33,12 +33,12 @@ def filesystem(tmp_path):
     return execute
 
 
-def test_file_paths_preserve_hidden_names_and_reject_escape(tmp_path, filesystem):
+def test_file_paths_preserve_hidden_names_and_reject_escape(tmp_path, filesystem, symlink):
     (tmp_path / ".hidden").write_text("hello")
     assert filesystem("stat", path="/.hidden")["path"] == "/.hidden"
     with pytest.raises(ValueError):
         filesystem("stat", path="/../outside")
-    (tmp_path / "escape").symlink_to(tmp_path.parent)
+    symlink(tmp_path / "escape", tmp_path.parent)
     with pytest.raises(PermissionError):
         filesystem("read", path="/escape/file", offset=0, length=10)
     assert filesystem("stat", path="/escape")["kind"] == "symlink"
@@ -92,11 +92,13 @@ def test_query_paging_and_bounded_scan(tmp_path, filesystem):
 
 @pytest.mark.parametrize("action", ["read", "resolve", "publish"])
 @pytest.mark.parametrize("kind", ["missing", "directory", "dangling-link"])
-def test_regular_file_operations_distinguish_missing_targets_from_wrong_types(tmp_path, filesystem, action, kind):
+def test_regular_file_operations_distinguish_missing_targets_from_wrong_types(
+    tmp_path, filesystem, action, kind, symlink
+):
     if kind == "directory":
         (tmp_path / "target").mkdir()
     elif kind == "dangling-link":
-        (tmp_path / "target").symlink_to(tmp_path / "missing")
+        symlink(tmp_path / "target", tmp_path / "missing")
     (tmp_path / "stage").write_text("candidate")
     arguments = {
         "read": {"offset": 0, "length": 10},

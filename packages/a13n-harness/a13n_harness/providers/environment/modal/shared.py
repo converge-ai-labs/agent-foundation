@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import PurePosixPath
+from threading import Lock
+from types import ModuleType
 from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from pydantic import (
@@ -158,15 +162,32 @@ class ModalState(TargetState):
         return self
 
 
+_modal_import_lock = Lock()
+
+
+def _load_sdk() -> ModuleType:
+    if sys.platform != "win32":
+        return import_module("modal")
+    # Modal's Windows import installs a selector policy, which disables asyncio subprocesses.
+    # Preserve the Host's choice for later runs and other providers.
+    with _modal_import_lock:
+        policy = asyncio.get_event_loop_policy()
+        try:
+            return import_module("modal")
+        finally:
+            if asyncio.get_event_loop_policy() is not policy:
+                asyncio.set_event_loop_policy(policy)
+
+
 @contextmanager
 def sdk_errors(*, mutation: bool = False) -> Iterator[None]:
-    import modal
+    sdk = _load_sdk()
 
     try:
         yield
     except EnvironmentProviderError:
         raise
-    except modal.exception.AuthError:
+    except sdk.exception.AuthError:
         raise failure("modal", "provider_denied", Category.DENIED) from None
     except Exception:
         raise failure(
@@ -229,7 +250,7 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
         self._discard = False
 
     async def lookup(self) -> modal.Sandbox | None:
-        import modal
+        sdk = _load_sdk()
 
         client = await self.connection()
         try:
@@ -239,7 +260,7 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
                     try:
                         candidate = self._lease.sandbox if self._lease is not None else None
                         if candidate is None:
-                            candidate = await modal.Sandbox.from_id.aio(self.target.target_id, client=client)
+                            candidate = await sdk.Sandbox.from_id.aio(self.target.target_id, client=client)
                             if self._lease is not None:
                                 self._lease.sandbox = candidate
                         self.sandbox = candidate
@@ -247,17 +268,17 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
                         status = await candidate.poll.aio()
                         if status is None:
                             sandbox = candidate
-                    except modal.exception.NotFoundError:
+                    except sdk.exception.NotFoundError:
                         self.discard_transport()
                 if self.target is None:
                     try:
-                        sandbox = await modal.Sandbox.from_name.aio(
+                        sandbox = await sdk.Sandbox.from_name.aio(
                             self.backend.app_name,
                             self.name,
                             environment_name=self.backend.environment_name,
                             client=client,
                         )
-                    except modal.exception.NotFoundError:
+                    except sdk.exception.NotFoundError:
                         return None
                     self.validate_labels(await sandbox.get_tags.aio())
                 if sandbox is None:
@@ -279,7 +300,7 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
             raise
 
     async def connection(self) -> modal.Client:
-        import modal
+        sdk = _load_sdk()
         from modal.config import config as modal_config
         from modal_proto import api_pb2
 
@@ -292,15 +313,16 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
             with sdk_errors():
                 # Avoid from_credentials' implicit process-lifetime shutdown registry.
                 # The explicit pool, or this reference when unpooled, owns cleanup.
-                self.client = modal.Client(
+                client: modal.Client = sdk.Client(
                     modal_config["server_url"],
                     api_pb2.CLIENT_TYPE_CLIENT,
                     (self.credential.token_id.get_secret_value(), self.credential.token_secret.get_secret_value()),
                 )
+                self.client = client
                 if self._lease is not None:
-                    self._lease.client = self.client
+                    self._lease.client = client
                 try:
-                    await self.client.__aenter__()
+                    await client.__aenter__()
                 except BaseException:
                     self.discard_transport()
                     raise
@@ -313,6 +335,7 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
             return "stopped" if self.target and self.target.snapshot_id else "absent"
 
     def transport_key(self) -> TransportKey:
+        _load_sdk()
         from modal.config import config as modal_config
 
         assert self._account is not None and self.target is not None

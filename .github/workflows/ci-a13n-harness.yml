@@ -67,6 +67,10 @@ jobs:
             python-version: "3.14"
           - name: checks
             python-version: "3.15"
+          - name: Windows
+            python-version: "3.14"
+          - name: Windows
+            python-version: "3.15"
         include:
           - name: tests
             runner: ubuntu-24.04
@@ -76,17 +80,11 @@ jobs:
             runner: ubuntu-24.04
           - name: Windows
             runner: windows-2025
-            test_options: ""
-            test_targets: >-
-              packages/a13n-harness/tests/test_environment_core.py
-              packages/a13n-harness/tests/test_memory_directory_store.py::test_a_file_and_a_directory_cannot_share_a_name
-              packages/a13n-harness/tests/test_monitored_process.py
-              packages/a13n-harness/tests/providers_environment
 
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     runs-on: ${{ matrix.runner }}
-    # Cold Windows installs may compile dependencies before the bounded tests start.
+    # Cold Windows installs may compile dependencies before the tests start.
     timeout-minutes: ${{ matrix.name == 'Windows' && 25 || 10 }}
     steps:
       - name: Checkout
@@ -113,12 +111,8 @@ jobs:
         if: matrix.name == 'checks'
         run: uv run --locked pyright packages/a13n-harness/a13n_harness
 
-      - name: Test a13n Harness on Windows
-        if: matrix.name == 'Windows'
-        run: uv run --locked python -m pytest -vv ${{ matrix.test_options }} ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
-
       - name: Test a13n Harness
-        if: matrix.name == 'tests'
+        if: matrix.name == 'tests' || matrix.name == 'Windows'
         env:
           PYTEST_ADDOPTS: -vv --junitxml=test-results/harness.xml --durations=30 -r a
         run: >-

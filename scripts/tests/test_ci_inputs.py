@@ -790,18 +790,17 @@ def test_cluster_jobs_load_the_same_sandbox_before_startup():
 def test_harness_keeps_full_discovery_and_native_browser_coverage() -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())
     job = workflow["jobs"]["harness"]
-    matrix = job["strategy"]["matrix"]["include"]
     assert job["strategy"]["fail-fast"] is False
     steps = job["steps"]
     unit = next(step for step in steps if step.get("name") == "Test a13n Harness")
-    assert unit["if"] == "matrix.name == 'tests'"
+    assert unit["if"] == "matrix.name == 'tests' || matrix.name == 'Windows'"
     assert "scripts/run_python_tests.py" in unit["run"]
     assert "--workers 4 packages/a13n-harness/tests" in unit["run"]
+    assert unit["env"]["PYTEST_ADDOPTS"] == "-vv --junitxml=test-results/harness.xml --durations=30 -r a"
     browser = next(step for step in steps if step.get("name") == "Test native Chromium browser workflows")
     assert browser["if"] == "matrix.name == 'browser'"
     assert "test_browser_cdp_native.py" in browser["run"] and "test_browser_workflows_native.py" in browser["run"]
     assert "--browser-executable=" in browser["run"]
-    assert any(entry["name"] == "Windows" for entry in matrix)
 
 
 def test_failure_report_contains_fixture_phase_and_captured_output(tmp_path: Path) -> None:
@@ -901,13 +900,15 @@ def test_python_component_ci_tiers_interpreters_with_daily_schedule(
             assert version_expr in step["with"]["name"]
 
 
-def test_harness_python_matrix_retains_each_platform_and_shard() -> None:
+def test_harness_python_matrix_keeps_windows_and_checks_on_python_313() -> None:
     job = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())["jobs"]["harness"]
     matrix = job["strategy"]["matrix"]
     assert matrix["name"] == ["tests", "checks", "browser", "Windows"]
     assert matrix["exclude"] == [
         {"name": "checks", "python-version": "3.14"},
         {"name": "checks", "python-version": "3.15"},
+        {"name": "Windows", "python-version": "3.14"},
+        {"name": "Windows", "python-version": "3.15"},
     ]
     assert job["timeout-minutes"] == "${{ matrix.name == 'Windows' && 25 || 10 }}"
     assert {entry["name"] for entry in matrix["include"]} == set(matrix["name"])
