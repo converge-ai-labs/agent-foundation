@@ -17,7 +17,7 @@ uv add a13n-envd-client
 
 The client and native daemon share an Envd release version. Upgrade them together, including the daemon in custom images and remote endpoints. Recreate environments that still retain an older image. For source examples, use the repository lockfile and matching source daemon.
 
-Initialization exchanges capabilities without negotiating legacy protocol branches; cross-release interoperability relies on actual schemas and advertised methods. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.8.3,<0.9.0` for publication. Envd `0.8.3` is the deployment baseline; this deployment line requires Envd `0.8.x` peers. The EIP schema identifier is `0.5`; upgrade daemon and client together within the same `0.8.x` line.
+Initialization exchanges capabilities without negotiating legacy protocol branches; cross-release interoperability relies on actual schemas and advertised methods. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.8.4,<0.9.0` for publication. Envd `0.8.4` is the deployment baseline; this deployment line requires Envd `0.8.x` peers. The EIP schema identifier is `0.5`; upgrade daemon and client together within the same `0.8.x` line.
 
 ## Connect to an existing HTTP daemon
 
