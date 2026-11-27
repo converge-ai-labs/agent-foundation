@@ -220,31 +220,26 @@ function GuestShell({
     color: "#64748b",
   }));
   const [name, setName] = useState(profile.display_name);
-  const live = useLiveWorkbench(profile, true, refreshAccess);
+  const selectedId = useMatch("/threads/:threadId")?.params.threadId;
+  const selection = useThread(selectedId ?? "");
+  const unavailable = isUnavailableChat(selection.error);
+  const live = useLiveWorkbench(profile, !unavailable, refreshAccess);
+  const selected = unavailable ? undefined : selection.data?.thread;
   const project = access.grant.scope === "project";
   const targetId = access.grant.target_id;
   const coordinatorId =
     !project && access.target_role === "coordinator" ? targetId : "";
-  const coordinatorQuery = useThread(
-    coordinatorId,
-    undefined,
-    WORKER_REFRESH_MS,
-  );
+  const coordinatorQuery = useThread(coordinatorId);
   const coordinatorLive = useLiveThread(coordinatorId, true);
-  const coordinator = coordinatorQuery.data?.thread;
-  const selectedId = useMatch("/threads/:threadId")?.params.threadId;
-  const selection = useThread(selectedId ?? "");
-  const selected = isUnavailableChat(selection.error)
-    ? undefined
-    : selection.data?.thread;
+  const coordinator =
+    coordinatorLive.display.snapshot?.thread.thread ??
+    coordinatorQuery.data?.thread;
   const selectedWorker =
     coordinatorId && selected?.coordinator_thread_id === coordinatorId;
   const workers = useSharedThreads(access.grant.share_id, {
     coordinatorId,
     enabled: !!coordinatorId,
     count: coordinator?.unarchived_worker_count,
-    liveCount:
-      coordinatorLive.display.snapshot?.thread.thread.unarchived_worker_count,
   });
   const workerRows = useMemo(
     () => sharedThreadRows(workers.data?.pages),
@@ -597,33 +592,30 @@ function useSharedThreads(
     search = "",
     coordinatorId,
     count,
-    liveCount,
   }: {
     enabled: boolean;
     search?: string;
     coordinatorId?: string;
     count?: number | null;
-    liveCount?: number | null;
   },
 ) {
   const { client } = useTransport();
   const queries = useQueryClient();
-  const effectiveCount = liveCount ?? count;
-  const previousCount = useRef(effectiveCount);
+  const previousCount = useRef(count);
   useEffect(() => {
     const previous = previousCount.current;
-    previousCount.current = effectiveCount;
+    previousCount.current = count;
     if (
       coordinatorId &&
       previous != null &&
-      effectiveCount != null &&
-      previous !== effectiveCount
+      count != null &&
+      previous !== count
     )
       void queries.invalidateQueries(
         { queryKey: ["shared-threads", coordinatorId] },
         { cancelRefetch: false },
       );
-  }, [coordinatorId, effectiveCount, queries]);
+  }, [coordinatorId, count, queries]);
   return useInfiniteQuery({
     queryKey: ["shared-threads", coordinatorId || null, search],
     enabled,
@@ -744,13 +736,18 @@ function GuestCoordinatorEntry({
       : undefined;
   const hasWorkers =
     (thread.unarchived_worker_count ?? 0) > 0 || !!selectedWorkerId;
-  const [expanded, setExpanded] = useState(!!selectedWorkerId);
-  const lastAutoExpanded = useRef(selectedWorkerId);
+  const autoExpandId = hasWorkers
+    ? selected?.thread_id === ownerId
+      ? ownerId
+      : selectedWorkerId
+    : undefined;
+  const [expanded, setExpanded] = useState(!!autoExpandId);
+  const lastAutoExpanded = useRef(autoExpandId);
   useEffect(() => {
-    if (selectedWorkerId && selectedWorkerId !== lastAutoExpanded.current)
+    if (autoExpandId && autoExpandId !== lastAutoExpanded.current)
       setExpanded(true);
-    lastAutoExpanded.current = selectedWorkerId;
-  }, [selectedWorkerId]);
+    lastAutoExpanded.current = autoExpandId;
+  }, [autoExpandId]);
   if (!hasWorkers && expanded) setExpanded(false);
   const open = expanded && hasWorkers;
   const workers = useSharedThreads(shareId, {

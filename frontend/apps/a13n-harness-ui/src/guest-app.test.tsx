@@ -13,6 +13,7 @@ import { Realtime } from "./transport/realtime";
 
 const paths: string[] = [];
 const sockets: string[] = [];
+const closedSockets: string[] = [];
 let permission = "view";
 let scope = "thread";
 let targetRole = "ordinary";
@@ -51,6 +52,7 @@ function json(body: unknown, status = 200) {
 beforeEach(() => {
   paths.length = 0;
   sockets.length = 0;
+  closedSockets.length = 0;
   permission = "view";
   scope = "thread";
   targetRole = "ordinary";
@@ -100,10 +102,12 @@ beforeEach(() => {
     class {
       static OPEN = 1;
       readyState = 0;
-      constructor(url: URL) {
+      constructor(private readonly url: URL) {
         sockets.push(String(url));
       }
-      close() {}
+      close() {
+        closedSockets.push(String(this.url));
+      }
       send() {}
     },
   );
@@ -358,6 +362,7 @@ it("pins an archived worker opened directly and keeps a valid grant when the wor
   // The active grant is checked independently of the stale conversation.
   // Returning from history can reuse its fresh cache, so reload the guest tab.
   cleanup();
+  const closedBefore = closedSockets.length;
   const accessedBefore = paths.filter((path) =>
     path.endsWith("/access"),
   ).length;
@@ -369,8 +374,15 @@ it("pins an archived worker opened directly and keeps a valid grant when the wor
     ).toBeGreaterThan(accessedBefore + 1),
   );
   expect(screen.queryByText("This link is unavailable")).toBeNull();
+  expect(closedSockets.slice(closedBefore)).toEqual([
+    expect.stringContaining("/presence/connect"),
+  ]);
+  const openedBeforeReturn = sockets.length;
   fireEvent.click(screen.getByRole("link", { name: "Back to shared chat" }));
   await screen.findByText("View-only link - Following this chat live.");
+  expect(sockets.slice(openedBeforeReturn)).toEqual([
+    expect.stringContaining("/presence/connect"),
+  ]);
 });
 
 it("loads Project workers on disclosure and searches workers without the independent filter", async () => {
@@ -431,4 +443,10 @@ it("expands the selected worker's Project Coordinator and allows manual collapse
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(owner);
   expect(window.location.pathname).toBe("/share/share-one/threads/thread-one");
+  await screen.findByRole("link", { name: /Build sidebar/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("link", { name: /Build sidebar/ })).toBeNull();
 });
