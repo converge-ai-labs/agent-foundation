@@ -15,10 +15,12 @@ from a13n_harness.acp import AcpSessionRuntime, AcpSessionSetup
 from a13n_harness.context import AgentContext
 from a13n_harness_ui.acp_auth import AcpAuthRequest, acp_auth, auth_input_scope
 from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.acp_inputs import AcpInputs
 from a13n_harness_ui.acp_sessions import AcpOptionChange, AcpSessions, local_transport
 from a13n_harness_ui.configuration.models import AcpAgentResource
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
+from acp import schema
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import BinaryContent, TextContent
@@ -109,6 +111,36 @@ async def test_acp_auth_probe_and_browser_login(tmp_path: Path) -> None:
         assert (await acp_auth(resource, tmp_path, AcpAuthRequest(action="logout"), inputs)).state == "logout_completed"
     finally:
         await inputs.close()
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        (McpInputResponse(action="accept", content={}), "yes-id"),
+        (McpInputResponse(action="decline"), "no-id"),
+        (McpInputResponse(action="cancel"), None),
+    ],
+)
+async def test_binary_acp_permission_uses_form_actions(response: McpInputResponse, expected: str | None) -> None:
+    ready = asyncio.Event()
+
+    async def notify(_: str) -> None:
+        ready.set()
+
+    inputs = Inputs(notify)
+    permissions = AcpInputs(inputs, "thread", "external", lambda: None)
+    options = (
+        schema.PermissionOption(kind="reject_once", name="Deny", option_id="no-id"),
+        schema.PermissionOption(kind="allow_once", name="Allow", option_id="yes-id"),
+    )
+    async with asyncio.TaskGroup() as group:
+        answer = group.create_task(permissions.permission(schema.ToolCallUpdate(tool_call_id="call"), options))
+        async with asyncio.timeout(5):
+            await ready.wait()
+        (request,) = inputs.requests({"thread"})
+        assert request.schema_ == {"type": "object", "properties": {}}
+        await inputs.respond({"thread"}, request.request_id, response)
+    assert answer.result() == expected
 
 
 async def test_acp_turn_runs_in_harness_and_reuses_session(tmp_path: Path) -> None:

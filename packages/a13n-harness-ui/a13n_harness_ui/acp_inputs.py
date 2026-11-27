@@ -44,9 +44,21 @@ class AcpInputs:
     async def permission(self, call: schema.ToolCallUpdate, options: tuple[schema.PermissionOption, ...]) -> str | None:
         if not options:
             return None
+        message = (call.title or "External Agent is requesting permission")[:8192]
+        by_kind = {option.kind: option.option_id for option in options}
+        if len(options) == 2 and by_kind.keys() == {"allow_once", "reject_once"}:
+            result = await self.request(
+                ElicitRequestFormParams(message=message, requested_schema={"type": "object", "properties": {}}),
+                call.tool_call_id,
+            )
+            if result.action == "accept":
+                return by_kind["allow_once"]
+            if result.action == "decline":
+                return by_kind["reject_once"]
+            return None
         result = await self.request(
             ElicitRequestFormParams(
-                message=(call.title or "External Agent is requesting permission")[:8192],
+                message=message,
                 requested_schema={
                     "type": "object",
                     "properties": {
