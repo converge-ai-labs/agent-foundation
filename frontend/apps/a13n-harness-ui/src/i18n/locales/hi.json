@@ -1083,6 +1083,7 @@
   "Show more chats in {{name}}": "{{name}} में और चैट दिखाएँ",
   "Show fewer chats in {{name}}": "{{name}} में कम चैट दिखाएँ",
   "Restore {{title}}": "{{title}} वापस लाएँ",
+  "Delete {{title}}": "{{title}} हटाएँ",
   "Starred chat: {{title}}": "स्टार की गई चैट: {{title}}",
   "“{{title}}” and its subagent history will be deleted for everyone. This cannot be undone. Project files and other chats are kept.": "“{{title}}” और उसका Subagent इतिहास सभी के लिए मिटा दिया जाएगा। इसे पूर्ववत नहीं किया जा सकता। प्रोजेक्ट फ़ाइलें और अन्य चैट बनी रहेंगी।",
   "Chats with new results count_one": "नए परिणामों वाली {{count, number}} चैट",

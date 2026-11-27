@@ -1,10 +1,98 @@
 import { useTranslation } from "../i18n";
-import { useState } from "react";
+import { useState, useContext, type ReactNode } from "react";
 import { Button } from "a13n-ui";
 import { PageHeader, ErrorNotice, SearchField } from "../shell/ui";
 import { useThreads } from "./queries";
-import { ThreadRow } from "./thread-row";
+import { Link } from "react-router";
+import type { Schema } from "../transport/client";
+import { ComposerDrafts } from "./composer";
+import { DeleteThread, canDeleteThread } from "./delete-thread";
+import { conversationTitle } from "./local-input";
+import { useThreadArchive } from "./use-thread-archive";
 import styles from "./archived.module.css";
+
+function ThreadListItem({
+  thread,
+  title,
+  project,
+  actions,
+}: {
+  thread: Schema<"ThreadSummary">;
+  title: string;
+  project: string;
+  actions: ReactNode;
+}) {
+  return (
+    <div className={styles.item}>
+      <Link
+        className={styles.link}
+        to={`/threads/${encodeURIComponent(thread.thread_id)}`}
+      >
+        <strong title={title}>{title}</strong>
+        <small>{project}</small>
+      </Link>
+      <div className={styles.actions}>{actions}</div>
+    </div>
+  );
+}
+
+function ArchivedThreadItem({ row }: { row: Schema<"ThreadActivityView"> }) {
+  const { t } = useTranslation();
+  const { thread } = row;
+  const composers = useContext(ComposerDrafts);
+  const title = conversationTitle(
+    thread,
+    composers.get(thread.thread_id)?.localInputs,
+    t("Untitled chat"),
+  );
+  const restore = useThreadArchive(thread);
+  const [deleting, setDeleting] = useState(false);
+  const disabled =
+    thread.root_activity.state !== "inactive" || restore.isPending;
+  return (
+    <div className={styles.row}>
+      <ThreadListItem
+        thread={thread}
+        title={title}
+        project={
+          row.project_name ??
+          (thread.configuration.project_id
+            ? t("Unavailable project")
+            : t("Without a project"))
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              size="xs"
+              aria-label={t("Restore {{title}}", { title })}
+              loading={restore.isPending}
+              disabled={disabled}
+              onClick={() => restore.mutate(false)}
+            >
+              {t("Restore")}
+            </Button>
+            {canDeleteThread(thread) && (
+              <Button
+                variant="destructive-outline"
+                size="xs"
+                aria-label={t("Delete {{title}}", { title })}
+                disabled={disabled}
+                onClick={() => setDeleting(true)}
+              >
+                {t("Delete")}
+              </Button>
+            )}
+          </>
+        }
+      />
+      <ErrorNotice error={restore.error} />
+      {deleting && (
+        <DeleteThread thread={thread} close={() => setDeleting(false)} />
+      )}
+    </div>
+  );
+}
 
 export function ArchivedPage() {
   const { t } = useTranslation();
@@ -50,9 +138,7 @@ export function ArchivedPage() {
       )}
       <div className={styles.rows}>
         {rows.map((row) => (
-          <div key={row.thread.thread_id} className={styles.row}>
-            <ThreadRow row={row} showRestore showProject />
-          </div>
+          <ArchivedThreadItem key={row.thread.thread_id} row={row} />
         ))}
       </div>
       {list.hasNextPage && (
