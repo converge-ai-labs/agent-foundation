@@ -433,11 +433,17 @@ class ThreadRepository:
             await session.flush()
             return _thread_value(record, copied_configuration)
 
-    async def promote_coordinator(self, thread_id: str) -> None:
+    async def promote_coordinator(
+        self,
+        thread_id: str,
+        *,
+        clear_acp_state: bool = False,
+        acp_state_json: str | None = None,
+    ) -> bool:
         """Atomically establish a one-way role; worker ownership is never inferred."""
         async with transaction(self._sessions) as session:
             if await session.get(CoordinatorRecord, thread_id) is not None:
-                return
+                return False
             thread = await session.get(ThreadRecord, thread_id)
             configuration = await session.get(ThreadConfigurationRecord, thread_id)
             worker = await session.get(CoordinatorWorkerRecord, thread_id)
@@ -450,6 +456,9 @@ class ThreadRepository:
             if thread.archived:
                 raise StoreConflictError("Restore the Thread before converting it.", code="thread_archived")
             session.add(CoordinatorRecord(thread_id=thread_id))
+            if clear_acp_state:
+                thread.acp_state_json = acp_state_json
+            return True
 
     async def coordinators(self, thread_ids: tuple[str, ...] | None = None) -> dict[str, Coordinator]:
         if thread_ids is not None and not thread_ids:

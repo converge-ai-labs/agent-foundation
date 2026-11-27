@@ -368,6 +368,17 @@ for line in sys.stdin.buffer:
             text(json.dumps(SYSTEM_PROMPT))
             send(id=ident, result={"stopReason": "end_turn"})
             continue
+        if MODE == "ui" and any(block.strip() == "echo-tools" for block in blocks):
+            text(
+                json.dumps(
+                    {
+                        "session": SESSION,
+                        "tools": sorted(entry["name"] for entry in mcp("tools/list")["tools"]),
+                    }
+                )
+            )
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
         if MODE == "ui" and message == "finish-steering-goal":
             text("Steered work complete.\n[GOAL_COMPLETE]")
             send(id=ident, result={"stopReason": "end_turn"})
