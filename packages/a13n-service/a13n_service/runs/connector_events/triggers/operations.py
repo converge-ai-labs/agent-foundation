@@ -79,6 +79,7 @@ async def perform(runtime: Runtime, trigger_id: str) -> None:
         provider_row = await session.get_one(ConnectorProviderRow, provider_id)
         webhook_id = provider_row.event_webhook_id
         url = (provider_row.event_config or {}).get("url")
+    creation_rejected = False
     try:
         async with open_events(runtime, provider) as adapter:
             webhook = await adapter.webhook()
@@ -102,7 +103,11 @@ async def perform(runtime: Runtime, trigger_id: str) -> None:
                     row.operation_due_at = await now(session) + timedelta(
                         seconds=2 * runtime.settings.providers.tool_call_seconds
                     )
-                remote_id = await adapter.upsert(definition, account_id, user_id, parameters)
+                try:
+                    remote_id = await adapter.upsert(definition, account_id, user_id, parameters)
+                except ConnectorProviderError as error:
+                    creation_rejected = not error.outcome_unknown
+                    raise
             elif remote_id is not None:
                 await adapter.transition(remote_id, kind or "paused")
         async with transaction(runtime.storage) as session:
@@ -130,14 +135,20 @@ async def perform(runtime: Runtime, trigger_id: str) -> None:
             if row is None or row.operation_id != claim:
                 return
             if row.operation_kind == "create_unconfirmed":
-                reason = "subscription_creation_unconfirmed"
+                if creation_rejected:
+                    # A definite rejection had no remote effect; the next attempt must
+                    # repeat the ownership precheck before issuing another create.
+                    row.operation_kind = "create"
+                else:
+                    reason = "subscription_creation_unconfirmed"
             row.failure = reason
-            row.operation_due_at = await now(session) + timedelta(seconds=min(300, 2 ** min(attempt, 8)))
-            if reason in {
-                "subscription_owned_elsewhere",
-                "subscription_creation_unconfirmed",
-                "webhook_identity_changed",
-            }:
+            delay: float = min(300, 2 ** min(attempt, 8))
+            if isinstance(error, ConnectorProviderError) and error.retry_after_seconds is not None:
+                delay = max(delay, error.retry_after_seconds)
+            row.operation_due_at = await now(session) + timedelta(seconds=delay)
+            if reason == "subscription_creation_unconfirmed" or (
+                isinstance(error, ConnectorProviderError) and not error.retryable
+            ):
                 row.operation_attempts = runtime.settings.connector_events.max_attempts
                 row.operation_due_at = None
         logger.warning("Connector subscription operation failed", extra={"trigger_id": trigger_id, "reason": reason})

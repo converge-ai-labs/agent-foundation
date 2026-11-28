@@ -45,7 +45,8 @@ class CredentialAccess:
             return
         request = Request(scope)
         # MCP authenticates at its own mount after removing browser cookies. Third-party App webhooks verify
-        # their own sender credentials and signatures under `/api/v1/app-webhooks/`. Login sessions continue to
+        # their own sender credentials and signatures under `/api/v1/app-webhooks/`; the exact Connector
+        # callback POST likewise uses its Provider signature instead of Service credentials. Login sessions continue to
         # authenticate through route dependencies, including their Origin/CSRF checks.
         if (
             "authorization" not in request.headers

@@ -161,3 +161,27 @@ def test_signature_authenticates_exact_bytes_and_bounded_timestamp(mutation):
         headers["webhook-signature"] = "v2," + signature
     with pytest.raises(ConnectorProviderError, match="invalid_event_signature_or_payload"):
         verify_event(raw, headers, "literal-secret", now=now)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status,retryable,unknown", [(429, True, False), (400, False, False), (503, True, True)])
+async def test_creation_errors_distinguish_definite_rejection_from_unknown_outcome(status, retryable, unknown):
+    writes = []
+
+    def respond(request):
+        if request.method == "GET":
+            return httpx2.Response(200, json=DEFINITION)
+        writes.append(request)
+        return httpx2.Response(status, headers={"retry-after": "30"}, json={"error": "fixture"})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        events = ComposioEvents(ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=65536), "key")
+        definition = await events.event_type("github", "GITHUB_ISSUE")
+        with pytest.raises(ConnectorProviderError) as rejected:
+            await events.upsert(definition, "ca_exact", "conn_exact", {})
+    assert len(writes) == 1
+    assert rejected.value.http_status == status
+    assert rejected.value.retryable is retryable
+    assert rejected.value.outcome_unknown is unknown
+    if status == 429:
+        assert rejected.value.retry_after_seconds == 30

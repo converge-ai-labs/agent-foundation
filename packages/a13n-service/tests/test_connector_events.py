@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness.providers.connector.composio.events import ComposioEvents
+from a13n_harness.providers.connector.contracts import ConnectorProviderError
 from a13n_harness.providers.connector.events import Event as SourceEvent
 from a13n_harness.providers.connector.events import EventType, EventWebhook
 from a13n_service.infra.db import now, short_session, transaction
@@ -254,7 +255,10 @@ async def test_inbox_failure_rolls_back_thread_and_event_receipt(source, runs_ki
         assert (await db.get_one(EventRow, event_id)).state == "submitted"
 
 
-async def test_http_signature_rejects_tampering_stale_timestamp_and_bearer_confusion(source):
+@pytest.mark.parametrize("credential", ["unrelated", "run"])
+async def test_http_signature_rejects_tampering_stale_timestamp_and_bearer_confusion(
+    source, scripted_model, runs_kit, credential
+):
     trigger = await create(source)
     await perform(source.service.runtime, trigger["id"])
     payload = {
@@ -274,20 +278,33 @@ async def test_http_signature_rejects_tampering_stale_timestamp_and_bearer_confu
     signature = base64.b64encode(
         hmac.digest(SECRET.encode(), b"msg_fixture." + timestamp.encode() + b"." + raw, "sha256")
     ).decode()
+    token = "this-is-not-a-service-key"
+    if credential == "run":
+        from a13n_service.infra.platform import PLATFORM_GROUPS
+        from a13n_service.runs.platform_tokens import issue
+
+        from .test_platform_tools import lease_for
+
+        lease, _, _ = await lease_for(source.service, scripted_model, runs_kit)
+        token = await issue(source.service.runtime, lease, frozenset(PLATFORM_GROUPS))
     headers = {
         "webhook-id": "msg_fixture",
         "webhook-timestamp": timestamp,
         "webhook-signature": "v1," + signature,
-        "Authorization": "Bearer this-is-not-a-service-key",
+        "Authorization": "Bearer " + token,
     }
     path = source.service.api + "/connector-webhooks/" + source.provider_id
+    unsigned = await source.service.client.post(path, content=raw, headers={"Authorization": "Bearer " + token})
+    assert unsigned.status_code == 401, unsigned.text
+    async with short_session(source.service.runtime.storage) as db:
+        assert await db.scalar(select(func.count()).select_from(EventRow)) == 0
     result = await source.service.client.post(path, content=raw, headers=headers)
     assert result.status_code == 204, result.text
     assert (await source.service.client.post(path, content=raw + b" ", headers=headers)).status_code == 401
     assert (
         await source.service.client.post(path, content=raw, headers={**headers, "webhook-timestamp": "1"})
     ).status_code == 401
-    assert (await source.service.client.get(path, headers=headers)).status_code == 401
+    assert (await source.service.client.get(path, headers=headers)).status_code == (403 if credential == "run" else 401)
 
 
 async def test_payload_failure_is_saved_and_not_submitted(source):
@@ -327,11 +344,19 @@ async def test_create_replay_and_duplicate_subscription(source):
     assert response.status_code == 409, response.text
 
 
-async def test_unknown_upstream_creation_cannot_adopt_a_matching_subscription(source, monkeypatch):
+@pytest.mark.parametrize(
+    "error",
+    [
+        TimeoutError(),
+        ConnectorProviderError("provider_unavailable", retryable=True, outcome_unknown=True, http_status=503),
+        ValueError("invalid creation response"),
+    ],
+)
+async def test_unknown_upstream_creation_cannot_adopt_a_matching_subscription(source, monkeypatch, error):
     from a13n_harness.providers.connector.events import EventInstance
 
     trigger = await create(source)
-    unknown = AsyncMock(side_effect=TimeoutError)
+    unknown = AsyncMock(side_effect=error)
     monkeypatch.setattr(ComposioEvents, "upsert", unknown)
     await perform(source.service.runtime, trigger["id"])
     monkeypatch.setattr(
@@ -784,3 +809,106 @@ async def test_webhook_final_attempt_must_expire_before_manual_recovery(source, 
     )
     assert recovered.failure is None and recovered.operation is None
     assert remote.await_args.kwargs == {"rotate": False}
+
+
+@pytest.mark.parametrize("retryable,manual", [(True, False), (True, True), (False, True)])
+async def test_definite_creation_rejection_preserves_safe_recovery(source, monkeypatch, retryable, manual):
+    runtime = source.service.runtime
+    trigger = await create(source)
+    rejected = ConnectorProviderError(
+        "rate_limited" if retryable else "provider_rejected",
+        retryable=retryable,
+        outcome_unknown=False,
+        retry_after_seconds=30 if retryable else None,
+        http_status=429 if retryable else 400,
+    )
+    upsert = AsyncMock(side_effect=[rejected, "ti_fixture"])
+    monkeypatch.setattr(ComposioEvents, "upsert", upsert)
+    await perform(runtime, trigger["id"])
+    path = source.service.api + "/connector-triggers/" + trigger["id"]
+    current = await source.service.client.get(path)
+    assert current.json()["failure"] == rejected.code
+    assert current.json()["operation_kind"] == "create" and current.json()["retryable"]
+    async with short_session(runtime.storage) as db:
+        row = await db.get_one(TriggerRow, trigger["id"])
+        assert row.remote_id is None
+        if retryable:
+            assert row.operation_attempts == 1
+            assert row.operation_due_at >= row.updated_at + timedelta(seconds=29)
+        else:
+            assert row.operation_attempts == runtime.settings.connector_events.max_attempts
+            assert row.operation_due_at is None
+    await perform(runtime, trigger["id"])
+    assert upsert.await_count == 1
+    if manual:
+        recovered = await source.service.client.post(path + "/reconcile", headers={"If-Match": current.headers["etag"]})
+        assert recovered.status_code == 200, recovered.text
+        assert recovered.json()["operation_kind"] == "create"
+    else:
+        async with transaction(runtime.storage) as db:
+            row = await db.get_one(TriggerRow, trigger["id"])
+            row.operation_due_at = await now(db)
+    await perform(runtime, trigger["id"])
+    current = await source.service.client.get(path)
+    assert current.json()["remote_id"] == "ti_fixture" and current.json()["operation_kind"] is None
+    assert upsert.await_count == 2 and ComposioEvents.instances.await_count == 2
+
+
+async def test_creation_rejection_retry_still_checks_for_another_owner(source, monkeypatch):
+    from a13n_harness.providers.connector.events import EventInstance
+
+    trigger = await create(source)
+    runtime = source.service.runtime
+    monkeypatch.setattr(
+        ComposioEvents, "upsert", AsyncMock(side_effect=ConnectorProviderError("rate_limited", retryable=True))
+    )
+    await perform(runtime, trigger["id"])
+    monkeypatch.setattr(
+        ComposioEvents,
+        "instances",
+        AsyncMock(
+            return_value=[
+                EventInstance(
+                    id="ti_other_owner",
+                    account_id="ca_fixture",
+                    user_id=source.connection_id,
+                    event_type=DEFINITION.key,
+                    config={"repo": "example"},
+                    disabled=True,
+                    version=DEFINITION.version,
+                )
+            ]
+        ),
+    )
+    async with transaction(runtime.storage) as db:
+        row = await db.get_one(TriggerRow, trigger["id"])
+        row.operation_due_at = await now(db)
+    await perform(runtime, trigger["id"])
+    async with short_session(runtime.storage) as db:
+        row = await db.get_one(TriggerRow, trigger["id"])
+        assert row.remote_id is None and row.failure == "subscription_owned_elsewhere"
+    assert ComposioEvents.upsert.await_count == 1
+    ComposioEvents.transition.assert_not_awaited()
+
+
+async def test_error_after_acknowledged_creation_cannot_make_it_repeatable(source, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from a13n_service.runs.connector_events.triggers import operations
+
+    original = operations.open_events
+
+    @asynccontextmanager
+    async def fail_on_close(*args):
+        async with original(*args) as adapter:
+            yield adapter
+        raise ConnectorProviderError("rate_limited", retryable=True, outcome_unknown=False)
+
+    monkeypatch.setattr(operations, "open_events", fail_on_close)
+    trigger = await create(source)
+    await perform(source.service.runtime, trigger["id"])
+    async with short_session(source.service.runtime.storage) as db:
+        row = await db.get_one(TriggerRow, trigger["id"])
+        assert row.operation_kind == "create_unconfirmed"
+        assert row.failure == "subscription_creation_unconfirmed" and row.operation_due_at is None
+    assert ComposioEvents.upsert.await_count == 1
