@@ -2,6 +2,7 @@ import type { Extension } from "mdast-util-from-markdown";
 import type { Processor } from "unified";
 import type {} from "remark-parse";
 
+export { remarkCitations } from "./remark-citations";
 export { remarkLatex } from "./remark-latex";
 
 const closedDiagram: Extension = {

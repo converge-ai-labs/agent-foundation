@@ -34,7 +34,7 @@ def _wizard(provider="codex", model="gpt-5.6-sol"):
 
 @pytest.mark.parametrize(
     "provider,model,expected",
-    [("codex", "gpt-5.6-sol", {"web_search"}), ("grok", "grok-4.6", {"web_search"})],
+    [("codex", "gpt-5.6-sol", {"web_search"}), ("grok", "grok-4.6", {"web_search", "citations"})],
 )
 def test_subscription_multiselect_defaults_and_explicit_clear(provider, model, expected):
     wizard = _wizard(provider, model)
@@ -323,3 +323,20 @@ async def test_custom_api_setup_and_existing_model_agent_publish_selected_search
             assert caps["NativeTool"]["kind"] == "web_search"
             assert caps["native_image_generation"] == {}
         assert all(file.read_bytes() == content for file, content in original.items())
+
+
+@pytest.mark.parametrize(
+    "route", ["anthropic:claude-sonnet-4-5", "bedrock:anthropic.claude-sonnet-4-5", "xai:grok-4.6"]
+)
+def test_citation_choice_materializes_separately_from_native_tools(route):
+    from a13n_harness_ui.tool_presets import selected_tool_capabilities
+
+    assert "citations" in {choice.key for choice in tool_choices(route)}
+    capabilities = selected_tool_capabilities(("citations", "web_fetch"))
+    assert capabilities[1:] == [
+        {"capability": "Citations", "configuration": {}},
+        {"capability": "NativeTool", "configuration": {"kind": "web_fetch", "enable_citations": True}},
+    ]
+    assert selected_tool_capabilities(("web_fetch",), parameters={"web_fetch": {"enable_citations": False}})[1][
+        "configuration"
+    ] == {"kind": "web_fetch", "enable_citations": False}

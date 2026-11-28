@@ -1,4 +1,8 @@
 {
+  "Source unavailable": "来源不可用",
+  "Cited document": "引用文档",
+  "Source {{number}}: {{name}}": "来源 {{number}}：{{name}}",
+  "Sources ({{count}})": "来源（{{count}}）",
   "Server instructions": "服务器指令",
   "System (default)": "系统指令（默认）",
   "User context": "用户上下文",
@@ -2189,6 +2193,8 @@
   "Requires provider stores; no local uploads. Google: deselect other native tools first.": "需要提供商存储，不支持本地上传。使用 Google 时请先取消选择其他原生工具。",
   "Advisor - native": "顾问 - 原生",
   "Requires an advisor model ID; additional model usage is billed by the provider.": "需要顾问模型 ID；提供商会对额外的模型用量收费。",
+  "Citations": "引用来源",
+  "Ask the provider for reply citations.": "请求提供商返回回复引用来源。",
   "Dynamic environment": "动态环境",
   "Compaction": "上下文压缩",
   "File context": "文件上下文",

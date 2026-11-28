@@ -1,3 +1,10 @@
+import {
+  isCitation,
+  mergeCitations,
+  readCitations,
+  type Citation,
+} from "./citations";
+
 export type ToolProgress = {
   progress: number | null;
   total: number | null;
@@ -99,6 +106,7 @@ export type ItemRef = Pick<DisplayItem, "id" | "kind" | "state"> & {
   response_group?: string | null;
   failure?: Record<string, unknown> | null;
   memory_sources?: Record<string, unknown>[] | null;
+  citations?: Citation[] | null;
 };
 export interface DisplayEvent {
   run_id: string;
@@ -120,7 +128,9 @@ export function isItemRef(value: unknown): value is ItemRef {
     (value.failure == null || record(value.failure)) &&
     (value.memory_sources == null ||
       (Array.isArray(value.memory_sources) &&
-        value.memory_sources.every(record)))
+        value.memory_sources.every(record))) &&
+    (value.citations == null ||
+      (Array.isArray(value.citations) && value.citations.every(isCitation)))
   );
 }
 
@@ -313,6 +323,33 @@ export class DisplayNormalizer {
       }
     }
     const ref = delta.item;
+    if (name === "a13n.text_citations") {
+      const item = ref
+        ? items.get(ref.id)
+        : [...items.values()].find(
+            (item) =>
+              item.kind === "text_message" &&
+              item.content.messageId === source.message_id &&
+              (item.content.subagentRunId || "root") === scope,
+          );
+      if (!item || item.content.role !== "assistant") return;
+      const previous = readCitations(item.content.citations) ?? [];
+      if (!ref?.citations && !Array.isArray(source.citations)) return;
+      const supplied = readCitations(source.citations) ?? [];
+      const citations =
+        ref?.citations ??
+        mergeCitations(
+          source.replace === true ? supplied : [...previous, ...supplied],
+          String(item.content.text ?? ""),
+        );
+      if (JSON.stringify(citations) === JSON.stringify(previous)) return;
+      items.set(item.id, {
+        ...item,
+        last_stream_id: `${delta.attempt}-${delta.sequence}`,
+        content: { ...item.content, citations: structuredClone(citations) },
+      });
+      return;
+    }
     if (!ref) return;
     const previous = items.get(ref.id);
     if (name === "a13n.harness.tool_progress") {
@@ -480,6 +517,8 @@ export class DisplayNormalizer {
     if (ref.failure) content.failure = structuredClone(ref.failure);
     if (ref.memory_sources != null)
       content.memory_sources = structuredClone(ref.memory_sources);
+    if (ref.citations != null)
+      content.citations = structuredClone(ref.citations);
     // A suffix without START is useful, but END cannot turn missing text/JSON into a complete value.
     if (
       previous?.content.incomplete ||

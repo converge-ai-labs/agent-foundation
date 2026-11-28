@@ -1,4 +1,8 @@
 {
+  "Source unavailable": "Source unavailable",
+  "Cited document": "Cited document",
+  "Source {{number}}: {{name}}": "Source {{number}}: {{name}}",
+  "Sources ({{count}})": "Sources ({{count}})",
   "Server instructions": "Server instructions",
   "System (default)": "System (default)",
   "User context": "User context",

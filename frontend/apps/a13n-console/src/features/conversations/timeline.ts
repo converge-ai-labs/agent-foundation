@@ -1,5 +1,6 @@
 import { isRealtimeRun } from "./request";
 import type { ContentPart } from "@ag-ui/core";
+import type { Citation } from "a13n-ui/citations";
 import { structuredPatch } from "diff";
 import { sumCosts } from "../../shared/cost";
 import { isRecord } from "../../service-client";
@@ -96,6 +97,9 @@ export interface ContentEntry extends EntryBase {
   /** `hidden` is input the model read that its producer hid from Chat. */
   kind: "reasoning" | "reply" | "user_input" | "guidance" | "hidden";
   text: string;
+  citations?: readonly Citation[];
+  responseGroup?: string;
+  textPartial?: boolean;
   speech?: boolean;
   /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
   steeringSource: string | null;
@@ -490,7 +494,14 @@ function contentEntry(
       : null;
   if (item.kind === "reasoning_message") return { kind: "reasoning", ...base };
   if (item.kind !== "text_message") return null;
-  if (item.role === "assistant") return { kind: "reply", ...base };
+  if (item.role === "assistant")
+    return {
+      kind: "reply",
+      ...base,
+      citations: item.citations,
+      responseGroup: item.responseGroup,
+      textPartial: item.textPartial,
+    };
   if (item.role !== "user") return null;
   const steering = item.steeringSource || item.inputSource === "steering";
   if (realtime && !steering)

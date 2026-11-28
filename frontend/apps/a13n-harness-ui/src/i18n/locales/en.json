@@ -1,4 +1,8 @@
 {
+  "Source unavailable": "Source unavailable",
+  "Cited document": "Cited document",
+  "Source {{number}}: {{name}}": "Source {{number}}: {{name}}",
+  "Sources ({{count}})": "Sources ({{count}})",
   "Server instructions": "Server instructions",
   "System (default)": "System (default)",
   "User context": "User context",
@@ -2204,6 +2208,8 @@
   "Requires provider stores; no local uploads. Google: deselect other native tools first.": "Requires provider stores; no local uploads. Google: deselect other native tools first.",
   "Advisor - native": "Advisor - native",
   "Requires an advisor model ID; additional model usage is billed by the provider.": "Requires an advisor model ID; additional model usage is billed by the provider.",
+  "Citations": "Citations",
+  "Ask the provider for reply citations.": "Ask the provider for reply citations.",
   "Dynamic environment": "Dynamic environment",
   "Compaction": "Compaction",
   "File context": "File context",

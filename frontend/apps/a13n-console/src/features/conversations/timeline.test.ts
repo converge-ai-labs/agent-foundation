@@ -653,3 +653,33 @@ it("keeps typed and spoken realtime turns distinct from steering", () => {
     expect.objectContaining({ kind: "user_input", text: "Another typed turn" }),
   ]);
 });
+
+it("groups adjacent source-bearing replies by response and preserves later request boundaries", () => {
+  const entries = timeline(
+    message("first", "assistant", { text: "🙂 Intro", responseGroup: "one" }),
+    message("claim", "assistant", {
+      text: " claim",
+      responseGroup: "one",
+      citations: [
+        {
+          anchor: { kind: "content", start: 1, end: 6 },
+          sources: [{ kind: "web", url: "https://example.com" }],
+        },
+      ],
+    }),
+    message("later", "assistant", {
+      text: "Later claim",
+      responseGroup: "two",
+    }),
+  ).entries;
+  expect(transcriptBlocks(entries)).toMatchObject([
+    {
+      kind: "message",
+      entry: {
+        text: "🙂 Intro claim",
+        citations: [{ anchor: { start: 8, end: 13 } }],
+      },
+    },
+    { kind: "message", entry: { text: "Later claim" } },
+  ]);
+});

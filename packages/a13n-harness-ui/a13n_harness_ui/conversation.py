@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from typing import Literal
 
 from a13n_harness import HarnessEvent, HarnessExtensionEvent, HarnessRunResult
 from a13n_harness.content import ContentItem, ContentMetadata, request_input_content
 from a13n_harness.events import InputMediaEvent, InputTextEvent
+from a13n_stream_protocol.citations import UNRESOLVED_CITATION_PATTERN
 from a13n_stream_protocol.messages import project_input_content
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import (
@@ -22,6 +24,10 @@ from pydantic_ai.messages import (
 from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 
 EXCERPT_LIMIT = 2048
+TRANSCRIPT_TEXT_LIMIT = 64 * 1024
+TRANSCRIPT_TRUNCATION = "\n...[content truncated]"
+TRANSCRIPT_PREFIX_LIMIT = TRANSCRIPT_TEXT_LIMIT - len(TRANSCRIPT_TRUNCATION)
+_UNRESOLVED_CITATION = re.compile(UNRESOLVED_CITATION_PATTERN)
 
 
 class ConversationExcerpt(BaseModel):
@@ -39,7 +45,13 @@ def excerpt_text(text: str, limit: int = EXCERPT_LIMIT) -> str:
     # certain. A bounded preview must not scan a multi-megabyte tool answer.
     characters: list[str] = []
     pending_space = False
-    for char in text:
+    skip_until = 0
+    for index, char in enumerate(text):
+        if index < skip_until:
+            continue
+        if char == "\ue200" and (marker := _UNRESOLVED_CITATION.match(text, index)):
+            skip_until = marker.end()
+            continue
         if char.isspace():
             pending_space = bool(characters)
         elif char.isprintable():

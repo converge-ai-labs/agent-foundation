@@ -566,3 +566,74 @@ async def test_tail_reuse_compares_final_json_and_still_writes_pages(runtime, te
     assert paged.tail == reused.tail and len(paged.pages) == 1
     page = await checkpoints.load_page(runtime.objects, paged.pages[0])
     assert page.items[0].id == original.id and page.refs == first.tail.refs
+
+
+async def test_post_end_reply_citations_survive_tail_restore_and_page_retirement(runtime, tenant) -> None:
+    lease = Lease("run_cited", "rat_cited", "thr_cited", tenant.organization_id, tenant.workspace_id, 1, "w", "t")
+    producer = DisplayFold(lease.run_id, Tail(), attempt=1, page_items=1, page_bytes=1024)
+
+    def lifecycle(kind, index):
+        return {
+            "type": "CUSTOM",
+            "name": "a13n.harness.lifecycle",
+            "value": {"event": {"payload": {"type": f"model_request_{kind}", "request_index": index}}},
+        }
+
+    producer.fold(
+        [
+            lifecycle("started", 0),
+            {"type": "TEXT_MESSAGE_START", "messageId": "m", "role": "assistant", "timestamp": 10},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "m", "delta": "🙂 Verified answer", "timestamp": 20},
+            lifecycle("started", 1),  # Steering may announce the next request before the previous part ends.
+            {"type": "TEXT_MESSAGE_END", "messageId": "m", "timestamp": 30},
+        ]
+    )
+    cut = producer.snapshot()
+    [before] = [item for item in cut.tail.items if item.kind == "text_message"]
+    assert before.state == "completed" and all(item.id != before.id for page in cut.pages for item in page.items)
+    published = await checkpoints.publish_display(runtime, lease, cut)
+    tail = await checkpoints.load_tail(runtime.objects, published.tail, hydrate=True)
+    resumed = DisplayFold(lease.run_id, tail, attempt=1, page_items=1, page_bytes=1024)
+    [delta] = resumed.fold(
+        [
+            {
+                "type": "CUSTOM",
+                "name": "a13n.text_citations",
+                "value": {
+                    "event": {
+                        "message_id": "m",
+                        "replace": True,
+                        "citations": [
+                            {
+                                "anchor": {"kind": "content", "start": 2, "end": 10},
+                                "sources": [
+                                    {
+                                        "kind": "document",
+                                        "document_id": str(i),
+                                        "excerpts": ["🙂" * 512] * 2,
+                                    }
+                                ],
+                            }
+                            for i in range(40)
+                        ],
+                    }
+                },
+            }
+        ]
+    )
+    assert delta.item is not None and delta.item.id == before.id and len(delta.item.citations) == 5
+    assert before.id in {item.id for item in resumed.snapshot().tail.items}
+    resumed.fold([lifecycle("completed", 0)])
+    settled = resumed.snapshot()
+    assert before.id not in {item.id for item in settled.tail.items}
+    [page_index] = [
+        index for index, page in enumerate(settled.pages) if any(item.id == before.id for item in page.items)
+    ]
+    persisted = await checkpoints.publish_display(runtime, lease, settled)
+    page = await checkpoints.load_page(runtime.objects, persisted.pages[page_index])
+    [stored] = page.items
+    assert stored.id == before.id and stored.ordinal == before.ordinal
+    assert (stored.started_at, stored.ended_at) == (before.started_at, before.ended_at)
+    assert len(stored.content["citations"]) == 5 and "citations" not in stored.content_refs
+    resumed.committed(settled)
+    assert before.id not in resumed.items

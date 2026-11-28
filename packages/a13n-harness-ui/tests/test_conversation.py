@@ -141,3 +141,9 @@ def test_multipart_input_groups_match_checkpoint_excerpt_and_text_wins_over_atta
         collector.observe(event(observation))
     assert collector.value.first_input == "Explain this image"
     assert collector.value.latest_input == "Next question"
+
+
+def test_excerpt_skips_unresolved_web_and_file_markers_before_counting_visible_characters():
+    answer = "First\ue200cite\ue202turn0view0\ue201 second\ue200filecite\ue202file2\ue201 third"
+    assert excerpt_text(answer, 13) == "First second…"
+    assert excerpt_text(answer) == "First second third"

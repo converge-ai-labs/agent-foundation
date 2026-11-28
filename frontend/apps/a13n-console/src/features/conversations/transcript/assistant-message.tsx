@@ -1,4 +1,5 @@
 import { LogoAnimation } from "a13n-ui";
+import { formatCitedCopyText, type Citation } from "a13n-ui/citations";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../../../shared/identity";
@@ -112,9 +113,18 @@ export function AgentTurn({
   );
 }
 
-function renderReply(value: unknown, previewHtml: boolean) {
+function renderReply(
+  value: unknown,
+  previewHtml: boolean,
+  citations?: readonly Citation[],
+) {
   return typeof value === "string" ? (
-    <MarkdownContent text={value} agentReply previewHtml={previewHtml} />
+    <MarkdownContent
+      text={value}
+      citations={citations}
+      agentReply
+      previewHtml={previewHtml}
+    />
   ) : (
     <JsonView value={value} />
   );
@@ -136,7 +146,13 @@ function AgentMessage({ entry }: { entry: ContentEntry }) {
           field="text"
           value={entry.text}
           renderValue={(value, partial) =>
-            renderReply(value, !streaming && !partial)
+            renderReply(value, !streaming && !partial, entry.citations)
+          }
+          copyText={(text) =>
+            formatCitedCopyText(
+              { text, citations: entry.citations },
+              `[${t("Source unavailable")}]`,
+            )
           }
         />
       ) : (
@@ -155,7 +171,13 @@ export function CopyReply({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
   // A reply kept in storage is read whole from its own view, never from a preview.
   if (useStoredReference(entry.id, "text")) return null;
-  return <CopyButton value={entry.text} iconOnly copyLabel={t("Copy reply")} />;
+  return (
+    <CopyButton
+      value={formatCitedCopyText(entry, `[${t("Source unavailable")}]`)}
+      iconOnly
+      copyLabel={t("Copy reply")}
+    />
+  );
 }
 
 /** The agent is still moving: the mark turns in place of the next step. */

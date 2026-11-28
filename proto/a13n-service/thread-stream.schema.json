@@ -37,6 +37,84 @@
       "title": "Changed",
       "type": "object"
     },
+    "Citation": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CitationAnchor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/CitationSource"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
+    "CitationAnchor": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode code-point range in the item's text.",
+      "properties": {
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "content",
+            "marker"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "start",
+        "end"
+      ],
+      "title": "CitationAnchor",
+      "type": "object"
+    },
+    "CitationSource": {
+      "discriminator": {
+        "mapping": {
+          "document": "#/$defs/DocumentCitationSource",
+          "web": "#/$defs/WebCitationSource"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/WebCitationSource"
+        },
+        {
+          "$ref": "#/$defs/DocumentCitationSource"
+        }
+      ]
+    },
     "Delta": {
       "description": "One raw AG-UI event, sequenced by the producer and correlated to its display item.",
       "properties": {
@@ -76,6 +154,55 @@
         "item"
       ],
       "title": "Delta",
+      "type": "object"
+    },
+    "DocumentCitationSource": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Id"
+        },
+        "excerpts": {
+          "default": [],
+          "items": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "maxItems": 2,
+          "title": "Excerpts",
+          "type": "array"
+        },
+        "kind": {
+          "const": "document",
+          "default": "document",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "title": "DocumentCitationSource",
       "type": "object"
     },
     "FileSource": {
@@ -147,6 +274,21 @@
     "ItemRef": {
       "description": "The item a live event changed, and its state after the event.",
       "properties": {
+        "citations": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Citation"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Citations"
+        },
         "failure": {
           "anyOf": [
             {
@@ -346,6 +488,51 @@
         "run_id"
       ],
       "title": "RunSignal",
+      "type": "object"
+    },
+    "WebCitationSource": {
+      "additionalProperties": false,
+      "properties": {
+        "excerpts": {
+          "default": [],
+          "items": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "maxItems": 2,
+          "title": "Excerpts",
+          "type": "array"
+        },
+        "kind": {
+          "const": "web",
+          "default": "web",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "WebCitationSource",
       "type": "object"
     }
   },

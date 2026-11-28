@@ -1,4 +1,8 @@
 {
+  "Source unavailable": "स्रोत उपलब्ध नहीं है",
+  "Cited document": "उद्धृत दस्तावेज़",
+  "Source {{number}}: {{name}}": "स्रोत {{number}}: {{name}}",
+  "Sources ({{count}})": "स्रोत ({{count}})",
   "Server instructions": "सर्वर के निर्देश",
   "System (default)": "सिस्टम (डिफ़ॉल्ट)",
   "User context": "उपयोगकर्ता संदर्भ",

@@ -257,3 +257,35 @@ async def test_background_input_reads_latest_matching_tool_call() -> None:
     value, truncated = await projection.tool_execution_input("thread-one", "reused")
     assert value == '{"command": "pnpm test --watch"}' and truncated
     store.inspections.matching_entries.assert_awaited_once_with("thread-one", "source-one", "reused")
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+def test_saved_reply_citations_keep_sources_when_anchor_exceeds_visible_text(truncated):
+    from a13n_harness_ui.conversation import TRANSCRIPT_PREFIX_LIMIT
+    from a13n_harness_ui.thread_projection import _response_part
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, TextPart, WebCitationSource
+
+    end = TRANSCRIPT_PREFIX_LIMIT + 2
+    text = "🙂" * (end + 100 if truncated else end)
+    source = WebCitationSource("https://example.com/spec", title="Spec")
+    part = _response_part(
+        TextPart(text, citations=[Citation([source], anchor=ContentCitationAnchor(start=end - 2, end=end))])
+    )
+    assert part.text_truncated is truncated
+    assert part.text.startswith("🙂")
+    [citation] = part.citations
+    assert citation.sources[0].url == source.url
+    if truncated:
+        assert citation.anchor is None
+    else:
+        assert citation.anchor.end == end
+    assert TranscriptPart.model_validate_json(part.model_dump_json()) == part
+
+
+def test_saved_issue_1959_reply_keeps_unresolved_text_without_fabricated_sources():
+    from a13n_harness_ui.thread_projection import _response_part
+    from pydantic_ai.messages import TextPart
+
+    answer = "Answer\ue200cite\ue202turn0view0\ue201"
+    part = _response_part(TextPart(answer))
+    assert part.text == answer and part.citations == ()

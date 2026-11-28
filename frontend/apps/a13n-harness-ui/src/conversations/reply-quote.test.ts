@@ -31,3 +31,29 @@ it("restores the selected occurrence across formatted text and paragraphs withou
     reader.remove();
   }
 });
+
+it("ignores citation chips and the Sources list when capturing and restoring a reply quote", () => {
+  const reader = document.createElement("div");
+  reader.innerHTML =
+    '<div data-reply-source="one"><p>First<span data-reply-decoration>[1]</span> and second.</p><details data-reply-decoration><summary>Sources</summary>Evidence</details></div>';
+  document.body.append(reader);
+  const source = reader.firstElementChild as HTMLElement;
+  const prose = source.querySelector("p")!;
+  const selection = window.getSelection()!;
+  const range = document.createRange();
+  range.setStart(prose.firstChild!, 0);
+  range.setEnd(prose.lastChild!, 12);
+  try {
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const { quote } = selectedQuote(reader, selection)!;
+    expect(quote.text).toBe("First and second.");
+    source.querySelector("[data-reply-decoration]")!.textContent = "[2]";
+    const restored = quoteRange(source, quote)!;
+    expect(restored.startOffset).toBe(0);
+    expect(restored.endOffset).toBe(12);
+  } finally {
+    selection.removeAllRanges();
+    reader.remove();
+  }
+});

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.skill_input import retained_skill_spans
 
+from .citations import cited_text
 from .context_activity import ContextActivity
 from .input_display import composer_piece
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
@@ -855,7 +856,9 @@ class StreamRenderer:
                     prefix = "> "
                 else:
                     prefix = ""
-                rendered = terminal_text(prefix + text)
+                citations = content.get("citations")
+                body = cited_text(text, citations if isinstance(citations, list) else None) if kind == "text" else text
+                rendered = terminal_text(prefix + body)
                 ranges = skill_ranges(text, meta, len(terminal_text(prefix))) if kind == "user" else ()
                 block = self._display_blocks.get(key)
                 if block is None or not self.transcript.replace(block, rendered, skills=ranges):

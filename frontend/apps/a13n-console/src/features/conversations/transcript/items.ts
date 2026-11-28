@@ -1,3 +1,4 @@
+import { mergeCitedSegments } from "a13n-ui/citations";
 import { isRecord } from "../../../service-client";
 import { isAssetId, type PublishedAsset } from "../projection";
 import type { ActionEntry, ContentEntry, TimelineEntry } from "../timeline";
@@ -80,7 +81,54 @@ export function transcriptBlocks(
         legacy: true,
       });
   }
-  return blocks;
+  return mergeReplyBlocks(blocks);
+}
+
+function mergeReplyBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
+  const result: TranscriptBlock[] = [];
+  for (let index = 0; index < blocks.length;) {
+    const block = blocks[index++]!;
+    if (
+      block.kind !== "message" ||
+      !block.entry.responseGroup ||
+      block.entry.textPartial ||
+      block.entry.failure != null
+    ) {
+      result.push(block);
+      continue;
+    }
+    const group = [block];
+    while (index < blocks.length) {
+      const next = blocks[index];
+      if (
+        next?.kind !== "message" ||
+        next.entry.responseGroup !== block.entry.responseGroup ||
+        next.entry.textPartial ||
+        next.entry.failure != null
+      )
+        break;
+      group.push(next);
+      index++;
+    }
+    if (
+      group.length < 2 ||
+      !group.some(({ entry }) => entry.citations?.length)
+    ) {
+      result.push(...group);
+    } else {
+      const last = group.at(-1)!;
+      result.push({
+        ...block,
+        entry: {
+          ...block.entry,
+          ...mergeCitedSegments(group.map(({ entry }) => entry)),
+          state: last.entry.state,
+          endedAt: last.entry.endedAt,
+        },
+      });
+    }
+  }
+  return result;
 }
 
 // Older displays only kept direct calls and their result. The attachment

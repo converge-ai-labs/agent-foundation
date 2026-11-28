@@ -5266,6 +5266,29 @@ export interface components {
             arguments?: components["schemas"]["JsonValue"] | null;
             result?: components["schemas"]["JsonValue"] | null;
         };
+        /** Citation */
+        Citation: {
+            /** Sources */
+            sources: components["schemas"]["CitationSource"][];
+            /** @default null */
+            anchor?: components["schemas"]["CitationAnchor"] | null;
+        };
+        /**
+         * CitationAnchor
+         * @description Half-open Unicode code-point range in the item's text.
+         */
+        CitationAnchor: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "content" | "marker";
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
+        };
+        CitationSource: components["schemas"]["WebCitationSource"] | components["schemas"]["DocumentCitationSource"];
         /** CodexDictationConfiguration */
         CodexDictationConfiguration: {
             group?: components["schemas"]["ResourceId"] | null;
@@ -5952,6 +5975,29 @@ export interface components {
             };
             /** Truncated */
             truncated: boolean;
+        };
+        /** DocumentCitationSource */
+        DocumentCitationSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "document";
+            /**
+             * Document Id
+             * @default null
+             */
+            document_id?: string | null;
+            /**
+             * Title
+             * @default null
+             */
+            title?: string | null;
+            /**
+             * Excerpts
+             * @default []
+             */
+            excerpts?: string[];
         };
         /** DraftSummary */
         DraftSummary: {
@@ -10151,6 +10197,11 @@ export interface components {
              * @default false
              */
             text_truncated?: boolean;
+            /**
+             * Citations
+             * @default []
+             */
+            citations?: components["schemas"]["Citation"][];
             metadata?: components["schemas"]["ContentMetadata"];
             /**
              * Kind
@@ -10649,6 +10700,26 @@ export interface components {
              */
             expires_at: string;
         };
+        /** WebCitationSource */
+        WebCitationSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "web";
+            /** Url */
+            url: string;
+            /**
+             * Title
+             * @default null
+             */
+            title?: string | null;
+            /**
+             * Excerpts
+             * @default []
+             */
+            excerpts?: string[];
+        };
         /** WebProviderCatalogView */
         WebProviderCatalogView: {
             /** Types */
@@ -10955,6 +11026,11 @@ export interface components {
              * @default null
              */
             memory_sources?: components["schemas"]["MemorySource"][] | null;
+            /**
+             * Citations
+             * @default null
+             */
+            citations?: components["schemas"]["Citation"][] | null;
         };
         /** @enum {string} */
         ItemState: "in_progress" | "completed" | "interrupted" | "failed";

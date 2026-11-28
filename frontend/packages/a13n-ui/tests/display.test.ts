@@ -163,3 +163,72 @@ it.each([false, true])(
     );
   },
 );
+
+it("replays raw scoped citation supplements and an empty replacement without changing item identity", () => {
+  const normalizer = new DisplayNormalizer({ full_content: false });
+  const items = new Map<string, DisplayItem>();
+  let sequence = 0;
+  const apply = (event: Record<string, unknown>, item: ItemRef | null = null) =>
+    normalizer.apply(items, {
+      run_id: "run",
+      attempt: 1,
+      sequence: ++sequence,
+      event,
+      item,
+    });
+  for (const scope of ["root", "child"]) {
+    const identity = {
+      messageId: "message",
+      ...(scope === "child" ? { subagentRunId: scope } : {}),
+    };
+    const ref = {
+      id: scope,
+      kind: "text_message",
+      state: "in_progress",
+      ordinal: sequence + 1,
+    } as const;
+    apply(
+      {
+        type: "TEXT_MESSAGE_START",
+        role: "assistant",
+        timestamp: 10,
+        ...identity,
+      },
+      ref,
+    );
+    apply(
+      {
+        type: "TEXT_MESSAGE_CONTENT",
+        delta: "Claim",
+        timestamp: 20,
+        ...identity,
+      },
+      ref,
+    );
+    apply(
+      { type: "TEXT_MESSAGE_END", timestamp: 30, ...identity },
+      { ...ref, state: "completed" },
+    );
+  }
+  const citation = {
+    sources: [{ kind: "web", url: "https://example.com" }],
+    anchor: { kind: "content", start: 0, end: 5 },
+  };
+  const supplement = (citations: unknown[], replace?: boolean) => ({
+    type: "CUSTOM",
+    name: "a13n.text_citations",
+    subagentRunId: "child",
+    value: { event: { message_id: "message", citations, replace } },
+  });
+  const child = items.get("child")!;
+  apply(supplement([citation, citation]));
+  expect(items.get("root")?.content.citations).toBeUndefined();
+  expect(items.get("child")).toEqual({
+    ...child,
+    last_stream_id: "1-7",
+    content: { ...child.content, citations: [citation] },
+  });
+  apply(supplement([], true));
+  expect(items.get("child")?.content.citations).toEqual([]);
+  expect(normalizer.incomplete).toBe(false);
+});

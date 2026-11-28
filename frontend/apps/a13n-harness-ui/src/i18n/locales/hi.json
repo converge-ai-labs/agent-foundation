@@ -1,4 +1,8 @@
 {
+  "Source unavailable": "स्रोत उपलब्ध नहीं है",
+  "Cited document": "उद्धृत दस्तावेज़",
+  "Source {{number}}: {{name}}": "स्रोत {{number}}: {{name}}",
+  "Sources ({{count}})": "स्रोत ({{count}})",
   "Server instructions": "सर्वर के निर्देश",
   "System (default)": "सिस्टम (डिफ़ॉल्ट)",
   "User context": "उपयोगकर्ता संदर्भ",
@@ -2204,6 +2208,8 @@
   "Requires provider stores; no local uploads. Google: deselect other native tools first.": "प्रदाता स्टोर ज़रूरी हैं; लोकल अपलोड नहीं। Google: पहले अन्य नेटिव टूल का चयन हटाएँ।",
   "Advisor - native": "एडवाइज़र - नेटिव",
   "Requires an advisor model ID; additional model usage is billed by the provider.": "एडवाइज़र मॉडल ID ज़रूरी है; अतिरिक्त मॉडल उपयोग के लिए प्रदाता शुल्क लेता है।",
+  "Citations": "उद्धरण",
+  "Ask the provider for reply citations.": "प्रदाता से उत्तर के उद्धरण माँगें।",
   "Dynamic environment": "डायनैमिक एनवायरनमेंट",
   "Compaction": "कॉम्पैक्शन",
   "File context": "फ़ाइल संदर्भ",

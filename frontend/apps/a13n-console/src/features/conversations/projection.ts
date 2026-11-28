@@ -1,4 +1,5 @@
 import { readContentParts } from "a13n-ui";
+import { readCitations, type Citation } from "a13n-ui/citations";
 import {
   readToolProgress,
   toolExecutionReceipt,
@@ -23,6 +24,9 @@ export interface PresentedItem {
   startedAt: string | null;
   endedAt: string | null;
   text: string;
+  citations?: readonly Citation[];
+  responseGroup?: string;
+  textPartial?: boolean;
   role: string;
   toolName: string;
   toolCallId?: string;
@@ -98,6 +102,12 @@ export function presentItem(item: DisplayItem): PresentedItem {
     startedAt: item.started_at,
     endedAt: item.ended_at ?? null,
     text: text(content.text),
+    citations: readCitations(content.citations),
+    responseGroup: text(content.responseGroup) || undefined,
+    textPartial:
+      Boolean(
+        item.content_refs?.text || content.truncated || content.incomplete,
+      ) || undefined,
     role: text(content.role) || "assistant",
     toolName: text(content.toolCallName),
     toolCallId: content.provider

@@ -1,4 +1,8 @@
 {
+  "Source unavailable": "来源不可用",
+  "Cited document": "引用文档",
+  "Source {{number}}: {{name}}": "来源 {{number}}：{{name}}",
+  "Sources ({{count}})": "来源（{{count}}）",
   "Server instructions": "服务器指令",
   "System (default)": "系统指令（默认）",
   "User context": "用户上下文",

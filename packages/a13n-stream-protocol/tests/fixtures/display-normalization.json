@@ -21,7 +21,9 @@
         "run_id": null,
         "state": {
           "request_index": 0,
+          "parts_request_index": null,
           "parts": {},
+          "text_message_ids": {},
           "children": {},
           "threads": {}
         }
@@ -77,7 +79,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -153,7 +157,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -232,7 +238,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -295,6 +303,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -307,7 +320,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -363,6 +378,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -375,7 +395,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -432,6 +454,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -444,7 +471,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -497,6 +526,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -509,7 +543,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -562,6 +598,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -574,7 +615,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -627,6 +670,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -639,7 +687,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -691,6 +741,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {
@@ -711,7 +766,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -754,6 +811,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -766,7 +828,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -833,6 +897,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -879,7 +948,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -953,6 +1024,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -999,7 +1075,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1062,6 +1140,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1108,7 +1191,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1164,6 +1249,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1210,7 +1300,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1267,6 +1359,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1313,7 +1410,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1366,6 +1465,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1412,7 +1516,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1465,6 +1571,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1511,7 +1622,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1571,6 +1684,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1617,7 +1735,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1688,6 +1808,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1734,7 +1859,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1810,6 +1937,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1856,7 +1988,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -1945,6 +2079,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -1991,7 +2130,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2060,6 +2201,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": {
             "stream": [
               "a13n.pydantic_ai.part_delta",
@@ -2106,7 +2252,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2135,6 +2283,434 @@
             "retry": false
           }
         }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 24,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.text_citations",
+            "value": {
+              "event": {
+                "message_id": "m",
+                "citations": [
+                  {
+                    "sources": [
+                      {
+                        "kind": "web",
+                        "url": "https://example.com/spec"
+                      }
+                    ],
+                    "anchor": {
+                      "kind": "content",
+                      "start": 0,
+                      "end": 2
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null,
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": {
+                  "kind": "content",
+                  "start": 0,
+                  "end": 2
+                }
+              }
+            ]
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 24
+          },
+          "next_ordinal": 10,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts_request_index": null,
+              "parts": {},
+              "text_message_ids": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-24",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world",
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": {
+                  "kind": "content",
+                  "start": 0,
+                  "end": 2
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 25,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.text_citations",
+            "value": {
+              "event": {
+                "message_id": "m",
+                "citations": [],
+                "replace": true
+              }
+            }
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null,
+            "citations": []
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 25
+          },
+          "next_ordinal": 10,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts_request_index": null,
+              "parts": {},
+              "text_message_ids": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-25",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world",
+            "citations": []
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 26,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.text_citations",
+            "value": {
+              "event": {
+                "message_id": "m",
+                "citations": [
+                  {
+                    "sources": [
+                      {
+                        "kind": "web",
+                        "url": "https://example.com/spec"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null,
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": null
+              }
+            ]
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 26
+          },
+          "next_ordinal": 10,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts_request_index": null,
+              "parts": {},
+              "text_message_ids": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-26",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world",
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": null
+              }
+            ]
+          }
+        }
       }
     ]
   },
@@ -2160,7 +2736,9 @@
         "run_id": null,
         "state": {
           "request_index": 0,
+          "parts_request_index": null,
           "parts": {},
+          "text_message_ids": {},
           "children": {},
           "threads": {}
         }
@@ -2216,7 +2794,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2292,7 +2872,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2371,7 +2953,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2434,6 +3018,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2446,7 +3035,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2502,6 +3093,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2514,7 +3110,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2571,6 +3169,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2583,7 +3186,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2636,6 +3241,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2648,7 +3258,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2701,6 +3313,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2713,7 +3330,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2766,6 +3385,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2778,7 +3402,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2830,6 +3456,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {
@@ -2850,7 +3481,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2893,6 +3526,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2905,7 +3543,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -2965,6 +3605,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2977,7 +3622,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3019,6 +3666,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3031,7 +3683,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3069,6 +3723,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3081,7 +3740,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3137,6 +3798,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3149,7 +3815,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3206,6 +3874,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3218,7 +3891,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3271,6 +3946,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3283,7 +3963,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3336,6 +4018,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3348,7 +4035,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3408,6 +4097,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3420,7 +4114,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3491,6 +4187,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3503,7 +4204,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3579,6 +4282,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3591,7 +4299,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3680,6 +4390,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3692,7 +4407,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3761,6 +4478,11 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -3773,7 +4495,9 @@
             "run_id": null,
             "state": {
               "request_index": 0,
+              "parts_request_index": null,
               "parts": {},
+              "text_message_ids": {},
               "children": {},
               "threads": {}
             }
@@ -3800,6 +4524,332 @@
             },
             "outcome": null,
             "retry": false
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 24,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.text_citations",
+            "value": {
+              "event": {
+                "message_id": "m",
+                "citations": [
+                  {
+                    "sources": [
+                      {
+                        "kind": "web",
+                        "url": "https://example.com/spec"
+                      }
+                    ],
+                    "anchor": {
+                      "kind": "content",
+                      "start": 0,
+                      "end": 2
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null,
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": {
+                  "kind": "content",
+                  "start": 0,
+                  "end": 2
+                }
+              }
+            ]
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 24
+          },
+          "next_ordinal": 9,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts_request_index": null,
+              "parts": {},
+              "text_message_ids": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-24",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world",
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": {
+                  "kind": "content",
+                  "start": 0,
+                  "end": 2
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 25,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.text_citations",
+            "value": {
+              "event": {
+                "message_id": "m",
+                "citations": [],
+                "replace": true
+              }
+            }
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null,
+            "citations": []
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 25
+          },
+          "next_ordinal": 9,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts_request_index": null,
+              "parts": {},
+              "text_message_ids": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-25",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world",
+            "citations": []
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 26,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.text_citations",
+            "value": {
+              "event": {
+                "message_id": "m",
+                "citations": [
+                  {
+                    "sources": [
+                      {
+                        "kind": "web",
+                        "url": "https://example.com/spec"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null,
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": null
+              }
+            ]
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 26
+          },
+          "next_ordinal": 9,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": [
+              "itm_34b1c47b6338df3d761051e4181751d5"
+            ]
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts_request_index": null,
+              "parts": {},
+              "text_message_ids": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-26",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world",
+            "citations": [
+              {
+                "sources": [
+                  {
+                    "kind": "web",
+                    "url": "https://example.com/spec",
+                    "title": null,
+                    "excerpts": []
+                  }
+                ],
+                "anchor": null
+              }
+            ]
           }
         }
       }

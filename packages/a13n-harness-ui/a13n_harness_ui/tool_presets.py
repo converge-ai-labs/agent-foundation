@@ -25,6 +25,8 @@ class ToolChoice:
     recommended: bool = False
 
 
+_CITATIONS = ToolChoice("citations", "Citations", "Ask the provider for reply citations.", True)
+
 _NATIVE_CHOICES = (
     ToolChoice(
         "web_search", "Web Search · native", "Provider search and citations; provider usage charges may apply.", True
@@ -121,6 +123,11 @@ def tool_choices(
                 kinds.clear()
             # Gemini image-only models cannot use the starter's function tools.
             kinds.discard("image_generation")
+    choices = _NATIVE_CHOICES
+    if provider in {"anthropic", "bedrock", "xai"} or authentication == "grok_subscription":
+        choices = (*choices, _CITATIONS)
+        kinds.add(_CITATIONS.key)
+        known = known or (provider == "bedrock" and base_url is None)
     return tuple(
         replace(
             choice,
@@ -128,7 +135,7 @@ def tool_choices(
             and known
             and not (authentication == "codex_subscription" and choice.key == "image_generation"),
         )
-        for choice in _NATIVE_CHOICES
+        for choice in choices
         if choice.key in kinds
     )
 
@@ -155,9 +162,14 @@ def selected_tool_capabilities(
         }
     ]
     for key in selected:
+        if key == _CITATIONS.key:
+            capabilities.append({"capability": "Citations", "configuration": dict(parameters.get(key, {}))})
+            continue
         options: dict[str, Any] = {"kind": key, **parameters.get(key, {})}
         if key == "web_search" and authentication == "codex_subscription":
             options.setdefault("external_web_access", True)
+        if key == "web_fetch":
+            options.setdefault("enable_citations", True)
         NativeTool.from_spec(**options)
         capabilities.append(
             {
