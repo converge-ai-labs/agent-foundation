@@ -6022,6 +6022,11 @@
             ],
             "title": "Remote Id"
           },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
           "state": {
             "enum": [
               "enabled",

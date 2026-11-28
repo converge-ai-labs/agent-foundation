@@ -211,3 +211,41 @@ it("loads the native Thread only when expanded and links to its Session", async 
     ).getAttribute("href"),
   ).toBe("/workspace/ws_fixture/sessions/sess_event/threads/thr_event");
 });
+
+it("offers subscription recovery from server eligibility even without a failure message", async () => {
+  mount([
+    { ...trigger, operation_kind: "paused", failure: null, retryable: true },
+  ]);
+  await userEvent
+    .setup()
+    .click(
+      await screen.findByRole("button", { name: "Retry subscription setup" }),
+    );
+  await waitFor(() =>
+    expect(http.POST).toHaveBeenCalledWith(
+      "/api/v1/connector-triggers/{trigger_id}/{command}",
+      {
+        params: {
+          path: { trigger_id: "ctrig_fixture", command: "reconcile" },
+          header: { "If-Match": '\"ctrig_fixture:3\"' },
+        },
+      },
+    ),
+  );
+});
+
+it("does not offer recovery for an unowned creation or label its failure as updating", async () => {
+  mount([
+    {
+      ...trigger,
+      operation_kind: "create_unconfirmed",
+      failure: "subscription_creation_unconfirmed",
+      retryable: false,
+    },
+  ]);
+  await screen.findByRole("alert");
+  expect(
+    screen.queryByRole("button", { name: "Retry subscription setup" }),
+  ).toBeNull();
+  expect(screen.queryByText("Updating subscription…")).toBeNull();
+});

@@ -61,3 +61,7 @@ Use a workspace API key and the usual workspace selection. Paths below start wit
 | Retry delivery                    | `POST /connector-events/{event_id}/retry`                               |
 
 Creation requires `Idempotency-Key`; updates and commands require the current `If-Match` ETag. Callback setup uses the Provider's ETag. See the [API reference](api-reference/index.md) for request schemas. HTTP 204 on the signed callback confirms saved receipt; execution results are available through the returned event's Inbox/Thread references.
+
+Pausing or retiring during creation takes effect at the local database state update, without waiting for the remote operation. Earlier events continue; later events become `ignored` when associated with the subscription.
+
+If a creation request was sent but its response was lost, `subscription_creation_unconfirmed` requires operator attention. Service does not adopt a remote subscription merely because its parameters match. Resolve the subscription in the Provider, retire the local record, then create a replacement. Other retry-safe operations can be resumed after the last interrupted attempt expires; active attempts cannot be replaced.

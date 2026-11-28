@@ -183,8 +183,10 @@ async def test_concurrent_dispatch_ignores_trigger_pause_and_uses_snapshot(sourc
             == 1
         )
     later = await receive(source, event(source, "msg_later"))
+    incompatible = await receive(source, event(source, "msg_ignored_schema", payload={"number": "invalid"}))
     async with short_session(source.service.runtime.storage) as db:
         assert (await db.get_one(EventRow, later)).state == "ignored"
+        assert (await db.get_one(EventRow, incompatible)).state == "ignored"
     assert await receive(source) == event_id
 
 
@@ -325,7 +327,7 @@ async def test_create_replay_and_duplicate_subscription(source):
     assert response.status_code == 409, response.text
 
 
-async def test_unknown_upstream_creation_is_recovered_without_second_upsert(source, monkeypatch):
+async def test_unknown_upstream_creation_cannot_adopt_a_matching_subscription(source, monkeypatch):
     from a13n_harness.providers.connector.events import EventInstance
 
     trigger = await create(source)
@@ -356,7 +358,17 @@ async def test_unknown_upstream_creation_is_recovered_without_second_upsert(sour
     assert unknown.await_count == 1
     async with short_session(source.service.runtime.storage) as db:
         row = await db.get_one(TriggerRow, trigger["id"])
-        assert row.remote_id == "ti_fixture" and row.operation_id is None
+        assert row.remote_id is None and row.failure == "subscription_creation_unconfirmed"
+    ComposioEvents.transition.assert_not_awaited()
+    path = source.service.api + "/connector-triggers/" + trigger["id"]
+    current = await source.service.client.get(path)
+    assert not current.json()["retryable"]
+    retry = await source.service.client.post(path + "/reconcile", headers={"If-Match": current.headers["etag"]})
+    assert retry.status_code == 409
+    retired = await source.service.client.post(path + "/retire", headers={"If-Match": current.headers["etag"]})
+    assert retired.status_code == 200
+    await perform(source.service.runtime, trigger["id"])
+    ComposioEvents.transition.assert_not_awaited()
 
 
 async def test_pause_during_create_preserves_remote_cleanup_and_accepted_event(source, monkeypatch):
@@ -409,19 +421,20 @@ async def test_api_key_rotation_proves_same_webhook_and_preserves_signing_key(so
 
 async def test_remote_retry_is_bounded_and_manually_recoverable(source, monkeypatch):
     trigger = await create(source)
-    monkeypatch.setattr(ComposioEvents, "upsert", AsyncMock(side_effect=TimeoutError))
+    monkeypatch.setattr(ComposioEvents, "instances", AsyncMock(side_effect=TimeoutError))
     limit = source.service.runtime.settings.connector_events.max_attempts
     for _ in range(limit + 1):
         async with transaction(source.service.runtime.storage) as db:
             row = await db.get_one(TriggerRow, trigger["id"])
             row.operation_due_at = await now(db)
         await perform(source.service.runtime, trigger["id"])
-    assert ComposioEvents.upsert.await_count == limit
+    assert ComposioEvents.instances.await_count == limit
+    ComposioEvents.upsert.assert_not_awaited()
     path = source.service.api + "/connector-triggers/" + trigger["id"]
     current = await source.service.client.get(path)
     retry = await source.service.client.post(path + "/reconcile", headers={"If-Match": current.headers["etag"]})
     assert retry.status_code == 200, retry.text
-    assert retry.json()["operation_kind"] == "recover_create"
+    assert retry.json()["operation_kind"] == "create"
 
 
 async def test_event_immutability_and_payload_cleanup(source):
@@ -578,3 +591,196 @@ async def test_history_paginates_newest_first_and_binds_filter(source):
     assert response.json()["next_cursor"] is None
     response = await client.get(api + "/connector-events", params={"cursor": page["next_cursor"]})
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize("manual", [False, True])
+async def test_query_failure_never_authorizes_adopting_an_existing_subscription(source, monkeypatch, manual):
+    from a13n_harness.providers.connector.events import EventInstance
+
+    trigger = await create(source)
+    remote = EventInstance(
+        id="ti_owned_elsewhere",
+        account_id="ca_fixture",
+        user_id=source.connection_id,
+        event_type=DEFINITION.key,
+        config={"repo": "example"},
+        disabled=True,
+        version=DEFINITION.version,
+    )
+    monkeypatch.setattr(ComposioEvents, "instances", AsyncMock(side_effect=[TimeoutError(), [remote]]))
+    await perform(source.service.runtime, trigger["id"])
+    path = source.service.api + "/connector-triggers/" + trigger["id"]
+    current = await source.service.client.get(path)
+    if manual:
+        response = await source.service.client.post(path + "/reconcile", headers={"If-Match": current.headers["etag"]})
+        assert response.status_code == 200, response.text
+        assert response.json()["operation_kind"] == "create"
+    else:
+        async with transaction(source.service.runtime.storage) as db:
+            row = await db.get_one(TriggerRow, trigger["id"])
+            row.operation_due_at = await now(db)
+    await perform(source.service.runtime, trigger["id"])
+    current = await source.service.client.get(path)
+    assert current.json()["remote_id"] is None
+    assert current.json()["failure"] == "subscription_owned_elsewhere"
+    assert not current.json()["retryable"]
+    response = await source.service.client.post(path + "/retire", headers={"If-Match": current.headers["etag"]})
+    assert response.status_code == 200, response.text
+    await perform(source.service.runtime, trigger["id"])
+    ComposioEvents.upsert.assert_not_awaited()
+    ComposioEvents.transition.assert_not_awaited()
+
+
+@pytest.mark.parametrize("command,reenable", [("pause", False), ("retire", False), ("pause", True)])
+async def test_creation_callbacks_respect_local_stop_time(
+    source, monkeypatch, runs_kit, scripted_model, command, reenable
+):
+    target = await new_thread_target(source, runs_kit, scripted_model)
+    trigger = await create(source, target=target)
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def upsert(*args):
+        entered.set()
+        await finish.wait()
+        return "ti_fixture"
+
+    monkeypatch.setattr(ComposioEvents, "upsert", upsert)
+    runtime = source.service.runtime
+    task = asyncio.create_task(perform(runtime, trigger["id"]))
+    try:
+        await asyncio.wait_for(entered.wait(), 10)
+        before = await receive(source, event(source, "msg_before_stop"))
+        path = source.service.api + "/connector-triggers/" + trigger["id"]
+        current = await source.service.client.get(path)
+        stopped = await source.service.client.post(path + "/" + command, headers={"If-Match": current.headers["etag"]})
+        assert stopped.status_code == 200, stopped.text
+        after = await receive(source, event(source, "msg_after_stop"))
+    finally:
+        finish.set()
+        await task
+    await perform(runtime, trigger["id"])
+    if reenable:
+        current = await source.service.client.get(path)
+        enabled = await source.service.client.post(path + "/enable", headers={"If-Match": current.headers["etag"]})
+        assert enabled.status_code == 200, enabled.text
+        await perform(runtime, trigger["id"])
+    await maintenance.associate(runtime)
+    await dispatch.deliver(runtime, before)
+    await dispatch.deliver(runtime, after)
+    async with short_session(runtime.storage) as db:
+        accepted = await db.get_one(EventRow, before)
+        ignored = await db.get_one(EventRow, after)
+        row = await db.get_one(TriggerRow, trigger["id"])
+        assert accepted.created_at < row.provisioning_stopped_at <= ignored.created_at
+        assert accepted.state == "submitted" and accepted.thread_id is not None
+        assert ignored.state == "ignored" and ignored.thread_id is None
+
+
+@pytest.mark.parametrize("sweep_first", [False, True])
+async def test_cancelled_final_attempt_is_visible_and_recoverable(source, monkeypatch, sweep_first):
+    from a13n_service.runs.connector_events.triggers.operations import maintain
+
+    trigger = await create(source)
+    runtime = source.service.runtime
+    await perform(runtime, trigger["id"])
+    path = source.service.api + "/connector-triggers/" + trigger["id"]
+    current = await source.service.client.get(path)
+    response = await source.service.client.post(path + "/pause", headers={"If-Match": current.headers["etag"]})
+    assert response.status_code == 200
+    async with transaction(runtime.storage) as db:
+        row = await db.get_one(TriggerRow, trigger["id"])
+        row.operation_attempts = runtime.settings.connector_events.max_attempts - 1
+        row.failure = "old_failure"
+    monkeypatch.setattr(ComposioEvents, "transition", AsyncMock(side_effect=asyncio.CancelledError))
+    with pytest.raises(asyncio.CancelledError):
+        await perform(runtime, trigger["id"])
+    current = await source.service.client.get(path)
+    assert current.json()["failure"] is None and not current.json()["retryable"]
+    blocked = await source.service.client.post(path + "/reconcile", headers={"If-Match": current.headers["etag"]})
+    assert blocked.status_code == 409
+    async with transaction(runtime.storage) as db:
+        row = await db.get_one(TriggerRow, trigger["id"])
+        row.operation_due_at = await now(db)
+    if sweep_first:
+        await maintain(runtime)
+    current = await source.service.client.get(path)
+    assert current.json()["retryable"]
+    if sweep_first:
+        assert current.json()["failure"] == "upstream_operation_unconfirmed"
+    response = await source.service.client.post(path + "/reconcile", headers={"If-Match": current.headers["etag"]})
+    assert response.status_code == 200, response.text
+    monkeypatch.setattr(ComposioEvents, "transition", AsyncMock())
+    await perform(runtime, trigger["id"])
+    current = await source.service.client.get(path)
+    assert current.json()["operation_kind"] is None
+    ComposioEvents.transition.assert_awaited_once_with("ti_fixture", "paused")
+
+
+async def test_interrupted_creation_becomes_unconfirmed_without_reissuing_request(source, monkeypatch):
+    from a13n_service.runs.connector_events.triggers.operations import maintain
+
+    trigger = await create(source)
+    runtime = source.service.runtime
+    monkeypatch.setattr(ComposioEvents, "upsert", AsyncMock(side_effect=asyncio.CancelledError))
+    with pytest.raises(asyncio.CancelledError):
+        await perform(runtime, trigger["id"])
+    async with transaction(runtime.storage) as db:
+        row = await db.get_one(TriggerRow, trigger["id"])
+        assert row.operation_kind == "create_unconfirmed" and row.failure is None
+        row.operation_due_at = await now(db)
+    await maintain(runtime)
+    await maintain(runtime)
+    current = await source.service.client.get(source.service.api + "/connector-triggers/" + trigger["id"])
+    assert current.json()["failure"] == "subscription_creation_unconfirmed"
+    assert current.json()["remote_id"] is None and not current.json()["retryable"]
+    assert ComposioEvents.upsert.await_count == 1
+    ComposioEvents.transition.assert_not_awaited()
+
+
+async def test_webhook_final_attempt_must_expire_before_manual_recovery(source, monkeypatch):
+    from a13n_service.resources.connector_providers import webhooks
+
+    from .test_connections import admin
+
+    original = source.service.runtime
+    config = original.settings.connector_events.model_copy(
+        update={"public_url": "https://events.example", "max_attempts": 1}
+    )
+    runtime = replace(original, settings=original.settings.model_copy(update={"connector_events": config}))
+    actor = admin(source.service)
+    workspace_id = source.service.tenant.workspace_id
+    remote = AsyncMock(side_effect=asyncio.CancelledError)
+    monkeypatch.setattr(ComposioEvents, "configure_webhook", remote)
+    with pytest.raises(asyncio.CancelledError):
+        await webhooks.configure(
+            runtime,
+            actor,
+            workspace_id,
+            source.provider_id,
+            if_match=f'"{source.provider_id}:{source.provider_version}"',
+            rotate=True,
+        )
+    current = await webhooks.get(runtime, actor, workspace_id, source.provider_id)
+    assert not current.retryable
+    with pytest.raises(ServiceError, match="operation in progress"):
+        await webhooks.configure(
+            runtime, actor, workspace_id, source.provider_id, if_match=f'"{source.provider_id}:{current.version}"'
+        )
+    async with transaction(runtime.storage) as db:
+        row = await db.get_one(ConnectorProviderRow, source.provider_id)
+        row.event_operation = {**row.event_operation, "deadline": (await now(db)).isoformat()}
+    await webhooks.recover(runtime)
+    current = await webhooks.get(runtime, actor, workspace_id, source.provider_id)
+    assert current.retryable and current.failure == "upstream_operation_unconfirmed"
+    remote.side_effect = None
+    remote.return_value = EventWebhook(id="wh_fixture", url=current.url, secret=SecretStr(SECRET))
+    recovered = await webhooks.configure(
+        runtime,
+        actor,
+        workspace_id,
+        source.provider_id,
+        if_match=f'"{source.provider_id}:{current.version}"',
+        rotate=True,
+    )
+    assert recovered.failure is None and recovered.operation is None
+    assert remote.await_args.kwargs == {"rotate": False}

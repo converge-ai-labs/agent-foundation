@@ -54,6 +54,7 @@ class ConnectorTrigger(BaseModel):
     remote_id: str | None
     operation_kind: str | None
     failure: str | None
+    retryable: bool = False
     version: int
     created_at: datetime
     updated_at: datetime

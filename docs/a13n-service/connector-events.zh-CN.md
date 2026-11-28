@@ -61,3 +61,7 @@ public_url = "https://events.example.com"
 | 重试投递           | `POST /connector-events/{event_id}/retry`                               |
 
 创建订阅需要 `Idempotency-Key`；更新和命令需要通过 `If-Match` 提交当前 ETag；配置回调使用 Provider 的 ETag。请求结构见 [API 参考](api-reference/index.md)。签名回调返回 HTTP 204 表示事件已经保存；执行结果通过事件上的 Inbox/Thread 引用查询。
+
+创建期间暂停或停用同样以本地数据库的状态更新时间为准：此前收到的事件继续处理，此后收到的事件在关联订阅时标记为 `ignored`，不等待远端暂停完成。
+
+如果创建请求已经发出，但响应丢失，系统会显示 `subscription_creation_unconfirmed`，不会自动认领参数相同的远端订阅。请先在 Provider 中确认并处理该订阅，再停用本地记录、重新创建。其他可以安全重试的操作即使在最后一次尝试中断，也能在超时后恢复；仍在执行中的尝试不能被替换。

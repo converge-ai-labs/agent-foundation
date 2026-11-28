@@ -1,6 +1,6 @@
-"""add built in connector events and triggers
+"""add built in connector events and subscriptions
 
-Revision ID: 53812074755e
+Revision ID: d5a1abe3b0a3
 Revises: 7d2a1e6a5ee1
 """
 
@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "53812074755e"
+revision = "d5a1abe3b0a3"
 down_revision = "7d2a1e6a5ee1"
 branch_labels = None
 depends_on = None
@@ -33,6 +33,7 @@ def upgrade() -> None:
         sa.Column("target", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("initial_target", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("provisioned_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("provisioning_stopped_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("binding_check_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("state", sa.String(), nullable=False),
         sa.Column("remote_id", sa.String(length=256), nullable=True),

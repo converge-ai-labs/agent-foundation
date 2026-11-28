@@ -213,26 +213,23 @@ export function ConnectorEvents({
                 <span>{trigger.event_type}</span>
               </button>
               <span>
-                {trigger.operation_kind
+                {trigger.operation_kind && !trigger.failure
                   ? t("Updating subscription…")
                   : t(trigger.state)}
               </span>
               {trigger.failure && <p role="alert">{trigger.failure}</p>}
-              {can("write") &&
-                trigger.operation_kind &&
-                trigger.failure &&
-                trigger.failure !== "subscription_owned_elsewhere" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={transition.isPending}
-                    onClick={() =>
-                      transition.mutate({ trigger, command: "reconcile" })
-                    }
-                  >
-                    {t("Retry subscription setup")}
-                  </Button>
-                )}
+              {can("write") && trigger.retryable && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={transition.isPending}
+                  onClick={() =>
+                    transition.mutate({ trigger, command: "reconcile" })
+                  }
+                >
+                  {t("Retry subscription setup")}
+                </Button>
+              )}
               {can("write") && trigger.state !== "retired" && (
                 <div className={styles.actions}>
                   <Button

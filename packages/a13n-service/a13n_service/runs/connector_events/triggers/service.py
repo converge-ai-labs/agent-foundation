@@ -1,6 +1,7 @@
 """Authorized subscription commands; external requests happen after configuration commits."""
 
 import hashlib
+from datetime import UTC, datetime
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -33,6 +34,7 @@ from a13n_service.runs.connector_events.triggers.schemas import (
     TriggerPage,
     TriggerUpdate,
 )
+from a13n_service.runs.connector_events.triggers.state import UNOWNED, retryable
 from a13n_service.runs.connector_events.triggers.tables import TriggerRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import canonical_json
@@ -40,6 +42,10 @@ from a13n_service.tenancy.access import principal_for, workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope, authorize, execution_authority
 
 TARGET = TypeAdapter(Target)
+
+
+def view(row: TriggerRow) -> Trigger:
+    return Trigger.model_validate(row).model_copy(update={"retryable": retryable(row, datetime.now(UTC))})
 
 
 def digest(value: object) -> str:
@@ -118,7 +124,7 @@ async def create(
         if existing:
             if existing.request_digest != request_digest:
                 raise conflict("request", request_key, "idempotency_key_reused")
-            return Trigger.model_validate(existing), False
+            return view(existing), False
         connection = await resolve_connection(session, actor, scope, body.connection_id, verb="run")
         if not isinstance(connection, ConnectorConnection):
             raise invalid("connection_id", "connector_connection_required")
@@ -147,7 +153,7 @@ async def create(
         if existing:
             if existing.request_digest != request_digest:
                 raise conflict("request", request_key, "idempotency_key_reused")
-            return Trigger.model_validate(existing), False
+            return view(existing), False
         current = await resolve_connection(session, actor, scope, body.connection_id, verb="run")
         if not isinstance(current, ConnectorConnection) or current.version != connection.version:
             raise conflict("connection", body.connection_id, "connection_changed")
@@ -197,13 +203,13 @@ async def create(
         session.add(row)
         audit_row(session, actor, row, "create")
         await session.flush()
-        return Trigger.model_validate(row), True
+        return view(row), True
 
 
 async def get(runtime: Runtime, actor: Principal, workspace_id: str, trigger_id: str) -> Trigger:
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        return Trigger.model_validate(await find_row(session, actor, TriggerRow, scope, trigger_id, "read"))
+        return view(await find_row(session, actor, TriggerRow, scope, trigger_id, "read"))
 
 
 async def list_triggers(
@@ -223,7 +229,7 @@ async def list_triggers(
             cursor=cursor,
             limit=limit,
         )
-        return TriggerPage(items=[Trigger.model_validate(row) for row in rows], next_cursor=next_cursor)
+        return TriggerPage(items=[view(row) for row in rows], next_cursor=next_cursor)
 
 
 async def update(
@@ -242,7 +248,7 @@ async def update(
         row.updated_by_id = actor.id
         audit_row(session, actor, row, "update")
         await session.flush()
-        return Trigger.model_validate(row)
+        return view(row)
 
 
 async def reconcile(
@@ -252,17 +258,13 @@ async def reconcile(
         scope = await workspace_scope(session, actor, workspace_id, "write")
         row = await find_row(session, actor, TriggerRow, scope, trigger_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
-        if row.operation_id is None or not row.failure:
-            raise conflict(row.KIND, row.id, "no_failed_operation")
-        if row.failure == "subscription_owned_elsewhere":
-            raise conflict(row.KIND, row.id, "subscription_owned_elsewhere")
+        if not retryable(row, await now(session)):
+            raise conflict(row.KIND, row.id, row.failure or "operation_not_retryable")
         row.operation_id = new_object_id("ctop")
-        if row.operation_kind == "create":
-            row.operation_kind = "recover_create"
         row.operation_due_at, row.operation_attempts, row.failure = await now(session), 0, None
         audit_row(session, actor, row, "reconcile")
         await session.flush()
-        return Trigger.model_validate(row)
+        return view(row)
 
 
 async def transition(
@@ -284,14 +286,16 @@ async def transition(
                 or account(runtime, connection).account_ref != row.account_id
             ):
                 raise conflict(row.KIND, row.id, "connection_changed")
+        if state != "enabled" and row.provisioned_at is None and row.provisioning_stopped_at is None:
+            row.provisioning_stopped_at = await now(session)
         row.state = state
         if row.operation_id is None:
             row.operation_id, row.operation_kind = new_object_id("ctop"), state
             row.operation_due_at, row.operation_attempts, row.failure = await now(session), 0, None
-        elif row.failure == "subscription_owned_elsewhere" and state == "retired":
-            # A known pre-existing remote subscription is not ours to delete.
+        elif row.failure in UNOWNED and state == "retired":
+            # An unowned or unconfirmed remote subscription is not ours to delete.
             row.operation_id, row.operation_kind, row.operation_due_at = None, None, None
         row.updated_by_id = actor.id
         audit_row(session, actor, row, state)
         await session.flush()
-        return Trigger.model_validate(row)
+        return view(row)

@@ -64,6 +64,7 @@ class TriggerRow(Stamped, Base):
     target: Mapped[dict] = mapped_column(JSONB)
     initial_target: Mapped[dict] = mapped_column(JSONB)
     provisioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provisioning_stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     binding_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     state: Mapped[str]
     remote_id: Mapped[str | None] = mapped_column(String(256))

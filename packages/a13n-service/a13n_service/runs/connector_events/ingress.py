@@ -37,10 +37,16 @@ def bind(event: EventRow, trigger: TriggerRow, *, provisioning: bool = False) ->
         "trigger_version": 1 if provisioning else trigger.version,
     }
     schema = trigger.definition.get("payload_schema")
-    if schema is not None and not schema_valid(schema, event.payload):
-        event.state, event.failure = "failed", "event_payload_schema_mismatch"
+    if (
+        provisioning
+        and trigger.provisioning_stopped_at is not None
+        and event.created_at >= trigger.provisioning_stopped_at
+    ):
+        event.state, event.failure = "ignored", "trigger_stopped_during_creation"
     elif not provisioning and trigger.state != "enabled":
         event.state, event.failure = "ignored", f"trigger_{trigger.state}"
+    elif schema is not None and not schema_valid(schema, event.payload):
+        event.state, event.failure = "failed", "event_payload_schema_mismatch"
     else:
         event.state = "stored" if target["mode"] == "store_only" else "pending"
 
@@ -109,6 +115,7 @@ async def accept(runtime: Runtime, provider_id: str, provider_version: int, even
             )
             if (unmatched or 0) >= limits.unmatched_per_provider:
                 raise rate_limited("Unmatched connector event backlog is full", 5)
+        current = await now(session)
         row = EventRow(
             id=new_object_id("cevt"),
             organization_id=provider.organization_id,
@@ -123,8 +130,9 @@ async def accept(runtime: Runtime, provider_id: str, provider_version: int, even
             payload=event.payload,
             digest=content_digest,
             state="unmatched",
+            created_at=current,
             attempts=0,
-            due_at=await now(session),
+            due_at=current,
         )
         if trigger is not None:
             bind(row, trigger)

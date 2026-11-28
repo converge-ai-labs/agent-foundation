@@ -1,4 +1,4 @@
-"""Bounded upstream operations, recovered by querying the exact account and configuration."""
+"""Bounded upstream operations with durable creation intent and fenced publication."""
 
 from datetime import timedelta
 
@@ -7,7 +7,7 @@ from a13n_harness.providers.connector.events import EventType
 from a13n_logging import get_logger
 from sqlalchemy import select
 
-from a13n_service.infra.db import now, short_session, transaction
+from a13n_service.infra.db import advisory_lock, now, short_session, transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.connections.credentials import AccountSecret, reveal
 from a13n_service.resources.connections.tables import ConnectionRow
@@ -30,7 +30,6 @@ async def maintain(runtime: Runtime) -> None:
                 .where(
                     TriggerRow.operation_id.is_not(None),
                     TriggerRow.operation_due_at <= await now(session),
-                    TriggerRow.operation_attempts < settings.max_attempts,
                 )
                 .order_by(TriggerRow.operation_due_at, TriggerRow.id)
                 .limit(settings.batch)
@@ -46,17 +45,27 @@ async def perform(runtime: Runtime, trigger_id: str) -> None:
             select(TriggerRow).where(TriggerRow.id == trigger_id).with_for_update(skip_locked=True)
         )
         current = await now(session)
+        if row is None or row.operation_id is None or row.operation_due_at is None or row.operation_due_at > current:
+            return
         if (
-            row is None
-            or row.operation_id is None
-            or row.operation_due_at is None
-            or row.operation_due_at > current
+            row.operation_kind == "create_unconfirmed"
             or row.operation_attempts >= runtime.settings.connector_events.max_attempts
         ):
+            row.failure = row.failure or (
+                "subscription_creation_unconfirmed"
+                if row.operation_kind == "create_unconfirmed"
+                else "upstream_operation_unconfirmed"
+            )
+            row.operation_id = new_object_id("ctop")
+            row.operation_due_at = None
+            logger.warning(
+                "Connector subscription operation exhausted", extra={"trigger_id": trigger_id, "reason": row.failure}
+            )
             return
         claim = new_object_id("ctop")
         row.operation_id = claim
         row.operation_attempts += 1
+        row.failure = None
         row.operation_due_at = current + timedelta(seconds=2 * runtime.settings.providers.tool_call_seconds)
         kind, attempt, remote_id = row.operation_kind, row.operation_attempts, row.remote_id
         definition = EventType.model_validate(row.definition)
@@ -75,33 +84,37 @@ async def perform(runtime: Runtime, trigger_id: str) -> None:
             webhook = await adapter.webhook()
             if webhook is None or webhook.id != webhook_id or webhook.url != url:
                 raise ConnectorProviderError("webhook_identity_changed")
-            if kind in {"create", "recover_create"}:
+            if kind == "create":
                 matches = [
                     item
                     for item in await adapter.instances(account_id, definition.key)
                     if item.config == parameters and item.user_id == user_id
                 ]
-                if len(matches) > 1 or (matches and attempt == 1 and kind == "create"):
-                    raise ConnectorProviderError("subscription_owned_elsewhere")
                 if matches:
-                    match = matches[0]
-                    if match.destination not in (None, url) or match.version != definition.version:
-                        raise ConnectorProviderError("subscription_identity_changed")
-                    remote_id = match.id
-                    if match.disabled:
-                        await adapter.transition(remote_id, "enabled")
-                else:
-                    remote_id = await adapter.upsert(definition, account_id, user_id, parameters)
+                    raise ConnectorProviderError("subscription_owned_elsewhere")
+                # Persist the non-repeatable boundary before sending the request. Matching
+                # remote configuration is not proof that a later instance belongs to us.
+                async with transaction(runtime.storage) as session:
+                    row = await session.scalar(select(TriggerRow).where(TriggerRow.id == trigger_id).with_for_update())
+                    if row is None or row.operation_id != claim:
+                        return
+                    row.operation_kind = "create_unconfirmed"
+                    row.operation_due_at = await now(session) + timedelta(
+                        seconds=2 * runtime.settings.providers.tool_call_seconds
+                    )
+                remote_id = await adapter.upsert(definition, account_id, user_id, parameters)
             elif remote_id is not None:
                 await adapter.transition(remote_id, kind or "paused")
         async with transaction(runtime.storage) as session:
+            # Receipt timestamps precede mapping publication for every unmatched callback.
+            await advisory_lock(session, "connector_events", provider_id)
             row = await session.scalar(select(TriggerRow).where(TriggerRow.id == trigger_id).with_for_update())
             if row is None or row.operation_id != claim:
                 return
             row.remote_id = remote_id
-            if kind in {"create", "recover_create"}:
+            if kind == "create":
                 row.provisioned_at = await now(session)
-            applied = "enabled" if kind in {"create", "recover_create"} else kind
+            applied = "enabled" if kind == "create" else kind
             row.failure = None
             if applied != row.state:
                 row.operation_id, row.operation_kind = new_object_id("ctop"), row.state
@@ -116,10 +129,17 @@ async def perform(runtime: Runtime, trigger_id: str) -> None:
             row = await session.scalar(select(TriggerRow).where(TriggerRow.id == trigger_id).with_for_update())
             if row is None or row.operation_id != claim:
                 return
+            if row.operation_kind == "create_unconfirmed":
+                reason = "subscription_creation_unconfirmed"
             row.failure = reason
             row.operation_due_at = await now(session) + timedelta(seconds=min(300, 2 ** min(attempt, 8)))
-            if reason in {"subscription_owned_elsewhere", "subscription_identity_changed", "webhook_identity_changed"}:
+            if reason in {
+                "subscription_owned_elsewhere",
+                "subscription_creation_unconfirmed",
+                "webhook_identity_changed",
+            }:
                 row.operation_attempts = runtime.settings.connector_events.max_attempts
+                row.operation_due_at = None
         logger.warning("Connector subscription operation failed", extra={"trigger_id": trigger_id, "reason": reason})
 
 

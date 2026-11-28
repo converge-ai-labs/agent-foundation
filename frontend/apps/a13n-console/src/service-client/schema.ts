@@ -7876,6 +7876,11 @@ export interface components {
       /** Remote Id */
       remote_id: string | null;
       /**
+       * Retryable
+       * @default false
+       */
+      retryable?: boolean;
+      /**
        * State
        * @enum {string}
        */

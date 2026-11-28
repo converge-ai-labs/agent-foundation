@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import now, short_session, transaction
@@ -49,6 +49,15 @@ def secret(runtime: Runtime, row: ConnectorProviderRow) -> str:
     return runtime.keys.reveal(Envelope.model_validate(row.event_secret), location(row)).decode()
 
 
+def retryable(row: ConnectorProviderRow, runtime: Runtime, current: datetime) -> bool:
+    operation = row.event_operation
+    return bool(
+        operation
+        and operation.get("attempts", 1) >= runtime.settings.connector_events.max_attempts
+        and ((row.event_config or {}).get("failure") or datetime.fromisoformat(operation["deadline"]) <= current)
+    )
+
+
 def view(row: ConnectorProviderRow, runtime: Runtime) -> Webhook:
     config, operation = row.event_config or {}, row.event_operation or {}
     return Webhook(
@@ -59,7 +68,7 @@ def view(row: ConnectorProviderRow, runtime: Runtime) -> Webhook:
         secret_version=config.get("secret_version", 0),
         operation=operation.get("kind"),
         failure=config.get("failure"),
-        retryable=bool(operation) and operation.get("attempts", 1) >= runtime.settings.connector_events.max_attempts,
+        retryable=retryable(row, runtime, datetime.now(UTC)),
         version=row.version,
     )
 
@@ -88,12 +97,13 @@ async def configure(
         row = await find_row(session, actor, ConnectorProviderRow, scope, provider_id, "admin", lock=True)
         require_match(if_match, row.id, row.version)
         if row.event_operation is not None:
-            if row.event_operation.get("attempts", 1) < runtime.settings.connector_events.max_attempts:
+            if not retryable(row, runtime, await now(session)):
                 raise conflict(row.KIND, row.id, "operation_in_progress")
             # Unknown rotation outcomes are recovered by reading the current key.
             rotate = False
         operation_id = new_object_id("ceop")
         current = await now(session)
+        row.event_config = {key: value for key, value in (row.event_config or {}).items() if key != "failure"}
         row.event_operation = {
             "id": operation_id,
             "attempts": 1,
@@ -150,8 +160,11 @@ async def recover(runtime: Runtime) -> None:
                 select(ConnectorProviderRow.id, ConnectorProviderRow.event_operation)
                 .where(
                     ConnectorProviderRow.event_operation.is_not(None),
-                    ConnectorProviderRow.event_operation["attempts"].as_integer()
-                    < runtime.settings.connector_events.max_attempts,
+                    or_(
+                        ConnectorProviderRow.event_operation["attempts"].as_integer()
+                        < runtime.settings.connector_events.max_attempts,
+                        ConnectorProviderRow.event_config["failure"].as_string().is_(None),
+                    ),
                 )
                 .order_by(ConnectorProviderRow.event_operation["deadline"].as_string())
                 .limit(runtime.settings.connector_events.batch)
@@ -166,7 +179,12 @@ async def recover(runtime: Runtime) -> None:
             )
             if row is None or row.event_operation != operation:
                 continue
+            if operation.get("attempts", 1) >= runtime.settings.connector_events.max_attempts:
+                row.event_config = {**(row.event_config or {}), "failure": "upstream_operation_unconfirmed"}
+                row.event_operation = {**operation, "id": new_object_id("ceop")}
+                continue
             claim = new_object_id("ceop")
+            row.event_config = {key: value for key, value in (row.event_config or {}).items() if key != "failure"}
             row.event_operation = {
                 **operation,
                 "id": claim,
