@@ -56,7 +56,12 @@ const iceServers = [
   },
 ];
 
-function harness({ rtc = false, images = false, iceFailure = false } = {}) {
+function harness({
+  rtc = false,
+  images = false,
+  iceFailure = false,
+  singleDevice = false,
+} = {}) {
   const sockets: Socket[] = [];
   const contexts: Capture[] = [];
   const sources: {
@@ -191,11 +196,13 @@ function harness({ rtc = false, images = false, iceFailure = false } = {}) {
         }
       : undefined,
   );
-  const devices = ["default", "usb"].map((deviceId) => ({
-    kind: "audioinput",
-    deviceId,
-    label: `${deviceId} microphone`,
-  }));
+  const devices = (singleDevice ? ["default"] : ["default", "usb"]).map(
+    (deviceId) => ({
+      kind: "audioinput",
+      deviceId,
+      label: `${deviceId} microphone`,
+    }),
+  );
   const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {
     const audio = constraints.audio;
     const requested = typeof audio === "object" && audio.deviceId;
@@ -277,6 +284,7 @@ it("shows Alpha and sends an opening image-only draft, then a typed image withou
     const picker =
       dialog.querySelector<HTMLInputElement>('input[type="file"]')!;
     expect(picker.accept).toBe("image/png");
+    expect(screen.getByText(/Drop an image here/)).toBeTruthy();
     fireEvent.change(picker, {
       target: { files: [new File(["test"], name, { type: "image/png" })] },
     });
@@ -300,9 +308,7 @@ it("shows Alpha and sends an opening image-only draft, then a typed image withou
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Read this" },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send message in voice chat" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() =>
     expect(sockets[0]!.send).toHaveBeenCalledWith(
       JSON.stringify({
@@ -321,9 +327,7 @@ it("shows Alpha and sends an opening image-only draft, then a typed image withou
   });
   expect(screen.getByText("Choose an active image")).toBeTruthy();
   expect(sockets[0]!.close).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("button", { name: "End realtime chat" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "End call" })).toBeTruthy();
 });
 
 it.each([false, true])(
@@ -344,20 +348,23 @@ it.each([false, true])(
     if (rtc) expect(rtcConfig).toHaveBeenCalledWith({ iceServers });
     socket.accepted();
     socket.ready();
-    expect(screen.getByText(rtc ? "WebRTC" : "PCM")).toBeTruthy();
+    expect(screen.getByText(rtc ? /· WebRTC/ : /· PCM/)).toBeTruthy();
     expect(contexts[0]!.options.processorOptions).toEqual({
       inputHz: 16000,
       pcm: !rtc,
     });
     const capture = contexts[0]!.port;
-    const input = screen.getByLabelText<HTMLMeterElement>("Microphone level");
-    const speaker = screen.getByLabelText<HTMLMeterElement>("Speaker level");
+    const input = screen.getByRole("meter", { name: "Microphone level" });
+    const speaker = screen.getByRole("meter", { name: "Speaker level" });
     output(0.1);
     capture.onmessage?.({ data: { level: 0.25 } });
-    await waitFor(() => expect(input.value).toBeCloseTo(0.75));
-    if (!rtc) expect(speaker.value).toBeCloseTo(0.3);
+    await waitFor(() =>
+      expect(Number(input.getAttribute("aria-valuenow"))).toBeCloseTo(0.75),
+    );
+    if (!rtc)
+      expect(Number(speaker.getAttribute("aria-valuenow"))).toBeCloseTo(0.3);
     socket.receive({ type: "limit_warning", remaining_seconds: 25 });
-    expect(screen.getByText("Call time limit approaching")).toBeTruthy();
+    expect(screen.getByText("Ending soon")).toBeTruthy();
     expect(screen.getByLabelText("Time remaining").textContent).toBe("00:25");
     fireEvent.click(screen.getByRole("button", { name: "Mute microphone" }));
     expect(tracks[0]!.enabled).toBe(false);
@@ -366,9 +373,14 @@ it.each([false, true])(
     capture.onmessage?.({ data: new ArrayBuffer(32) });
     capture.onmessage?.({ data: "speech" });
     expect(socket.send).not.toHaveBeenCalled();
-    fireEvent.change(
-      screen.getByRole("combobox", { name: "Microphone device" }),
-      { target: { value: "usb" } },
+    fireEvent.click(screen.getByRole("button", { name: "Microphone device" }));
+    expect(
+      (
+        await screen.findByRole("menuitemradio", { name: "default microphone" })
+      ).getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: "usb microphone" }),
     );
     await waitFor(() => expect(tracks[0]!.stop).toHaveBeenCalledOnce());
     expect(getUserMedia).toHaveBeenLastCalledWith({
@@ -476,10 +488,14 @@ it("waits for seal, then automatically reconnects once after Worker drain", asyn
 });
 
 it("offers manual continuation after an unexpected accepted socket drop", async () => {
-  const { dial, tickets } = harness();
+  const { dial, tickets } = harness({ singleDevice: true });
   const socket = await dial();
   socket.accepted();
   socket.ready();
+  expect(
+    screen.queryByRole("button", { name: "Microphone device" }),
+  ).toBeNull();
+  expect(screen.queryByText("Alpha")).toBeNull();
   await socket.end();
   expect(tickets).toHaveLength(1);
   expect(

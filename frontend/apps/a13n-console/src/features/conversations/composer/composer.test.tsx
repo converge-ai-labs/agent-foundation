@@ -212,7 +212,7 @@ it("keeps an unsent draft when opening the microphone is cancelled", async () =>
     });
     fireEvent.click(start);
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "End call" }));
     finishPermission({ getTracks: () => [track] } as unknown as MediaStream);
     await waitFor(() => {
       expect(start.disabled).toBe(false);
@@ -450,7 +450,7 @@ it.each([true, false])("follows a Run (accepted: %s)", async (seen) => {
     expect(close).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "End call" }));
     expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "stop" }));
     expect(stop).toHaveBeenCalledOnce();
     getRun.mockResolvedValueOnce({
@@ -462,7 +462,7 @@ it.each([true, false])("follows a Run (accepted: %s)", async (seen) => {
     });
     expect(close).toHaveBeenCalled();
     expect(getRun).toHaveBeenCalledOnce();
-    expect(screen.queryByText("Saving conversation…")).toBeNull();
+    expect(screen.queryByText("Saving…")).toBeNull();
   } finally {
     vi.useRealTimers();
     cleanup();

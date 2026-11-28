@@ -141,7 +141,7 @@ from a13n_service.runs.realtime import (
     Channel,
     Media,
     MessageInput,
-    realtime_image_asset,
+    validate_realtime_image,
     validate_realtime_image_count,
     worker_channel,
 )
@@ -1233,13 +1233,17 @@ class _Attempt:
         images: list[BinaryContent] = []
         for index, asset_id in enumerate(asset_ids):
             path = f"{field}.{index}"
-            asset = await realtime_image_asset(
-                storage, principal, workspace_id, asset_id, profile.supported_image_types, field=path
-            )
             try:
-                current, data = await read_asset_content(storage, objects, principal, workspace_id, asset_id)
-                if current.retired_at is not None:
-                    raise invalid(path, "Choose an active image asset from this workspace")
+                asset, data = await read_asset_content(
+                    storage,
+                    objects,
+                    principal,
+                    workspace_id,
+                    asset_id,
+                    before_read=partial(
+                        validate_realtime_image, supported_types=profile.supported_image_types, field=path
+                    ),
+                )
             except ServiceError as error:
                 if error.code in {"not_found", "forbidden", "unavailable"}:
                     raise invalid(path, "Choose an available image asset from this workspace") from None

@@ -1,11 +1,23 @@
 import {
+  CaretDownIcon,
   MicrophoneIcon,
   MicrophoneSlashIcon,
   PhoneDisconnectIcon,
-  SpeakerHighIcon,
   SpeakerSlashIcon,
 } from "@phosphor-icons/react";
-import { Badge, Button, Tooltip, TooltipPopup, TooltipTrigger } from "a13n-ui";
+import {
+  Badge,
+  Button,
+  Menu,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+  StatusPill,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "a13n-ui";
 import { useEffect, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./realtime.module.css";
@@ -81,107 +93,166 @@ export function VoiceHud({
       : clock(
           Math.max(0, Math.ceil((limitAt - Math.max(now, Date.now())) / 1000)),
         );
+  const active = phase === "ready";
+  const warning = active && remaining !== undefined;
   const state =
     phase === "connecting"
       ? t("Connecting…")
       : phase === "ending"
-        ? t("Saving conversation…")
-        : t("Voice call active");
+        ? t("Saving…")
+        : warning
+          ? t("Ending soon")
+          : t("Live");
+  const microphone = muted ? t("Unmute microphone") : t("Mute microphone");
+  const devicePicker = t("Microphone device");
+  const interruptLabel = t("Interrupt response");
+  const hangUp = t("End call");
   return (
     <section className={styles.hud} aria-label={t("Voice call controls")}>
       <div className={styles.summary}>
-        <span className={styles.state} role="status">
+        <StatusPill
+          role="status"
+          variant={warning ? "warning" : active ? "success" : "neutral"}
+        >
           {state}
+        </StatusPill>
+        <span className={styles.elapsed}>
+          {elapsed} · {transport === "webrtc" ? t("WebRTC") : t("PCM")}
         </span>
-        <span className={styles.transport}>
-          {transport === "webrtc" ? t("WebRTC") : t("PCM")}
-        </span>
-        <span className={styles.elapsed} aria-label={t("Elapsed call time")}>
-          {elapsed}
-        </span>
-        <VoiceAlpha />
-      </div>
-      <div className={styles.controls}>
-        <div className={styles.levels}>
-          <MicrophoneIcon size={13} aria-hidden="true" />
-          <meter
-            max={1}
-            value={phase === "ready" && !muted ? Math.min(1, input * 3) : 0}
-            aria-label={t("Microphone level")}
-          />
-          <SpeakerHighIcon size={13} aria-hidden="true" />
-          <meter
-            max={1}
-            value={phase === "ready" ? Math.min(1, output * 3) : 0}
-            aria-label={t("Speaker level")}
-          />
-        </div>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant={muted ? "secondary" : "ghost"}
-          disabled={phase !== "ready"}
-          aria-label={muted ? t("Unmute microphone") : t("Mute microphone")}
-          title={muted ? t("Unmute microphone") : t("Mute microphone")}
-          onClick={() => media.current?.toggleMute()}
-        >
-          {muted ? (
-            <MicrophoneSlashIcon size={16} />
-          ) : (
-            <MicrophoneIcon size={16} />
-          )}
-        </Button>
-        <select
-          className={styles.device}
-          aria-label={t("Microphone device")}
-          disabled={phase !== "ready" || switching || !devices.length}
-          value={deviceId}
-          onChange={(event) =>
-            void media.current?.switchMic(event.currentTarget.value)
-          }
-        >
-          {!devices.some((device) => device.deviceId === deviceId) && (
-            <option value={deviceId}>{t("Default microphone")}</option>
-          )}
-          {devices.map((device, index) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label ||
-                t("Microphone {{number}}", { number: index + 1 })}
-            </option>
-          ))}
-        </select>
-        {phase === "ready" && interrupt && (
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label={t("Interrupt response")}
-            title={t("Interrupt response")}
-            onClick={interrupt}
-          >
-            <SpeakerSlashIcon size={16} aria-hidden="true" />
-          </Button>
-        )}
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          disabled={phase === "ending"}
-          aria-label={t("End realtime chat")}
-          title={t("End realtime chat")}
-          onClick={stop}
-        >
-          <PhoneDisconnectIcon size={16} aria-hidden="true" />
-        </Button>
-      </div>
-      {remaining !== undefined && (
-        <div className={styles.warning}>
-          <span role="status">{t("Call time limit approaching")}</span>
+        {warning && (
           <span className={styles.elapsed} aria-label={t("Time remaining")}>
             {remaining}
           </span>
+        )}
+      </div>
+      <div className={styles.controls}>
+        <div className={styles.levels} data-muted={muted}>
+          <AudioLevel
+            label={t("Microphone level")}
+            level={active && !muted ? input : 0}
+          />
+          <AudioLevel label={t("Speaker level")} level={active ? output : 0} />
         </div>
-      )}
+        <div className={styles.microphone}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant={muted ? "secondary" : "ghost"}
+                  disabled={!active}
+                  aria-label={microphone}
+                  onClick={() => media.current?.toggleMute()}
+                />
+              }
+            >
+              {muted ? (
+                <MicrophoneSlashIcon size={16} aria-hidden="true" />
+              ) : (
+                <MicrophoneIcon size={16} aria-hidden="true" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup>{microphone}</TooltipPopup>
+          </Tooltip>
+          {devices.length > 1 && (
+            <Menu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <MenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          size="icon-xs"
+                          variant="ghost"
+                          aria-label={devicePicker}
+                          disabled={!active || switching}
+                        />
+                      }
+                    />
+                  }
+                >
+                  <CaretDownIcon size={12} aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipPopup>{devicePicker}</TooltipPopup>
+              </Tooltip>
+              <MenuPopup align="end" aria-label={devicePicker}>
+                <MenuRadioGroup
+                  value={deviceId}
+                  onValueChange={(id) => {
+                    void media.current?.switchMic(id);
+                  }}
+                >
+                  {devices.map((device, index) => (
+                    <MenuRadioItem
+                      key={device.deviceId}
+                      value={device.deviceId}
+                    >
+                      {device.label ||
+                        t("Microphone {{number}}", { number: index + 1 })}
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuPopup>
+            </Menu>
+          )}
+        </div>
+        {active && interrupt && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={interruptLabel}
+                  onClick={interrupt}
+                />
+              }
+            >
+              <SpeakerSlashIcon size={16} aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipPopup>{interruptLabel}</TooltipPopup>
+          </Tooltip>
+        )}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="destructive-outline"
+                disabled={phase === "ending"}
+                aria-label={hangUp}
+                onClick={stop}
+              />
+            }
+          >
+            <PhoneDisconnectIcon size={16} aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>{hangUp}</TooltipPopup>
+        </Tooltip>
+      </div>
     </section>
+  );
+}
+
+function AudioLevel({ label, level }: { label: string; level: number }) {
+  const value = Math.min(1, level * 3);
+  return (
+    <span
+      className={styles.track}
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={1}
+      aria-valuenow={value}
+    >
+      <span
+        className={styles.level}
+        style={{ transform: `scaleX(${value})` }}
+      />
+    </span>
   );
 }

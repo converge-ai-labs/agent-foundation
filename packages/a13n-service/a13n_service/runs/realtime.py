@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
@@ -22,7 +23,7 @@ from sqlalchemy import delete, func, select
 from starlette.websockets import WebSocketState
 
 from a13n_service.infra.crypto import secret_hash
-from a13n_service.infra.db import Storage, now, short_session, transaction
+from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.ids import Key, ObjectId, new_object_id
 from a13n_service.infra.telemetry import meter
@@ -390,28 +391,13 @@ def validate_realtime_image_count(asset_ids: tuple[str, ...], maximum: int, *, f
         raise invalid(field, f"This model accepts at most {maximum} image(s) per input")
 
 
-async def realtime_image_asset(
-    storage: Storage,
-    principal: Principal,
-    workspace_id: str,
-    asset_id: str,
-    supported_types: tuple[str, ...],
-    *,
-    field: str,
-) -> Asset:
-    try:
-        asset = await get_asset(storage, principal, workspace_id, asset_id)
-    except ServiceError as error:
-        if error.code in {"not_found", "forbidden"}:
-            raise invalid(field, "Choose an available image asset from this workspace") from None
-        raise
+def validate_realtime_image(asset: Asset, supported_types: tuple[str, ...], *, field: str) -> None:
     if asset.retired_at is not None:
         raise invalid(field, "Choose an active image asset from this workspace")
     if asset.content_type not in supported_types:
         raise invalid(field, "This model accepts only: " + ", ".join(supported_types))
     if asset.size > IMAGE_MAX_BYTES:
         raise invalid(field, "Each image must be at most 4 MiB")
-    return asset
 
 
 router = APIRouter()
@@ -538,14 +524,14 @@ async def create_realtime_session(
         raise invalid("agent_id", "The Agent's primary model does not use a realtime API")
     validate_realtime_image_count(body.draft_asset_ids, availability.max_images_per_input, field="draft_asset_ids")
     for index, asset_id in enumerate(body.draft_asset_ids):
-        await realtime_image_asset(
-            runtime.storage,
-            principal,
-            workspace_id,
-            asset_id,
-            availability.supported_image_types,
-            field=f"draft_asset_ids.{index}",
-        )
+        field = f"draft_asset_ids.{index}"
+        try:
+            asset = await get_asset(runtime.storage, principal, workspace_id, asset_id)
+        except ServiceError as error:
+            if error.code in {"not_found", "forbidden"}:
+                raise invalid(field, "Choose an available image asset from this workspace") from None
+            raise
+        validate_realtime_image(asset, availability.supported_image_types, field=field)
     if body.transport not in availability.transports:
         raise invalid("transport", "The Agent's primary model does not support WebRTC; use websocket")
     if availability.reason is not None:
@@ -990,22 +976,25 @@ async def relay(
                 frame = b"b" + audio
             else:
                 try:
-                    command = _COMMAND.validate_json(event.get("text") or "")
-                except ValidationError as error:
-                    if not ready.is_set() or not all(
-                        detail["loc"][:1] == ("input",) for detail in error.errors(include_input=False)
-                    ):
-                        raise
-                    async with asyncio.timeout(5):
-                        await socket.send_json(
-                            {
-                                "type": "error",
-                                "code": "invalid_argument",
-                                "message": "Send text (up to 8,192 characters) or up to four image asset IDs",
-                                "recoverable": True,
-                            }
-                        )
-                    continue
+                    payload: object = json.loads(event.get("text") or "")
+                except (ValueError, RecursionError):
+                    raise invalid("type", "Expected a JSON realtime command") from None
+                if ready.is_set() and isinstance(payload, dict) and payload.get("type") == "input":
+                    try:
+                        command = MessageInput.model_validate(payload)
+                    except ValidationError:
+                        async with asyncio.timeout(5):
+                            await socket.send_json(
+                                {
+                                    "type": "error",
+                                    "code": "invalid_argument",
+                                    "message": "Send text (up to 8,192 characters) or up to four image asset IDs",
+                                    "recoverable": True,
+                                }
+                            )
+                        continue
+                else:
+                    command = _COMMAND.validate_python(payload)
                 if isinstance(command, Input) and command.type == "stop":
                     return None
                 if not ready.is_set():

@@ -1,4 +1,4 @@
-import { WaveformIcon } from "@phosphor-icons/react";
+import { WarningCircleIcon, WaveformIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,6 +18,7 @@ import { delay } from "../../service-client/transport";
 import { data, type Schema } from "../../shared/api";
 import { Composer } from "./composer";
 import { VoiceAlpha, VoiceHud, type VoiceMedia } from "./realtime-hud";
+import styles from "./realtime.module.css";
 import captureModule from "./realtime-capture.js?url&no-inline";
 import { invalidateConversation, runPath } from "./api";
 
@@ -222,7 +223,7 @@ function useRealtimeCall() {
       onAccepted,
     } = options;
     if (!agentId || !canRun || cleanup.current || !availability.can_start)
-      throw new Error(t("Realtime connection failed"));
+      throw new Error(t("Voice connection failed."));
     const useWebRTC =
       !retry.forcePcm &&
       availability.transports?.includes("webrtc") &&
@@ -362,7 +363,7 @@ function useRealtimeCall() {
     const failPeer = () => {
       if (!ready) startupFailure = true;
       else endReason ??= "realtime_transport_failed";
-      failMedia(t("Realtime connection failed"));
+      failMedia(t("Voice connection failed."));
     };
     const startConversation = () => {
       if (
@@ -410,14 +411,14 @@ function useRealtimeCall() {
               return;
             }
             if (connection.bufferedAmount >= 64 * 1024) {
-              failMedia(t("Realtime connection failed"));
+              failMedia(t("Voice connection failed."));
               return;
             }
             connection.send(data);
           }
         };
       } catch {
-        failMedia(t("Realtime connection failed"));
+        failMedia(t("Voice connection failed."));
         return;
       }
       ready = true;
@@ -477,7 +478,7 @@ function useRealtimeCall() {
       );
       const armTrack = (track: MediaStreamTrack) => {
         track.enabled = ready && !micMuted;
-        track.onended = () => failMedia(t("Realtime connection failed"));
+        track.onended = () => failMedia(t("Voice connection failed."));
       };
       const track = input.getAudioTracks?.()[0];
       selectedDevice = track?.getSettings?.().deviceId || selectedDevice;
@@ -605,7 +606,7 @@ function useRealtimeCall() {
             context.createMediaStreamSource(remote).connect(remoteLevel);
             void playback
               .play()
-              .catch(() => failMedia(t("Realtime connection failed")));
+              .catch(() => failMedia(t("Voice connection failed.")));
           };
           await rtc.setLocalDescription(await rtc.createOffer());
           await waitForIce(
@@ -620,7 +621,7 @@ function useRealtimeCall() {
             rtc.connectionState === "failed" ||
             rtc.connectionState === "closed"
           )
-            throw new Error(t("Realtime connection failed"));
+            throw new Error(t("Voice connection failed."));
           rtc.onconnectionstatechange = () => {
             if (rtc.connectionState === "connected") startConversation();
             if (
@@ -753,7 +754,7 @@ function useRealtimeCall() {
           if (!event.recoverable) endReason = reason ?? endReason;
         }
       };
-      connected.onerror = () => setError(t("Realtime connection failed"));
+      connected.onerror = () => setError(t("Voice connection failed."));
       let closing = false;
       const finish = async (code: number) => {
         if (disposed || closing) return;
@@ -781,7 +782,7 @@ function useRealtimeCall() {
           !userStopped.current &&
           !deferUntilSeal
         )
-          setError((value) => value || t("Realtime connection failed"));
+          setError((value) => value || t("Voice connection failed."));
         let nextCall: (() => Promise<void | false>) | undefined;
         let auto = false;
         try {
@@ -890,7 +891,7 @@ function useRealtimeCall() {
             );
           }
         } catch {
-          if (!disposed) setError(t("Realtime connection failed"));
+          if (!disposed) setError(t("Voice connection failed."));
         } finally {
           if (!disposed) {
             void cache.invalidateQueries({
@@ -911,7 +912,7 @@ function useRealtimeCall() {
                 setError(
                   cause instanceof Error
                     ? cause.message
-                    : t("Realtime connection failed"),
+                    : t("Voice connection failed."),
                 );
                 settleFirst?.(false);
               }
@@ -924,7 +925,7 @@ function useRealtimeCall() {
                     setError(
                       cause instanceof Error
                         ? cause.message
-                        : t("Realtime connection failed"),
+                        : t("Voice connection failed."),
                     );
                   });
                 });
@@ -973,13 +974,13 @@ function useRealtimeCall() {
       case "authority_revoked":
         return t("You no longer have permission to continue this call.");
       default:
-        return t("Realtime connection failed");
+        return t("Voice connection failed.");
     }
   }
 
   function sendInput({ text, assetIds }: Draft) {
     if (phase !== "ready" || socket.current?.readyState !== WebSocket.OPEN)
-      throw new Error(t("Realtime connection failed"));
+      throw new Error(t("Voice connection failed."));
     setError("");
     socket.current.send(
       JSON.stringify(
@@ -1130,6 +1131,7 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
   const mine = owner === id || (!!displayedRunId && owner === displayedRunId);
   const phase = mine ? call.phase : "idle";
   const error = mine ? call.error : "";
+  const resume = mine && phase === "idle" ? call.resume : undefined;
   const approvals = mine ? call.approvals : [];
   const acceptsText =
     phase === "ready" ? call.acceptsText : availability.accepts_text;
@@ -1147,9 +1149,7 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
     if (!text && !assetIds.length)
       throw new Error(t("Write a message or attach content first."));
     if (text.length > 8192)
-      throw new Error(
-        t("Realtime messages must be between 1 and 8,192 characters."),
-      );
+      throw new Error(t("Messages must be between 1 and 8,192 characters."));
     if (assetIds.length > imageLimit)
       throw new Error(
         t("Image limit per message: {{limit}}.", { limit: imageLimit }),
@@ -1214,11 +1214,7 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
           phase === "ending"
         }
         submit={submit}
-        label={
-          phase === "ready"
-            ? t("Send message in voice chat")
-            : t("Start voice chat")
-        }
+        label={phase === "ready" ? t("Send message") : t("Start voice chat")}
         submitIcon={<WaveformIcon size={17} weight="bold" />}
         onEmptySubmit={
           phase === "idle"
@@ -1227,7 +1223,7 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
                   setError(
                     cause instanceof Error
                       ? cause.message
-                      : t("Realtime connection failed"),
+                      : t("Voice connection failed."),
                   );
                 });
               }
@@ -1257,26 +1253,36 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
           />
         )}
         {mine && phase !== "idle" && call.note && (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p role="status" className={styles.note}>
             {call.note}
           </p>
         )}
-        {(error || (phase === "idle" && availability.reason)) && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {error || availability.reason}
+        {error || resume ? (
+          <div className={resume ? styles.recovery : undefined}>
+            {error && (
+              <p role="alert" className={styles.error}>
+                <WarningCircleIcon size={14} aria-hidden="true" />
+                {error}
+              </p>
+            )}
+            {resume && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={resume}
+                disabled={!!disabled}
+              >
+                <WaveformIcon size={14} aria-hidden="true" />
+                {t("Resume voice call")}
+              </Button>
+            )}
+          </div>
+        ) : phase === "idle" && availability.reason ? (
+          <p role="status" className={styles.note}>
+            {availability.reason}
           </p>
-        )}
-        {mine && phase === "idle" && call.resume && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={call.resume}
-            disabled={!!disabled}
-          >
-            {t("Resume voice call")}
-          </Button>
-        )}
+        ) : null}
       </>
     ),
   };

@@ -5,7 +5,7 @@ import {
   ModalFrame,
   SegmentedControl,
 } from "a13n-ui";
-import { PaperclipIcon } from "@phosphor-icons/react";
+import { ImageIcon, PaperclipIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../layout/workspace";
@@ -59,7 +59,11 @@ export function AttachDialog({
           disabled={disabled}
           aria-label={imageTypes ? t("Attach image") : t("Attach file or URL")}
         >
-          <PaperclipIcon size={16} />
+          {imageTypes ? (
+            <ImageIcon size={16} aria-hidden="true" />
+          ) : (
+            <PaperclipIcon size={16} aria-hidden="true" />
+          )}
         </Button>
       }
       size="md"
@@ -100,7 +104,20 @@ export function AttachDialog({
           <FileDrop
             label={imageTypes ? t("Upload an image") : t("Upload a file")}
             accept={imageTypes ? [...imageTypes] : undefined}
-            hint={t("Drop a file here or choose one to upload.")}
+            hint={
+              imageTypes
+                ? t(
+                    "Drop an image here or choose one to upload ({{formats}}).",
+                    {
+                      formats: imageTypes
+                        .map((type) =>
+                          type.slice("image/".length).toUpperCase(),
+                        )
+                        .join(", "),
+                    },
+                  )
+                : t("Drop a file here or choose one to upload.")
+            }
             file={uploadedFile}
             disabled={disabled || uploading || selectionDisabled}
             onSelect={onUpload}

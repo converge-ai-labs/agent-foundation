@@ -647,6 +647,15 @@ async def test_realtime_image_assets_use_the_worker_and_keep_rejected_calls_open
         ticket = response.json()
         invalid_inputs.append(([picture], "no vision"))
 
+    storage_reads: list[str] = []
+    get_object = executing.runtime.objects.get
+
+    async def record_read(key: str) -> bytes | None:
+        storage_reads.append(key)
+        return await get_object(key)
+
+    monkeypatch.setattr(executing.runtime.objects, "get", record_read)
+
     async with serve_http(executing.app, lifespan="off") as url, asyncio.timeout(15):
         async with connect(
             url.replace("http://", "ws://", 1) + ticket["websocket_path"],
@@ -661,11 +670,13 @@ async def test_realtime_image_assets_use_the_worker_and_keep_rejected_calls_open
                     isinstance(received, BinaryImage) and received.data == image and received.media_type == "image/png"
                 )
                 assert isinstance(await provider.connection.outgoing.get(), CreateResponse)
+            prior_reads = len(storage_reads)
             for ids, text in invalid_inputs:
                 await socket.send(json.dumps({"type": "input", "text": text, "asset_ids": ids}))
                 error = json.loads(await socket.recv())
                 assert error["type"] == "error" and error["code"] == "invalid_argument" and error["recoverable"]
             assert provider.connection.outgoing.empty()
+            assert len(storage_reads) == prior_reads
             if vision:
                 await socket.send(json.dumps({"type": "input", "asset_ids": [picture], "respond": False}))
                 received = await provider.connection.outgoing.get()
