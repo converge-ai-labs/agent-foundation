@@ -40,6 +40,11 @@ const { connections, controls } = vi.hoisted(() => ({
     sendKey: ReturnType<typeof vi.fn>;
     clipboardPasteFrom: ReturnType<typeof vi.fn>;
     canvas: HTMLCanvasElement;
+    getImageData: () => {
+      width: number;
+      height: number;
+      data: Uint8ClampedArray;
+    };
   })[],
 }));
 vi.mock("@novnc/novnc", () => ({
@@ -246,6 +251,21 @@ it("captures a read-only framebuffer without acquiring control or reconnecting",
   await waitFor(() => expect(document.activeElement).toBe(capture));
   expect(connections[0].viewOnly).toBe(true);
 });
+it("reports capture failures without needing remote input authority", async () => {
+  await show();
+  vi.spyOn(connections[0], "getImageData").mockReturnValue({
+    width: 0,
+    height: 0,
+    data: new Uint8ClampedArray(),
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Capture and annotate screenshot" }),
+  );
+  expect(
+    screen.getByText("Wait for a browser frame before capturing."),
+  ).toBeTruthy();
+});
+
 it("suspends controller input while editing and returns to chat after copy", async () => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     putImageData: vi.fn(),

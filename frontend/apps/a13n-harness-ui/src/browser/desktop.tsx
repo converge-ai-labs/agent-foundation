@@ -621,24 +621,25 @@ export function Desktop({
             </div>
           </div>
         )}
-        {interactive && !!clipboardError.message && (
-          <div className={styles.inputNotice}>
-            <span role="status">
-              {clipboardError.external
-                ? clipboardError.message
-                : t(clipboardError.message)}
-            </span>
-            {clipboardError.canCopyRemote && (
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => void clipboard.current?.copyRemote()}
-              >
-                {t("Copy remote text")}
-              </Button>
-            )}
-          </div>
-        )}
+        {!!clipboardError.message &&
+          (interactive || !clipboardError.canCopyRemote) && (
+            <div className={styles.inputNotice}>
+              <span role="status">
+                {clipboardError.external
+                  ? clipboardError.message
+                  : t(clipboardError.message)}
+              </span>
+              {clipboardError.canCopyRemote && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => void clipboard.current?.copyRemote()}
+                >
+                  {t("Copy remote text")}
+                </Button>
+              )}
+            </div>
+          )}
       </div>
     </>
   );
