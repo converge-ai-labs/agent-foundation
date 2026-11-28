@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -190,10 +196,15 @@ it("creates a memory identified by its ID", async () => {
     }),
     "One topic per file.",
   );
-  await user.type(
-    within(dialog).getByRole("combobox", { name: "Path to always load" }),
-    "README.md{Enter}",
-  );
+  const path = within(dialog).getByRole("combobox", {
+    name: "Path to always load",
+  });
+  await user.type(path, "手順.md");
+  expect(fireEvent.keyDown(path, { key: "Enter", keyCode: 229 })).toBe(true);
+  expect((path as HTMLInputElement).value).toBe("手順.md");
+  expect(within(dialog).queryByText("手順.md")).toBeNull();
+  await user.keyboard("{Enter}");
+  expect(within(dialog).getByText("手順.md")).toBeTruthy();
   await user.click(
     within(dialog).getByRole("button", { name: "Create collection" }),
   );
@@ -209,7 +220,7 @@ it("creates a memory identified by its ID", async () => {
       modules: null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
-    always_load: ["README.md"],
+    always_load: ["手順.md"],
   });
 });
 

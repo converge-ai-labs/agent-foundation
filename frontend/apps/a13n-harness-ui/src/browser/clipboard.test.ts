@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
-import { bindClipboard } from "./clipboard";
+import { bindClipboard, waitForClipboardWrites } from "./clipboard";
 
 let root: HTMLDivElement;
 let controller: boolean;
@@ -179,9 +179,7 @@ it("stops polling denied reads and retries on a direct interaction", async () =>
   readText.mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
   bridge.sync();
   await vi.waitFor(() =>
-    expect(notice).toHaveBeenCalledWith(
-      expect.stringContaining("Allow clipboard access"),
-    ),
+    expect(notice).toHaveBeenCalledWith("Clipboard sync is unavailable."),
   );
   bridge.sync();
   expect(readText).toHaveBeenCalledOnce();
@@ -299,3 +297,131 @@ it.each(["reconnect", "cancel and reopen"])(
     expect(local).toBe("PNG");
   },
 );
+
+async function offerRemote(text: string) {
+  writeText.mockRejectedValueOnce(
+    new DOMException("blocked", "NotAllowedError"),
+  );
+  receive(text);
+  await vi.waitFor(() =>
+    expect(notice).toHaveBeenLastCalledWith(
+      "Automatic clipboard copy was blocked.",
+      false,
+      true,
+    ),
+  );
+}
+
+it("starts the manual write immediately even when the copy button has focus", async () => {
+  const text = "界".repeat(65536);
+  await offerRemote(text);
+  const button = document.createElement("button");
+  document.body.append(button);
+  button.focus();
+  try {
+    expect(root.contains(document.activeElement)).toBe(false);
+    const copy = bridge.copyRemote();
+    expect(writeText).toHaveBeenLastCalledWith(text);
+    expect(writeText).toHaveBeenCalledTimes(2);
+    await copy;
+    expect(local).toBe(text);
+    expect(notice).toHaveBeenLastCalledWith("");
+    await bridge.copyRemote();
+    expect(writeText).toHaveBeenCalledTimes(2);
+  } finally {
+    button.remove();
+  }
+});
+
+it("lets the user retry a rejected manual copy during the same control episode", async () => {
+  await offerRemote("remote text");
+  writeText.mockRejectedValueOnce(
+    new DOMException("blocked", "NotAllowedError"),
+  );
+  await bridge.copyRemote();
+  expect(notice).toHaveBeenLastCalledWith(
+    "Could not copy remote text. Try again.",
+    false,
+    true,
+  );
+  await bridge.copyRemote();
+  expect(local).toBe("remote text");
+  expect(notice).toHaveBeenLastCalledWith("");
+});
+
+it.each(["suspend", "disconnect", "handback", "local sync", "remote update"])(
+  "does not copy an old offer after %s",
+  async (transition) => {
+    await offerRemote("old remote text");
+    if (transition === "suspend") {
+      await bridge.suspend();
+      bridge.resume();
+    } else if (transition === "disconnect" || transition === "handback") {
+      controller = false;
+      await bridge.copyRemote();
+      bridge.stop();
+    } else if (transition === "local sync") {
+      local = "new local selection";
+      bridge.sync();
+      await vi.waitFor(() =>
+        expect(connection.clipboardPasteFrom).toHaveBeenCalledWith(local),
+      );
+    } else {
+      // A remote update still invalidates the old offer while the notice has focus.
+      root.blur();
+      receive("new remote selection");
+    }
+    expect(notice).toHaveBeenLastCalledWith("");
+    await bridge.copyRemote();
+    expect(writeText).toHaveBeenCalledOnce();
+  },
+);
+
+it("does not offer or write oversized remote text", async () => {
+  receive("界".repeat(65537));
+  await vi.waitFor(() =>
+    expect(notice).toHaveBeenLastCalledWith(expect.stringContaining("exceeds")),
+  );
+  await bridge.copyRemote();
+  expect(writeText).not.toHaveBeenCalled();
+});
+
+it("keeps an issued manual copy in the screenshot barrier after suspend", async () => {
+  await offerRemote("remote text");
+  let settle!: () => void;
+  writeText.mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      settle = resolve;
+    }),
+  );
+  const copy = bridge.copyRemote();
+  void bridge.copyRemote();
+  expect(writeText).toHaveBeenCalledTimes(2);
+  const ready = vi.fn();
+  const barrier = bridge.suspend().then(ready);
+  await Promise.resolve();
+  expect(ready).not.toHaveBeenCalled();
+  expect(notice).toHaveBeenLastCalledWith("");
+  settle();
+  await Promise.all([copy, barrier, waitForClipboardWrites()]);
+  expect(ready).toHaveBeenCalledOnce();
+  expect(notice).toHaveBeenLastCalledWith("");
+});
+
+it("never revives an offer from a denied automatic write after reactivating", async () => {
+  let reject!: (error: Error) => void;
+  writeText.mockReturnValueOnce(
+    new Promise<void>((_, fail) => {
+      reject = fail;
+    }),
+  );
+  receive("old remote text");
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+  const barrier = bridge.suspend();
+  bridge.resume();
+  reject(new DOMException("blocked", "NotAllowedError"));
+  await barrier;
+  await bridge.copyRemote();
+  expect(notice).not.toHaveBeenCalledWith(expect.any(String), false, true);
+  expect(writeText).toHaveBeenCalledOnce();
+});

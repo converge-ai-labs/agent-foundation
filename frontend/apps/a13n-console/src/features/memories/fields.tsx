@@ -205,7 +205,11 @@ export function AlwaysLoadField({
               autoComplete="off"
               onChange={(event) => setPath(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key !== "Enter" || event.nativeEvent.isComposing)
+                if (
+                  event.key !== "Enter" ||
+                  event.nativeEvent.isComposing ||
+                  event.nativeEvent.keyCode === 229
+                )
                   return;
                 event.preventDefault();
                 add();

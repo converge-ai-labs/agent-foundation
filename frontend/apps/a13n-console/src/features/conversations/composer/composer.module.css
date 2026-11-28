@@ -44,6 +44,11 @@
   font-size: var(--a13n-text-md);
   line-height: 1.6;
 }
+@media (pointer: coarse) {
+  .messageInput textarea {
+    font-size: max(16px, var(--a13n-text-md));
+  }
+}
 .messageInput textarea::placeholder {
   color: var(--a13n-muted);
 }

@@ -89,6 +89,11 @@
   max-height: 120px;
   outline: none;
 }
+@supports not (field-sizing: content) {
+  .form textarea {
+    min-height: calc(2lh + 4px);
+  }
+}
 .form:has(.actions) textarea,
 .actions,
 .fallbackQuote {

@@ -3,8 +3,9 @@ import type RFB from "@novnc/novnc";
 class ClipboardMessage extends Error {}
 
 const LIMIT = 65536;
-const unavailable =
-  "Clipboard sync unavailable. Allow clipboard access in your browser's site settings.";
+const unavailable = "Clipboard sync is unavailable.";
+const automaticCopyBlocked = "Automatic clipboard copy was blocked.";
+const manualCopyFailed = "Could not copy remote text. Try again.";
 
 // The local clipboard outlives individual connections and mounted viewers.
 // Keep every submitted write until settlement, including stopped bridges.
@@ -28,23 +29,33 @@ export function bindClipboard({
     "clipboardPasteFrom" | "addEventListener" | "removeEventListener"
   >;
   shortcut: (action: "copy" | "cut" | "paste") => void;
-  notice: (message: string, external?: boolean) => void;
+  notice: (
+    message: string,
+    external?: boolean,
+    canCopyRemote?: boolean,
+  ) => void;
 }) {
   let stopped = false;
   let suspended = false;
   let generation = 0;
   let last: string | undefined;
   let revision = 0;
+  let pending: { text: string; copying: boolean } | undefined;
   let readBlocked = false;
   let queued = 0;
   let serial = Promise.resolve();
-  const allowed = () =>
+  const inControl = () =>
     !stopped &&
     !suspended &&
     active() &&
-    document.visibilityState === "visible" &&
-    document.hasFocus() &&
-    root.contains(document.activeElement);
+    document.visibilityState === "visible";
+  const allowed = () =>
+    inControl() && document.hasFocus() && root.contains(document.activeElement);
+  const clearPending = () => {
+    if (!pending) return;
+    pending = undefined;
+    notice("");
+  };
   const bounded = (text: string) => {
     if (text.length > LIMIT)
       throw new ClipboardMessage(
@@ -61,7 +72,7 @@ export function bindClipboard({
         if (current()) await operation(current);
       })
       .catch((error: unknown) => {
-        if (current()) {
+        if (current() && !pending) {
           if (error instanceof ClipboardMessage) notice(error.message);
           else if (error instanceof Error) notice(error.message, true);
           else notice(unavailable);
@@ -85,6 +96,7 @@ export function bindClipboard({
   const send = async (text: string) => {
     connection.clipboardPasteFrom(bounded(text));
     last = text;
+    pending = undefined;
     notice("");
   };
   const sync = (gesture = false) => {
@@ -96,34 +108,69 @@ export function bindClipboard({
       const { text } = await local;
       if (!current() || before !== revision) return;
       readBlocked = text === undefined;
-      if (text === undefined) notice(unavailable);
-      else if (text !== last) await send(text);
+      if (text === undefined) {
+        if (!pending) notice(unavailable);
+      } else if (text !== last) await send(text);
     });
   };
-  const writeLocal = async (text: string, current: () => boolean) => {
-    if (!current() || text === last) return;
-    try {
-      const write = navigator.clipboard.writeText(bounded(text));
-      // A submitted OS write cannot be cancelled. Screenshot copy waits for it.
-      const settled = write.catch(() => {});
-      pendingWrites.add(settled);
-      void settled.then(() => pendingWrites.delete(settled));
-      await write;
-    } catch {
-      throw new ClipboardMessage(unavailable);
-    }
-    if (current()) {
-      last = text;
-      notice("");
-    }
+  const writeLocal = async (text: string) => {
+    const write = navigator.clipboard.writeText(text);
+    // A submitted OS write cannot be cancelled. Screenshot copy waits for it.
+    const settled = write.catch(() => {});
+    pendingWrites.add(settled);
+    void settled.then(() => pendingWrites.delete(settled));
+    await write;
   };
   const receive = (event: Event) => {
+    // A new remote transfer also replaces an offer while its button has focus.
+    const receivedRevision = ++revision;
+    clearPending();
     if (!allowed()) return;
-    const received = (event as CustomEvent<{ text: string }>).detail.text;
-    revision++;
+    const epoch = generation;
     enqueue(async (current) => {
-      await writeLocal(received, current);
+      const text = bounded(
+        (event as CustomEvent<{ text: string }>).detail.text,
+      );
+      if (text === last) return;
+      try {
+        await writeLocal(text);
+      } catch {
+        if (
+          epoch === generation &&
+          inControl() &&
+          receivedRevision === revision
+        ) {
+          pending = { text, copying: false };
+          notice(automaticCopyBlocked, false, true);
+        }
+        return;
+      }
+      if (current()) {
+        last = text;
+        notice("");
+      }
     });
+  };
+  const copyRemote = async () => {
+    // The notice button is outside the VNC root. Start the write within the
+    // click, without waiting for the bridge queue or a clipboard read.
+    if (!inControl() || !pending || pending.copying) return;
+    const offer = pending;
+    offer.copying = true;
+    revision++;
+    const epoch = generation;
+    const sameOffer = () => epoch === generation && pending === offer;
+    try {
+      await writeLocal(offer.text);
+      if (sameOffer()) {
+        last = offer.text;
+        clearPending();
+      }
+    } catch {
+      if (sameOffer() && inControl()) notice(manualCopyFailed, false, true);
+    } finally {
+      offer.copying = false;
+    }
   };
   const paste = (content: Promise<{ text: string | undefined }>) =>
     enqueue(async (current) => {
@@ -177,9 +224,11 @@ export function bindClipboard({
   const interval = setInterval(sync, 500);
   return {
     sync: focus,
+    copyRemote,
     suspend: () => {
       suspended = true;
       generation++;
+      clearPending();
       // Permission reads may stay pending indefinitely; they must not block copy.
       serial = Promise.resolve();
       queued = 0;
@@ -194,6 +243,7 @@ export function bindClipboard({
     stop: () => {
       stopped = true;
       generation++;
+      clearPending();
       last = undefined;
       clearInterval(interval);
       connection.removeEventListener("clipboard", receive);

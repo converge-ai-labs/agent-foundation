@@ -521,3 +521,50 @@ it("keeps a third-party clipboard error raw across language changes", async () =
   expect(screen.getByText(message)).toBeTruthy();
   expect(view.post).toHaveBeenCalledTimes(requests);
 });
+
+it("copies rejected remote text from the notice and removes the action on handback", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  try {
+    const view = await show();
+    view.update("controller-a");
+    await screen.findByRole("textbox", {
+      name: "Remote browser keyboard input",
+    });
+    const offer = async (text: string) => {
+      writeText.mockRejectedValueOnce(
+        new DOMException("blocked", "NotAllowedError"),
+      );
+      await act(async () => {
+        connections[1].dispatchEvent(
+          new CustomEvent("clipboard", { detail: { text } }),
+        );
+      });
+      return screen.findByRole("button", { name: "Copy remote text" });
+    };
+    const copy = await offer("remote text");
+    copy.focus();
+    fireEvent.click(copy);
+    expect(writeText).toHaveBeenLastCalledWith("remote text");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Copy remote text" }),
+      ).toBeNull(),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Remote browser keyboard input",
+    });
+    input.focus();
+    const expired = await offer("must stay remote");
+    view.update();
+    expect(
+      screen.queryByRole("button", { name: "Copy remote text" }),
+    ).toBeNull();
+    const writes = writeText.mock.calls.length;
+    fireEvent.click(expired);
+    expect(writeText).toHaveBeenCalledTimes(writes);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

@@ -346,7 +346,8 @@ function SelectionPopup({
                 if (
                   e.key === "Enter" &&
                   !e.shiftKey &&
-                  !e.nativeEvent.isComposing
+                  !e.nativeEvent.isComposing &&
+                  e.nativeEvent.keyCode !== 229
                 ) {
                   e.preventDefault();
                   e.currentTarget.form?.requestSubmit();
