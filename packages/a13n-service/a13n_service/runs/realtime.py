@@ -149,12 +149,12 @@ class Channel:
             self._enqueue(frame)
 
     def transcript(self, update: SpeechTranscript) -> None:
+        key = (update["message_id"], update["role"])
+        self._transcripts.pop(key, None)
         if update["final"] or not self.transcript_window:
             self.emit(_transcript_frame(update))
             return
-        key = (update["message_id"], update["role"])
         # Flush retained snapshots in order of their latest update.
-        self._transcripts.pop(key, None)
         self._transcripts[key] = update
         if self._transcript_timer is None:
             self._transcript_timer = asyncio.get_running_loop().call_later(self.transcript_window, self._flush_on_timer)

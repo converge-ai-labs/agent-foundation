@@ -14,12 +14,13 @@ from a13n_service import mcp as mcp_module
 from a13n_service.app import build_app
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.mcp import build_mcp
+from a13n_service.runs.runtime import Runtime
 from a13n_service.settings import Settings
 from a13n_service.tenancy.authenticate import LocalAuthenticator
 from fastapi import APIRouter, Depends, FastAPI
 from fastmcp.tools import Tool
 from fastmcp.utilities.openapi import HTTPRoute
-from redis.asyncio import Redis
+from redis.asyncio import BlockingConnectionPool, Redis
 from starlette.routing import Match
 
 from .conftest import ScriptedModel, _include_individual_routes, _MatchedRouter, _serve
@@ -63,6 +64,19 @@ async def test_service_fixture_clears_redis_before_starting_the_runtime(
         monkeypatch.setattr(app_module, "open_runtime", checked)
         async with _serve(settings, "control", service_app):
             assert started
+
+
+@pytest.mark.anyio
+async def test_realtime_uses_a_separate_bounded_redis_pool(runtime: Runtime) -> None:
+    bridge = runtime.realtime_bridge
+    assert bridge is not None
+    pool = bridge.redis.connection_pool
+    assert isinstance(pool, BlockingConnectionPool)
+    assert pool is not runtime.redis.connection_pool
+    assert pool.max_connections == 128
+    assert pool.timeout == runtime.settings.redis.timeout
+    assert pool.connection_kwargs["decode_responses"] is False
+    assert await bridge.redis.ping()
 
 
 def test_service_apps_copy_the_contract_without_recompiling_it(

@@ -9,6 +9,7 @@ from a13n_service.runs.realtime import Channel
 from a13n_service.runs.realtime_transport import Bridge, Pipe, TransportError
 from a13n_stream_protocol.realtime import SpeechTranscript
 from redis.asyncio import Redis
+from redis.exceptions import ResponseError
 from starlette.websockets import WebSocketState
 
 pytestmark = pytest.mark.anyio
@@ -16,13 +17,15 @@ pytestmark = pytest.mark.anyio
 
 def pair():
     redis = AsyncMock()
-    redis.mget.return_value = (None, None)
-    redis.xread.return_value = []
     batch = MagicMock()
-    batch.execute = AsyncMock()
+    batch.execute = AsyncMock(return_value=[(None, None), []])
     redis.pipeline = MagicMock()
     redis.pipeline.return_value.__aenter__.return_value = batch
     return Pipe(Bridge(redis), "run", side="control"), Pipe(Bridge(redis), "run", side="worker")
+
+
+def redis_batch(pipe):
+    return pipe.redis.pipeline.return_value.__aenter__.return_value
 
 
 def controls(receiver, *frames):
@@ -109,19 +112,73 @@ async def test_missing_audio_resets_only_its_own_segment():
         assert await worker.receive() == b"commit"
 
 
+async def test_control_send_pipelines_append_expiration_and_wakeup():
+    control, _ = pair()
+    batch = redis_batch(control)
+    for seq, frame in enumerate((b"o", b"finish"), start=1):
+        batch.reset_mock()
+        control.redis.pipeline.reset_mock()
+        first = seq == 1
+        batch.execute.return_value = [b"1-0", True, 1] if first else [b"2-0", 1]
+        await control.send(frame)
+        control.redis.pipeline.assert_called_once_with(transaction=first)
+        commands = [
+            call.xadd(
+                control.outbox,
+                {b"seq": seq, b"fence": control.fence, b"frame": frame},
+                maxlen=512,
+                approximate=False,
+                nomkstream=not first,
+            )
+        ]
+        if first:
+            commands.append(call.expire(control.outbox, 40))
+        commands.extend((call.publish(f"a13n:rt:{control.peer}:control", control.outbox.encode()), call.execute()))
+        assert batch.method_calls == commands
+        batch.execute.assert_awaited_once()
+
+
+@pytest.mark.parametrize("expired_heartbeat", [False, True])
+async def test_control_receive_pipelines_markers_before_applying_rows(expired_heartbeat):
+    _, worker = pair()
+    batch = redis_batch(worker)
+    worker.last_check = asyncio.get_running_loop().time() - 2
+    worker.check_heartbeat_after = worker.last_check
+    entries = [(b"1-0", {b"fence": worker.fence, b"seq": b"1", b"frame": b"j{}"})]
+    alive = None if expired_heartbeat else worker.fence
+    batch.execute.return_value = [(None, alive), [(worker.inbox, entries)]]
+    async with asyncio.timeout(1):
+        if expired_heartbeat:
+            with pytest.raises(TransportError):
+                await worker.receive()
+            assert worker.cursor == b"0-0"
+        else:
+            assert await worker.receive() == b"j{}"
+            assert worker.cursor == b"1-0"
+    worker.redis.pipeline.assert_called_once_with(transaction=False)
+    assert batch.method_calls == [
+        call.mget(worker.inbox + ":close", worker.outbox + ":alive"),
+        call.xread({worker.inbox: b"0-0"}, count=512),
+        call.execute(raise_on_error=False),
+    ]
+    batch.execute.assert_awaited_once()
+
+
 async def test_disconnect_wakeup_preempts_pending_commit():
     _, worker = pair()
     scanned = asyncio.Event()
 
-    async def scan(*args, **kwargs):
+    def scan(**kwargs):
         scanned.set()
-        return []
+        return [(None, None), []]
 
-    worker.redis.xread.side_effect = scan
+    batch = redis_batch(worker)
+    batch.execute.side_effect = scan
     controls(worker, b"commit:1", b"text")
     receiving = asyncio.create_task(worker.receive())
     await scanned.wait()
-    worker.redis.mget.return_value = (worker.fence, None)
+    batch.execute.side_effect = None
+    batch.execute.return_value = [(worker.fence, None), ResponseError("stream unavailable")]
     worker.scan = True
     worker.wake.set()
     async with asyncio.timeout(1):
@@ -208,11 +265,12 @@ async def test_worker_accepts_slow_control_handshake(monkeypatch):
     clock = loop.time
     scanned = asyncio.Event()
 
-    def scan(*args, **kwargs):
-        scanned.set()
-        return []
+    def execute(*, raise_on_error=True):
+        if not raise_on_error:
+            scanned.set()
+        return [(None, None), []]
 
-    worker.redis.xread.side_effect = scan
+    redis_batch(worker).execute.side_effect = execute
     monkeypatch.setattr(realtime, "Pipe", lambda *args, **kwargs: worker)
     monkeypatch.setattr(realtime, "prove", AsyncMock())
     lease = MagicMock(workspace_id="workspace", attempt_id="attempt", number=1)
@@ -359,7 +417,7 @@ async def test_disconnect_survives_redis_close_notification_failure():
     from redis.exceptions import ConnectionError
 
     control, _ = pair()
-    batch = control.redis.pipeline.return_value.__aenter__.return_value
+    batch = redis_batch(control)
     batch.execute.side_effect = ConnectionError()
     await control.shutdown()
     batch.execute.assert_awaited_once()
@@ -388,9 +446,16 @@ async def test_unattached_control_close_and_idle_control_stream(redis_url):
                     with pytest.raises(ServiceError, match="transport is unavailable"):
                         await worker.attach(lease)
         await control.send(b"stop")
-        await redis.expire(control.outbox, 1)
+        assert await redis.ttl(control.outbox) >= ATTACH_SECONDS * 2 - 1
+        await redis.expire(control.outbox, 10)
+        await control.send(b"finish")
+        assert 0 < await redis.ttl(control.outbox) <= 10
         await control.send(b"ping")
         assert await redis.ttl(control.outbox) >= ATTACH_SECONDS * 2 - 1
+        await redis.delete(control.outbox)
+        with pytest.raises(TransportError):
+            await control.send(b"stop")
+        assert not await redis.exists(control.outbox)
 
 
 def transcript(text: str, *, final: bool = False) -> SpeechTranscript:
@@ -427,7 +492,6 @@ async def test_realtime_coalesces_burst_without_a_control_reader(redis_url):
         expected = [
             started,
             *([queued] * 140),
-            {"type": "transcript", **transcript("snapshot 599")},
             {"type": "transcript", **user},
             {"type": "transcript", **transcript("complete", final=True)},
             {"type": "transcript", **transcript("another partial")},
@@ -438,6 +502,18 @@ async def test_realtime_coalesces_burst_without_a_control_reader(redis_url):
         async with asyncio.timeout(3):
             assert [json.loads((await control.receive())[1:]) for _ in expected] == expected
             assert await control.receive() == b"finish"
+
+
+async def test_final_transcript_supersedes_partial_and_cancels_idle_timer():
+    channel = Channel("actor", "workspace", transcript_window=60)
+    channel.transcript(transcript("partial"))
+    timer = channel._transcript_timer
+    assert timer is not None
+    final = transcript("final", final=True)
+    channel.transcript(final)
+    assert timer.cancelled() and channel._transcript_timer is None
+    assert channel.outgoing.get_nowait() == {"type": "transcript", **final}
+    assert channel.outgoing.empty()
 
 
 async def test_transcript_timer_and_zero_window():
@@ -472,7 +548,8 @@ async def test_pipe_counts_fatal_sequence_gap_once(monkeypatch, side):
     monkeypatch.setattr(realtime_transport, "CONTROL_OVERFLOWS", overflow)
     control, worker = pair()
     pipe = control if side == "control" else worker
-    pipe.redis.xread.return_value = [(b"control", [(b"1-0", {b"fence": pipe.fence, b"seq": b"2", b"frame": b"j{}"})])]
+    entries = [(b"1-0", {b"fence": pipe.fence, b"seq": b"2", b"frame": b"j{}"})]
+    redis_batch(pipe).execute.return_value = [(None, None), [(b"control", entries)]]
     for _ in range(2):
         with pytest.raises(TransportError):
             await pipe.receive()

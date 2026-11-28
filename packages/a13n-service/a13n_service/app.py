@@ -21,7 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.dependencies.models import Dependant
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute, APIRouter
-from redis.asyncio import Redis
+from redis.asyncio import BlockingConnectionPool, Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 from sqlalchemy import text
@@ -228,13 +228,16 @@ async def open_runtime(
     stack.push_async_callback(redis.aclose)
     from a13n_service.runs.realtime_transport import Bridge
 
-    realtime_redis = Redis.from_url(
-        config.redis.url.get_secret_value(),
-        socket_timeout=config.redis.timeout,
-        socket_connect_timeout=config.redis.timeout,
-        decode_responses=False,
-        max_connections=32,
-        retry=Retry(NoBackoff(), 0),
+    realtime_redis = Redis.from_pool(
+        BlockingConnectionPool.from_url(
+            config.redis.url.get_secret_value(),
+            max_connections=128,
+            timeout=config.redis.timeout,
+            decode_responses=False,
+            socket_timeout=config.redis.timeout,
+            socket_connect_timeout=config.redis.timeout,
+            retry=Retry(NoBackoff(), 0),
+        )
     )
     stack.push_async_callback(realtime_redis.aclose)
     bridge = Bridge(realtime_redis)
