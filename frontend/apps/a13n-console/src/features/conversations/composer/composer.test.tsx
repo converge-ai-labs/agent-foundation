@@ -25,7 +25,7 @@ vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
     basePath: "/workspace/design",
     workspace: { id: "workspace" },
-    can: () => false,
+    can: () => true,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -92,6 +92,7 @@ it("retains message and attachment drafts when closing the attachment dialog", a
   const input = mount(submit);
   await user.type(input, "Read this file");
   await user.click(screen.getByRole("button", { name: "Attach file or URL" }));
+  await user.click(screen.getByText("URL"));
   await user.type(
     screen.getByRole("textbox", { name: "File URL" }),
     "https://example.com/report.pdf",

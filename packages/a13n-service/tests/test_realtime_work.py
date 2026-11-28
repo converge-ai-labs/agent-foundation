@@ -1,11 +1,13 @@
 """Realtime calls share durable tool and child execution with ordinary Service runs."""
 
 import asyncio
+import base64
 import json
 from contextlib import asynccontextmanager
 
 import pytest
 from fastmcp import FastMCP
+from pydantic_ai import BinaryImage
 from pydantic_ai.realtime.codec import ResponseDone, ToolCall, ToolResult
 from pydantic_ai.realtime.openai import OpenAIRealtimeModel
 from websockets.asyncio.client import connect
@@ -94,11 +96,34 @@ async def test_retained_call_completes_between_voice_sessions(executing, runs_ki
             await service.runtime.executions.join()
             while not any(row["kind"] == "tool_result" for row in await runs_kit.inbox(service, first["thread_id"])):
                 await asyncio.sleep(0.05)
-            async with call(service, url, parent, thread_id=first["thread_id"]) as (_, second):
+            image = base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jV0sAAAAASUVORK5CYII="
+            )
+            staged = await service.client.post(
+                f"{service.api}/uploads",
+                files={"file": ("notice.png", image, "image/png")},
+                headers=runs_kit.fresh_key(),
+            )
+            assert staged.status_code == 200, staged.text
+            asset = await service.client.post(
+                f"{service.api}/assets",
+                json={"upload_id": staged.json()["upload_id"], "name": "notice.png"},
+            )
+            assert asset.status_code == 201, asset.text
+            async with call(
+                service,
+                url,
+                parent,
+                thread_id=first["thread_id"],
+                draft="Consider this image and the result",
+                draft_asset_ids=[asset.json()["id"]],
+            ) as (_, second):
+                attachment = await provider.connection.outgoing.get()
+                assert isinstance(attachment, BinaryImage) and attachment.data == image
                 while True:
                     frame = await provider.connection.outgoing.get()
                     if isinstance(frame, str) and "A retained tool execution ended." in frame:
-                        assert record.execution_id in frame
+                        assert record.execution_id in frame and "Consider this image and the result" in frame
                         break
             notices = [row for row in await runs_kit.inbox(service, first["thread_id"]) if row["kind"] == "tool_result"]
             assert len(notices) == 1

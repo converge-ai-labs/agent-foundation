@@ -26,6 +26,8 @@ class Protocol:
     profile_name: str
     websocket_path: str
     webrtc: bool = False
+    native_image_types: tuple[str, ...] = ()
+    native_images_per_input: int = 0
     group_user_speech: bool = False
     audio_defaults: RealtimeModelSettings = field(default_factory=RealtimeModelSettings)
     text_defaults: RealtimeModelSettings = field(default_factory=RealtimeModelSettings)
@@ -42,8 +44,16 @@ class Protocol:
         return self.model_profile(self.profile_name)["audio_output_sample_rate"]
 
     @property
-    def supports_image_input(self) -> bool:
-        return self.model_profile(self.profile_name).get("supports_image_input", False)
+    def supported_image_types(self) -> tuple[str, ...]:
+        profile = self.model_profile(self.profile_name)
+        # The GPT-Live adapter cannot send text and images together to its visual backend.
+        if not profile.get("supports_image_input") or profile.get("image_input_requires_response"):
+            return ()
+        return self.native_image_types
+
+    @property
+    def max_images_per_input(self) -> int:
+        return self.native_images_per_input if self.supported_image_types else 0
 
     @property
     def supports_interruption(self) -> bool:
@@ -61,6 +71,8 @@ PROTOCOLS = {
         "gpt-realtime",
         "/realtime",
         webrtc=True,
+        native_image_types=("image/png", "image/jpeg"),
+        native_images_per_input=4,
         audio_defaults={"turn_detection": {"silence_duration_ms": 850}},
     ),
     "openai.live": Protocol(
@@ -86,6 +98,8 @@ PROTOCOLS = {
         "gpt-realtime",
         "/realtime",
         webrtc=True,
+        native_image_types=("image/png", "image/jpeg"),
+        native_images_per_input=4,
     ),
     "google.realtime": Protocol(
         "google_gemini",
@@ -96,6 +110,8 @@ PROTOCOLS = {
         google_realtime_model_profile,
         "gemini-3.1-flash-live-preview",
         "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
+        native_image_types=("image/jpeg",),
+        native_images_per_input=1,
     ),
     "xai.realtime": Protocol(
         "xai",

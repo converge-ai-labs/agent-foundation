@@ -17,6 +17,7 @@ from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.telemetry import meter
 
 if TYPE_CHECKING:
@@ -58,6 +59,7 @@ class Offer(BaseModel):
     control_id: str
     audio: bool
     draft: str = ""
+    draft_asset_ids: tuple[ObjectId, ...] = Field(default=(), max_length=4)
     max_duration_seconds: int | None = Field(default=None, ge=30)
     principal_id: str
     workspace_id: str

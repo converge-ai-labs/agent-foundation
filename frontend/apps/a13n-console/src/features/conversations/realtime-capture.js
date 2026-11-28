@@ -3,6 +3,10 @@ class RealtimeCapture extends AudioWorkletProcessor {
   weight = 0;
   sum = 0;
   energy = 0;
+  meterEnergy = 0;
+  meterSamples = 0;
+  meterTicks = 0;
+  muted = false;
   voiced = 0;
   quiet = 0;
   speaking = false;
@@ -12,11 +16,19 @@ class RealtimeCapture extends AudioWorkletProcessor {
     this.pcm = options.processorOptions.pcm;
     this.inputHz = options.processorOptions.inputHz;
     this.frame = new Int16Array(this.inputHz / 50);
+    this.port.onmessage = ({ data }) => {
+      if (typeof data?.muted !== "boolean") return;
+      this.muted = data.muted;
+      this.sum = this.weight = this.position = this.energy = 0;
+      this.meterEnergy = this.meterSamples = this.meterTicks = 0;
+      this.voiced = this.quiet = 0;
+      this.speaking = false;
+    };
   }
 
   process(inputs) {
     const input = inputs[0]?.[0];
-    if (input) {
+    if (input && !this.muted) {
       // Average input over each negotiated sample interval, carrying fractions across worklet blocks.
       for (const inputSample of input) {
         let remaining = this.inputHz;
@@ -33,6 +45,16 @@ class RealtimeCapture extends AudioWorkletProcessor {
             Math.max(-1, Math.min(1, sample)) * 32767,
           );
           if (this.position === this.frame.length) {
+            this.meterEnergy += this.energy;
+            this.meterSamples += this.position;
+            this.meterTicks += 15;
+            if (this.meterTicks >= 50) {
+              this.port.postMessage({
+                level: Math.sqrt(this.meterEnergy / this.meterSamples),
+              });
+              this.meterTicks -= 50;
+              this.meterEnergy = this.meterSamples = 0;
+            }
             // Two voiced 20ms frames stop playback locally. Rearm after 200ms of quiet.
             if (this.energy / this.position >= 0.001) {
               this.quiet = 0;

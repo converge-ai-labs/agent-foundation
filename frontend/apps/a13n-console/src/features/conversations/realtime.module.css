@@ -1,0 +1,126 @@
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+
+.summary,
+.controls,
+.levels {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.summary,
+.controls {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.state {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+
+.transport {
+  border: 1px solid var(--a13n-border-soft);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--a13n-elevated);
+}
+
+.elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
+.alpha:focus-visible,
+.device:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+
+.alpha {
+  display: inline-flex;
+  border-radius: 6px;
+  color: var(--a13n-secondary);
+}
+
+.levels meter {
+  appearance: none;
+  display: block;
+  width: 35px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--a13n-border-soft);
+}
+
+.levels meter::-webkit-meter-bar {
+  border: 0;
+  background: transparent;
+}
+
+.levels meter::-webkit-meter-optimum-value {
+  border-radius: 99px;
+  background: var(--a13n-signal);
+}
+
+.levels meter::-moz-meter-bar {
+  border-radius: 99px;
+  background: var(--a13n-signal);
+}
+
+.device {
+  max-width: 152px;
+  height: 28px;
+  padding-inline: 6px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 6px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-text);
+  font: inherit;
+  text-overflow: ellipsis;
+}
+
+.device:disabled {
+  color: var(--a13n-tertiary);
+}
+
+.warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+
+.warning::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a13n-warning);
+  content: "";
+}
+
+@media (max-width: 480px) {
+  .controls {
+    gap: 4px;
+  }
+
+  .levels meter {
+    width: 26px;
+  }
+
+  .device {
+    max-width: 118px;
+  }
+}

@@ -40,6 +40,7 @@ export interface PresentedItem {
   steeringSource?: string;
   sourceId?: string;
   inputSource?: string;
+  realtimeAssetIds?: string[];
   speech?: boolean;
 }
 
@@ -118,6 +119,9 @@ export function presentItem(item: DisplayItem): PresentedItem {
     // Harness input groups are not Service entry IDs. Service authorship lives in metadata.
     sourceId: sourceId && sourceId.length <= 72 ? sourceId : undefined,
     inputSource: text(content.input_source) || undefined,
+    ...(Array.isArray(metadata.realtime_asset_ids)
+      ? { realtimeAssetIds: metadata.realtime_asset_ids.filter(isAssetId) }
+      : {}),
     // Older realtime runs retained only the synthetic message ID.
     speech:
       content.speech === true ||

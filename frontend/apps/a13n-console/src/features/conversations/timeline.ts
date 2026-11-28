@@ -97,6 +97,7 @@ export interface ContentEntry extends EntryBase {
   kind: "reasoning" | "reply" | "user_input" | "guidance" | "hidden";
   text: string;
   speech?: boolean;
+  assetIds?: string[];
   /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
   steeringSource: string | null;
   sourceId?: string;
@@ -494,7 +495,14 @@ function contentEntry(
   if (item.role !== "user") return null;
   const steering = item.steeringSource || item.inputSource === "steering";
   if (realtime && !steering)
-    return { kind: "user_input", speech: item.speech, ...base };
+    return {
+      kind: "user_input",
+      speech: item.speech,
+      ...(item.realtimeAssetIds?.length
+        ? { assetIds: item.realtimeAssetIds }
+        : {}),
+      ...base,
+    };
   if (item.speech) return { kind: "guidance", ...base };
   const leading = first();
   return steering || !leading ? { kind: "guidance", ...base } : null;

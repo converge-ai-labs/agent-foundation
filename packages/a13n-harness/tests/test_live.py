@@ -42,6 +42,8 @@ from pydantic_ai.capabilities import AbstractCapability, Capability, HandleDefer
 from pydantic_ai.exceptions import ModelRetry, UserError
 from pydantic_ai.messages import (
     BinaryAudio,
+    BinaryContent,
+    BinaryImage,
     FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
@@ -110,10 +112,11 @@ class _Connection(RealtimeConnection):
 
 
 class _Model(RealtimeModel):
-    def __init__(self, *, supports_tool_updates: bool = False) -> None:
+    def __init__(self, *, supports_tool_updates: bool = False, supports_image_input: bool = False) -> None:
         super().__init__(
             profile={
                 "supports_session_seeding": True,
+                "supports_image_input": supports_image_input,
                 "supports_manual_turn_control": True,
                 "supports_interruption": True,
                 "supports_output_truncation": True,
@@ -1094,6 +1097,32 @@ async def test_realtime_preloads_file_memory_and_recalls_records_before_typed_tu
         assert "saffron telescope" in recalled.text
         assert store.searches[0][0] == "What is the launch code?"
         assert await model.connection.sent.get() == "What is the launch code?"
+        await live.close()
+        await collector
+
+
+async def test_multimodal_turn_recalls_joined_text_before_sending_images() -> None:
+    store = FakeRecordStore(["The launch code is saffron telescope."])
+    executable = HarnessBuilder().build(
+        AgentDefinition(
+            output_type=str,
+            agent=AgentSpec(),
+            capabilities=(RecordMemoryCapability([RecordMount("facts", store, "read", recall=True)]),),
+        )
+    )
+    model = _Model(supports_image_input=True)
+    async with asyncio.timeout(5), executable.live(model=model) as live:
+        collector = asyncio.create_task(_collect(live))
+        await live.send(
+            ["Find the launch code", "Explain this photo", BinaryContent(b"png", media_type="image/png")], respond=True
+        )
+        assert store.searches[0][0] == "Find the launch code\nExplain this photo"
+        fetched = await model.connection.sent.get()
+        assert isinstance(fetched, TextContext) and "saffron telescope" in fetched.text
+        assert isinstance(await model.connection.sent.get(), TextContext)
+        assert isinstance(await model.connection.sent.get(), TextContext)
+        assert isinstance(await model.connection.sent.get(), BinaryImage)
+        assert isinstance(await model.connection.sent.get(), CreateResponse)
         await live.close()
         await collector
 

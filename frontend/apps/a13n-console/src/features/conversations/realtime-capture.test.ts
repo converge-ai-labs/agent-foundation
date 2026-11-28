@@ -14,7 +14,10 @@ it.each([
   "detects sustained local speech with PCM forwarding %s",
   (pcm, sampleRate, inputHz) => {
     const postMessage = vi.fn();
-    let processor!: { process(inputs: Float32Array[][]): boolean };
+    let processor!: {
+      process(inputs: Float32Array[][]): boolean;
+      port: { onmessage: (event: { data: { muted: boolean } }) => void };
+    };
     runInNewContext(processorSource, {
       sampleRate,
       AudioWorkletProcessor: class {
@@ -47,10 +50,22 @@ it.each([
     expect(onsets()).toBe(2);
     const frames = postMessage.mock.calls
       .map(([value]) => value)
-      .filter((value) => value !== "speech");
+      .filter((value) => typeof value?.byteLength === "number");
     expect(frames).toHaveLength(pcm ? 23 : 0);
     expect(
       frames.every((frame) => frame.byteLength === (inputHz / 50) * 2),
     ).toBe(true);
+    const meters = postMessage.mock.calls.flatMap(([value]) =>
+      typeof value?.level === "number" ? [value.level] : [],
+    );
+    expect(meters).toHaveLength(6);
+    expect(Math.max(...meters)).toBeCloseTo(0.2, 3);
+    processor.port.onmessage({ data: { muted: true } });
+    postMessage.mockClear();
+    feed(0.2, 10);
+    expect(postMessage).not.toHaveBeenCalled();
+    processor.port.onmessage({ data: { muted: false } });
+    feed(0.2, 2);
+    expect(onsets()).toBe(1);
   },
 );

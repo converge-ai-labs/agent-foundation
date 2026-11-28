@@ -38,6 +38,18 @@ socket.onmessage = ({ data }) => {
 
 `accepted` 返回新 Run 的标识。收到 `ready` 后再发送文本或音频。发送 `{"type":"stop"}` 挂断；`sealed` 确认 Run 最终状态。若未收到 `sealed`，请先查询 Run 状态，再决定是否在同一 Thread 中发起新的会话。
 
+## 在语音通话中添加图片
+
+开始通话前或通话中都可以添加图片。可以附带文字，也可以只发送图片。所选模型支持图片时，Console 会显示附件按钮：
+
+- OpenAI Realtime 和 Azure OpenAI Realtime：每条消息最多四张 JPEG 或 PNG 图片。
+- Gemini Live：每条消息可添加一张 JPEG 图片，因为文字回合只能带上最近的一帧。
+- GPT-Live 和 Grok Voice：不支持附件。GPT-Live 适配器无法把文字问题和图片一起发送给视觉后端。
+
+单张图片最大 4 MiB，同时受当前部署的上传限制约束。
+
+API 客户端可从 `GET /api/v1/realtime` 读取 `accepts_images`、`supported_image_types` 和 `max_images_per_input`。先通过 `POST /api/v1/uploads` 上传文件，再用 `POST /api/v1/assets` 创建资源。若要在开场消息中添加图片，把资源 ID 放入票据请求的 `draft_asset_ids`。通话中可通过 WebSocket 发送 `{"type":"input","text":"你看到了什么？","asset_ids":["ast_…"],"respond":true}`；只发图片时可省略 `text`。收到带 `recoverable: true` 的 `invalid_argument` 时，本条输入未送达，可以修改后重发，无需重连。
+
 ## 选择提供方和传输方式
 
 | 模型 API          | 提供方                | 语音传输方式          | PCM 输入 / 输出 | Service 验证方式       |

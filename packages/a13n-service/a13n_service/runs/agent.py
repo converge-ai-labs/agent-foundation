@@ -290,6 +290,8 @@ async def open_realtime(
             previous_state=previous_state,
             usage_limits=usage_limits,
             memory_context_bytes=runtime.settings.memory.context_bytes,
+            # The Service transcript retains asset IDs; no need to accumulate raw image bytes here.
+            retain_images_max=0,
             webrtc=webrtc,
         )
 
