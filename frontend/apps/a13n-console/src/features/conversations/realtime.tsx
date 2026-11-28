@@ -1,8 +1,4 @@
-import {
-  PhoneDisconnectIcon,
-  SpeakerSlashIcon,
-  WaveformIcon,
-} from "@phosphor-icons/react";
+import { WarningCircleIcon, WaveformIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -21,6 +17,8 @@ import { useWorkspace } from "../../layout/workspace";
 import { delay } from "../../service-client/transport";
 import { data, type Schema } from "../../shared/api";
 import { Composer } from "./composer";
+import { VoiceAlpha, VoiceHud, type VoiceMedia } from "./realtime-hud";
+import styles from "./realtime.module.css";
 import captureModule from "./realtime-capture.js?url&no-inline";
 import { invalidateConversation, runPath } from "./api";
 
@@ -32,12 +30,17 @@ interface Selection {
   forkRunId?: string;
 }
 
+type Transport = "websocket" | "webrtc";
+
 interface Availability {
   realtime: boolean;
   can_start: boolean;
   accepts_text: boolean;
+  accepts_images?: boolean;
+  supported_image_types?: readonly string[];
+  max_images_per_input?: number;
   reason?: string | null;
-  transports?: readonly ("websocket" | "webrtc")[];
+  transports?: readonly Transport[];
 }
 
 export interface RealtimeReceipt {
@@ -87,6 +90,9 @@ export function useRealtimeAvailability({
           realtime: value.realtime ?? false,
           can_start: value.can_start ?? false,
           accepts_text: value.accepts_text ?? false,
+          accepts_images: value.accepts_images,
+          supported_image_types: value.supported_image_types,
+          max_images_per_input: value.max_images_per_input,
           reason: value.reason,
           transports: value.transports,
         })),
@@ -104,15 +110,16 @@ type Event =
   | Approval
   | { type: "approval_expired"; call_id: string }
   | ({ type: "accepted" } & RealtimeReceipt)
-  | { type: "sealed"; run_id: string; status: string }
+  | { type: "sealed"; run_id: string; status: string; reason?: string }
+  | { type: "draining"; code: "worker_draining" }
+  | { type: "limit_warning"; remaining_seconds: number }
   | {
       type:
         | "barge_in"
         | "interrupted"
         | "playback_start"
         | "playback_end"
-        | "input_discontinuity"
-        | "draining";
+        | "input_discontinuity";
     }
   | { type: "playback_position"; offset: number }
   | { type: "answer"; sdp: string }
@@ -125,7 +132,7 @@ type Event =
       audio_hz?: number;
     }
   | { type: "ending"; reason: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: string; recoverable?: boolean };
 
 interface CallOptions extends Selection {
   availability: Availability;
@@ -139,6 +146,15 @@ interface CallOptions extends Selection {
   onAccepted: (receipt: RealtimeReceipt) => void;
 }
 
+type Draft = { text: string; assetIds: string[] };
+type Retry = {
+  forcePcm?: boolean;
+  reconnected?: boolean;
+  muted?: boolean;
+  deviceId?: string;
+  note?: string;
+};
+
 function useRealtimeCall() {
   const { t } = useTranslation();
   const { workspace, basePath, can } = useWorkspace();
@@ -150,6 +166,17 @@ function useRealtimeCall() {
     "idle" | "connecting" | "ready" | "ending"
   >("idle");
   const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  const [resume, setResume] = useState<() => void>();
+  const [transport, setTransport] = useState<Transport>("websocket");
+  const [startedAt, setStartedAt] = useState(0);
+  const [limitAt, setLimitAt] = useState<number>();
+  const [muted, setMuted] = useState(false);
+  const [deviceId, setDeviceId] = useState("");
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [switchingMic, setSwitchingMic] = useState(false);
+  const media = useRef<VoiceMedia | null>(null);
+  const userStopped = useRef(false);
   const [owner, setOwner] = useState<string>();
   const [activeRun, setActiveRun] = useState<{
     id: string;
@@ -180,7 +207,12 @@ function useRealtimeCall() {
 
   async function start(
     ownerId: string,
-    {
+    options: CallOptions,
+    draft?: Draft,
+    displayedRunId?: string,
+    retry: Retry = {},
+  ): Promise<void | false> {
+    const {
       agentId,
       revisionId,
       threadId,
@@ -189,19 +221,32 @@ function useRealtimeCall() {
       setup,
       availability,
       onAccepted,
-    }: CallOptions,
-    firstText?: string,
-    displayedRunId?: string,
-  ): Promise<void | false> {
-    if (!agentId || cleanup.current || !availability.can_start)
-      throw new Error(t("Realtime connection failed"));
+    } = options;
+    if (!agentId || !canRun || cleanup.current || !availability.can_start)
+      throw new Error(t("Voice connection failed."));
     const useWebRTC =
+      !retry.forcePcm &&
       availability.transports?.includes("webrtc") &&
       typeof RTCPeerConnection !== "undefined";
     let context: AudioContext;
     const abort = new AbortController();
     let settleFirst: ((result?: Error | false) => void) | undefined;
+    const canFallback =
+      useWebRTC && availability.transports?.includes("websocket");
     let input: MediaStream | undefined;
+    let switchingInput: MediaStream | undefined;
+    let micSource: MediaStreamAudioSourceNode | undefined;
+    let sender: RTCRtpSender | undefined;
+    let micMuted = retry.muted ?? false;
+    let selectedDevice = retry.deviceId || "";
+    let micLevel = 0;
+    let switching = false;
+    let accepted = false;
+    let offered = false;
+    let startupFailure = false;
+    let endReason: string | undefined;
+    let startSettings:
+      Awaited<ReturnType<NonNullable<CallOptions["setup"]>>> | undefined;
     let capture: AudioWorkletNode | undefined;
     let peer: RTCPeerConnection | undefined;
     let speaker: HTMLAudioElement | undefined;
@@ -223,6 +268,15 @@ function useRealtimeCall() {
       { start: number; samples: number; offset: number }
     >();
     let next = 0;
+    const acquireMic = (id: string) =>
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          ...(id ? { deviceId: { exact: id } } : {}),
+        },
+      });
     const playbackTime = () =>
       context.getOutputTimestamp?.().contextTime ?? context.currentTime;
     const hasPlayback = () => {
@@ -264,6 +318,8 @@ function useRealtimeCall() {
       if (mediaStopped) return;
       mediaStopped = true;
       input?.getTracks().forEach((track) => track.stop());
+      switchingInput?.getTracks().forEach((track) => track.stop());
+      micSource?.disconnect?.();
       capture?.disconnect();
       if (speaker) {
         speaker.pause();
@@ -271,7 +327,7 @@ function useRealtimeCall() {
       }
       void context?.close();
     };
-    const dispose = () => {
+    const dispose = (settle = true) => {
       disposed = true;
       dialingOwner.current = undefined;
       runRoute.current = undefined;
@@ -284,10 +340,12 @@ function useRealtimeCall() {
       clearTimeout(startupTimer);
       stopMedia.current?.();
       stopMedia.current = null;
+      media.current = null;
+      if (peer) peer.onconnectionstatechange = null;
       peer?.close();
       if (connection && connection.readyState < WebSocket.CLOSING)
         connection.close();
-      settleFirst?.(false);
+      if (settle) settleFirst?.(false);
       socket.current = null;
       cleanup.current = null;
     };
@@ -301,6 +359,11 @@ function useRealtimeCall() {
         return;
       }
       dispose();
+    };
+    const failPeer = () => {
+      if (!ready) startupFailure = true;
+      else endReason ??= "realtime_transport_failed";
+      failMedia(t("Voice connection failed."));
     };
     const startConversation = () => {
       if (
@@ -319,13 +382,27 @@ function useRealtimeCall() {
         capture = new AudioWorkletNode(context, "realtime-capture", {
           processorOptions: { pcm: !useWebRTC, inputHz: audioInputHz },
         });
-        context.createMediaStreamSource(input!).connect(capture);
+        micSource = context.createMediaStreamSource(input!);
+        micSource.connect(capture);
         capture.connect(context.destination);
+        if (micMuted) capture.port.postMessage({ muted: true });
+        if (!useWebRTC) {
+          remoteLevel = context.createAnalyser?.();
+          if (remoteLevel) {
+            remoteLevel.fftSize = remoteSamples.length;
+            remoteLevel.connect(context.destination);
+          }
+        }
         capture.port.onmessage = ({
           data,
-        }: MessageEvent<ArrayBuffer | "speech">) => {
+        }: MessageEvent<ArrayBuffer | "speech" | { level: number }>) => {
+          if (typeof data === "object" && "level" in data) {
+            micLevel = micMuted ? 0 : data.level;
+            return;
+          }
           if (
             ready &&
+            !micMuted &&
             !mediaStopped &&
             connection?.readyState === WebSocket.OPEN
           ) {
@@ -334,112 +411,168 @@ function useRealtimeCall() {
               return;
             }
             if (connection.bufferedAmount >= 64 * 1024) {
-              failMedia(t("Realtime connection failed"));
+              failMedia(t("Voice connection failed."));
               return;
             }
             connection.send(data);
           }
         };
       } catch {
-        failMedia(t("Realtime connection failed"));
+        failMedia(t("Voice connection failed."));
         return;
       }
       ready = true;
       clearTimeout(startupTimer);
-      if (peer) {
-        input?.getAudioTracks().forEach((track) => {
-          track.enabled = true;
-        });
-        if (speaker) speaker.muted = false;
-      }
+      input?.getAudioTracks?.().forEach((track) => {
+        track.enabled = !micMuted;
+      });
+      if (speaker) speaker.muted = false;
       setAcceptsText(serverReady.accepts_text);
       setSupportsInterruption(serverReady.supports_interruption);
       setPhase("ready");
-      if (firstText && serverReady.accepts_text) {
-        settleFirst?.();
-      } else {
-        settleFirst?.(new Error(t("Realtime connection failed")));
-      }
+      settleFirst?.();
     };
     interruptPlayback.current = interrupt;
     cleanup.current = dispose;
+    userStopped.current = false;
     setError("");
+    setNote(retry.note ?? "");
+    setResume(undefined);
+    setMuted(micMuted);
+    setSwitchingMic(false);
+    setDeviceId(selectedDevice);
+    setDevices([]);
+    setTransport(useWebRTC ? "webrtc" : "websocket");
+    setStartedAt(Date.now());
+    setLimitAt(undefined);
     setPhase("connecting");
-    setOwner(ownerId);
-    dialingOwner.current = ownerId;
+    setOwner(displayedRunId ?? ownerId);
+    dialingOwner.current = runRoute.current ? undefined : ownerId;
     if (displayedRunId) setActiveRun({ id: displayedRunId, availability });
     setApprovals([]);
     try {
       context = new AudioContext();
       await context.resume();
       if (disposed) return false;
-      input = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
+      input = await acquireMic(selectedDevice);
       if (disposed) {
         input.getTracks().forEach((track) => track.stop());
         return false;
       }
       await context.audioWorklet.addModule(captureModule);
       if (disposed) return false;
-      if (useWebRTC) {
-        const rtc = new RTCPeerConnection();
-        peer = rtc;
-        const playback = new Audio();
-        speaker = playback;
-        playback.autoplay = true;
-        playback.muted = true;
-        input.getAudioTracks().forEach((track) => {
-          track.enabled = false;
-          rtc.addTrack(track, input!);
-          track.onended = () => failMedia(t("Realtime connection failed"));
-        });
-        rtc.ontrack = (event) => {
-          if (disposed || mediaStopped) return;
-          const remote = event.streams[0] ?? new MediaStream([event.track]);
-          playback.srcObject = remote;
-          remoteLevel = context.createAnalyser();
-          remoteLevel.fftSize = remoteSamples.length;
-          context.createMediaStreamSource(remote).connect(remoteLevel);
-          void playback
-            .play()
-            .catch(() => failMedia(t("Realtime connection failed")));
-        };
-        rtc.onconnectionstatechange = () => {
-          if (rtc.connectionState === "connected") startConversation();
+      const refreshDevices = async () => {
+        try {
+          const listed = await navigator.mediaDevices.enumerateDevices?.();
+          if (!mediaStopped && listed)
+            setDevices(listed.filter((device) => device.kind === "audioinput"));
+        } catch {
+          // The active capture remains usable when the browser cannot list devices.
+        }
+      };
+      void refreshDevices();
+      navigator.mediaDevices.addEventListener?.(
+        "devicechange",
+        refreshDevices,
+        { signal: abort.signal },
+      );
+      const armTrack = (track: MediaStreamTrack) => {
+        track.enabled = ready && !micMuted;
+        track.onended = () => failMedia(t("Voice connection failed."));
+      };
+      const track = input.getAudioTracks?.()[0];
+      selectedDevice = track?.getSettings?.().deviceId || selectedDevice;
+      setDeviceId(selectedDevice);
+      if (track) armTrack(track);
+      media.current = {
+        levels: () => {
+          let output = 0;
+          if (remoteLevel && !mediaStopped && !speaker?.muted) {
+            remoteLevel.getFloatTimeDomainData(remoteSamples);
+            output = Math.sqrt(
+              remoteSamples.reduce((sum, sample) => sum + sample * sample, 0) /
+                remoteSamples.length,
+            );
+          }
+          return [micMuted || mediaStopped ? 0 : micLevel, output];
+        },
+        toggleMute: () => {
+          if (!ready || mediaStopped) return;
+          micMuted = !micMuted;
+          input?.getAudioTracks().forEach((track) => {
+            track.enabled = !micMuted;
+          });
+          capture?.port.postMessage({ muted: micMuted });
+          micLevel = 0;
+          setMuted(micMuted);
+        },
+        switchMic: async (id) => {
           if (
-            rtc.connectionState === "failed" ||
-            rtc.connectionState === "closed"
+            id === selectedDevice ||
+            !ready ||
+            mediaStopped ||
+            switching ||
+            !capture
           )
-            failMedia(t("Realtime connection failed"));
-        };
-        await rtc.setLocalDescription(await rtc.createOffer());
-        await waitForIce(
-          rtc,
-          abort.signal,
-          t("Audio network setup timed out."),
-        );
-        if (disposed) return false;
-        offer = rtc.localDescription?.sdp;
-        if (!offer) throw new Error(t("Realtime connection failed"));
-      }
+            return;
+          switching = true;
+          setSwitchingMic(true);
+          let replacement: MediaStream | undefined;
+          let source: MediaStreamAudioSourceNode | undefined;
+          try {
+            replacement = await acquireMic(id);
+            if (mediaStopped) return;
+            switchingInput = replacement;
+            const track = replacement.getAudioTracks()[0];
+            if (!track) throw new Error(t("Could not switch microphones."));
+            track.enabled = false;
+            source = context.createMediaStreamSource(replacement);
+            await sender?.replaceTrack(track);
+            if (mediaStopped) return;
+            armTrack(track);
+            source.connect(capture);
+            micSource?.disconnect();
+            micSource = source;
+            input?.getTracks().forEach((old) => {
+              old.onended = null;
+              old.stop();
+            });
+            input = replacement;
+            replacement = undefined;
+            selectedDevice = track.getSettings?.().deviceId || id;
+            setDeviceId(selectedDevice);
+            setError("");
+            void refreshDevices();
+          } catch {
+            if (!mediaStopped) setError(t("Could not switch microphones."));
+          } finally {
+            if (replacement) {
+              source?.disconnect();
+              replacement.getTracks().forEach((track) => track.stop());
+            }
+            switchingInput = undefined;
+            switching = false;
+            if (!mediaStopped) setSwitchingMic(false);
+          }
+        },
+      };
+      startSettings = await setup?.();
       const ticket = await client
         .workspace(workspace.id)
         .POST("/api/v1/realtime/sessions", {
           body: {
-            ...(await setup?.()),
+            ...startSettings,
             agent_id: agentId,
             agent_revision_id: revisionId,
             thread_id: threadId,
             fork_run_id: forkRunId,
             fresh_environments: freshEnvironments,
             audio: true,
-            draft: firstText,
-            transport: offer ? "webrtc" : "websocket",
+            draft: draft?.text,
+            draft_asset_ids: draft?.assetIds.length
+              ? draft.assetIds
+              : undefined,
+            transport: useWebRTC ? "webrtc" : "websocket",
           },
           signal: abort.signal,
         })
@@ -447,6 +580,61 @@ function useRealtimeCall() {
       if (disposed) return false;
       audioInputHz = ticket.audio_input_hz ?? audioInputHz;
       audioOutputHz = ticket.audio_output_hz ?? audioOutputHz;
+      if (useWebRTC) {
+        try {
+          const rtc = new RTCPeerConnection({
+            iceServers: ticket.ice_servers?.map(
+              ({ urls, username, credential }) => ({
+                urls,
+                username: username ?? undefined,
+                credential: credential ?? undefined,
+              }),
+            ),
+          });
+          peer = rtc;
+          const playback = new Audio();
+          speaker = playback;
+          playback.autoplay = true;
+          playback.muted = true;
+          if (track) sender = rtc.addTrack(track, input);
+          rtc.ontrack = (event) => {
+            if (disposed || mediaStopped) return;
+            const remote = event.streams[0] ?? new MediaStream([event.track]);
+            playback.srcObject = remote;
+            remoteLevel = context.createAnalyser();
+            remoteLevel.fftSize = remoteSamples.length;
+            context.createMediaStreamSource(remote).connect(remoteLevel);
+            void playback
+              .play()
+              .catch(() => failMedia(t("Voice connection failed.")));
+          };
+          await rtc.setLocalDescription(await rtc.createOffer());
+          await waitForIce(
+            rtc,
+            abort.signal,
+            t("Audio network setup timed out."),
+          );
+          if (disposed) return false;
+          offer = rtc.localDescription?.sdp;
+          if (
+            !offer ||
+            rtc.connectionState === "failed" ||
+            rtc.connectionState === "closed"
+          )
+            throw new Error(t("Voice connection failed."));
+          rtc.onconnectionstatechange = () => {
+            if (rtc.connectionState === "connected") startConversation();
+            if (
+              rtc.connectionState === "failed" ||
+              rtc.connectionState === "closed"
+            )
+              failPeer();
+          };
+        } catch (cause) {
+          startupFailure = true;
+          throw cause;
+        }
+      }
       receipt = {
         session_id: ticket.session_id,
         thread_id: ticket.thread_id,
@@ -458,20 +646,18 @@ function useRealtimeCall() {
       connection = connected;
       socket.current = connected;
       connected.binaryType = "arraybuffer";
-      const firstMessage = firstText
+      const firstMessage = draft
         ? new Promise<void | false>((resolve, reject) => {
             settleFirst = (result) =>
               result instanceof Error ? reject(result) : resolve(result);
           })
         : undefined;
-      if (useWebRTC)
-        startupTimer = setTimeout(
-          () => failMedia(t("Realtime connection failed")),
-          30_000,
-        );
+      if (useWebRTC) startupTimer = setTimeout(failPeer, 30_000);
       connected.onopen = () => {
-        if (offer)
+        if (offer) {
           connected.send(JSON.stringify({ type: "offer", sdp: offer }));
+          offered = true;
+        }
       };
       connected.onmessage = ({ data }: MessageEvent<ArrayBuffer | string>) => {
         if (typeof data !== "string") {
@@ -484,7 +670,7 @@ function useRealtimeCall() {
           for (let i = 0; i < pcm.length; i++) samples[i] = pcm[i]! / 32768;
           const playback = context.createBufferSource();
           playback.buffer = buffer;
-          playback.connect(context.destination);
+          playback.connect(remoteLevel ?? context.destination);
           next = Math.max(next, context.currentTime + 0.02);
           const playedUntil = playbackTime();
           for (const [source, chunk] of playing) {
@@ -501,10 +687,14 @@ function useRealtimeCall() {
         const event = JSON.parse(data) as Event;
         if (event.type === "sealed" && receipt?.run_id === event.run_id) {
           sealed = true;
+          endReason = event.reason ?? endReason;
           setApprovals([]);
+          if (isTerminalVoiceReason(endReason))
+            setError(reasonMessage(endReason));
         }
         if (event.type === "playback_position") nextOffset = event.offset;
-        if (event.type === "barge_in" && hasPlayback()) interrupt();
+        if (event.type === "barge_in" && !micMuted && hasPlayback())
+          interrupt();
         if (event.type === "interrupted") interrupting = false;
         if (
           (event.type === "playback_start" || event.type === "playback_end") &&
@@ -513,13 +703,19 @@ function useRealtimeCall() {
         ) {
           speaker.muted = false;
         }
+        if (event.type === "limit_warning")
+          setLimitAt(Date.now() + event.remaining_seconds * 1000);
         if (event.type === "draining" || event.type === "ending") {
+          endReason = event.type === "draining" ? event.code : event.reason;
+          if (isTerminalVoiceReason(endReason))
+            setError(reasonMessage(endReason));
           stopMedia.current?.();
           setPhase("ending");
         }
         if (event.type === "input_discontinuity")
           setError(t("Voice input was interrupted. Please repeat that part."));
         if (event.type === "accepted") {
+          accepted = true;
           receipt = event;
           dialingOwner.current = undefined;
           runRoute.current = runPath(basePath, event);
@@ -530,7 +726,7 @@ function useRealtimeCall() {
         if (event.type === "answer" && peer) {
           void peer
             .setRemoteDescription({ type: "answer", sdp: event.sdp })
-            .catch(() => failMedia(t("Realtime connection failed")));
+            .catch(failPeer);
         }
         if (event.type === "ready") {
           serverReady = event;
@@ -549,12 +745,16 @@ function useRealtimeCall() {
           );
         }
         if (event.type === "error") {
-          setError(event.message);
-          // The close handler checks whether the ticket already created a Run.
-          settleFirst?.(false);
+          const reason = event.code;
+          setError(
+            isTerminalVoiceReason(reason)
+              ? reasonMessage(reason)
+              : event.message,
+          );
+          if (!event.recoverable) endReason = reason ?? endReason;
         }
       };
-      connected.onerror = () => setError(t("Realtime connection failed"));
+      connected.onerror = () => setError(t("Voice connection failed."));
       let closing = false;
       const finish = async (code: number) => {
         if (disposed || closing) return;
@@ -564,49 +764,172 @@ function useRealtimeCall() {
         clearTimeout(endingTimer.current);
         setApprovals([]);
         setPhase("ending");
-        if (!ready || code !== 1000)
-          setError((value) => value || t("Realtime connection failed"));
+        if (!userStopped.current && !endReason && code === 1012 && accepted)
+          endReason = "worker_draining";
+        const fallback = () =>
+          canFallback &&
+          !ready &&
+          ((startupFailure && !endReason) ||
+            endReason === "realtime_transport_failed");
+        const dropping = () =>
+          !userStopped.current &&
+          (endReason === "realtime_transport_failed" ||
+            (!endReason && code !== 1000 && accepted));
+        const deferUntilSeal =
+          fallback() || dropping() || endReason === "worker_draining";
+        if (
+          (!ready || code !== 1000) &&
+          !userStopped.current &&
+          !deferUntilSeal
+        )
+          setError((value) => value || t("Voice connection failed."));
+        let nextCall: (() => Promise<void | false>) | undefined;
+        let auto = false;
         try {
           if (!receipt) return;
-          if (!sealed) {
-            // The Run page follows an accepted or running Run through lease recovery.
+          let exists = accepted || sealed;
+          if (!sealed && (!fallback() || offered)) {
             const api = client.workspace(workspace.id);
             const signal = AbortSignal.any([
               abort.signal,
-              AbortSignal.timeout(20000),
+              AbortSignal.timeout(20_000),
             ]);
-            // Retry an early 404 quickly and allow for the 10-second redemption window.
             const retryDelays = [500, 1000, 2000, 3000, 4000];
             for (let attempt = 0; ; attempt++) {
-              const run = await api.GET("/api/v1/runs/{run_id}", {
+              const result = await api.GET("/api/v1/runs/{run_id}", {
                 params: { path: { run_id: receipt.run_id } },
                 signal,
               });
-              if (run.response.status !== 404) {
-                data(run);
-                break;
+              if (result.response.status !== 404) {
+                const run = data(result);
+                exists = true;
+                if (run.sealed_at) {
+                  sealed = true;
+                  if (run.failure && !isTerminalVoiceReason(endReason)) {
+                    endReason = run.failure.code;
+                    if (
+                      !fallback() &&
+                      !dropping() &&
+                      endReason !== "worker_draining"
+                    )
+                      setError(run.failure.message);
+                  }
+                }
+                if (sealed || !deferUntilSeal) break;
               }
               const retryDelay = retryDelays[attempt];
-              if (retryDelay === undefined) return;
+              if (retryDelay === undefined) break;
               await delay(retryDelay, signal);
             }
           }
-          if (!disposed) {
+          if (disposed) return;
+          if (exists) {
             void invalidateConversation(cache, workspace.id, {
               sessionId: receipt.session_id,
               threadId: receipt.thread_id,
               runId: receipt.run_id,
             });
-            if (!runRoute.current) onAccepted(receipt);
+            if (!accepted) {
+              runRoute.current = runPath(basePath, receipt);
+              setOwner(receipt.run_id);
+              onAccepted(receipt);
+            }
+          }
+          if (isTerminalVoiceReason(endReason)) {
+            setError(reasonMessage(endReason));
+            return;
+          }
+          const draining = endReason === "worker_draining";
+          const pcm = fallback() && (!exists || sealed);
+          if (
+            !userStopped.current &&
+            (pcm || (sealed && (draining || dropping())))
+          ) {
+            auto = pcm || (draining && !retry.reconnected);
+            const resumed = exists ? receipt : undefined;
+            const settings = startSettings;
+            const follow = resumed
+              ? {
+                  ...options,
+                  availability: { ...availability, can_start: true },
+                  threadId: resumed.thread_id,
+                  forkRunId: undefined,
+                  freshEnvironments: undefined,
+                  setup: async () =>
+                    forkRunId ? {} : { options: settings?.options },
+                }
+              : { ...options, setup: async () => settings ?? {} };
+            nextCall = () =>
+              start(
+                ownerId,
+                follow,
+                resumed ? undefined : draft,
+                resumed?.run_id ?? displayedRunId,
+                {
+                  forcePcm: pcm || retry.forcePcm,
+                  reconnected: (auto && draining) || retry.reconnected,
+                  muted: micMuted,
+                  deviceId: selectedDevice,
+                  note: pcm
+                    ? t("WebRTC could not connect. Switching to PCM audio.")
+                    : draining && auto
+                      ? t("Reconnecting after a server update…")
+                      : undefined,
+                },
+              );
+            if (!auto)
+              setError(
+                t(
+                  "Voice connection dropped. You can resume in this conversation.",
+                ),
+              );
+          } else if (deferUntilSeal && !sealed && !userStopped.current) {
+            setError(
+              t(
+                "Voice connection ended. Wait for the conversation to finish saving before starting another call.",
+              ),
+            );
           }
         } catch {
-          if (!disposed) setError(t("Realtime connection failed"));
+          if (!disposed) setError(t("Voice connection failed."));
         } finally {
           if (!disposed) {
             void cache.invalidateQueries({
               queryKey: ["realtime", workspace.id, agentId],
             });
-            dispose();
+            const previousRoute = runRoute.current;
+            if (auto && nextCall) {
+              dispose(false);
+              runRoute.current = previousRoute;
+              try {
+                const result = await nextCall();
+                settleFirst?.(
+                  result === false || (accepted && !serverReady)
+                    ? false
+                    : undefined,
+                );
+              } catch (cause) {
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : t("Voice connection failed."),
+                );
+                settleFirst?.(false);
+              }
+            } else {
+              dispose();
+              if (nextCall)
+                setResume(() => () => {
+                  runRoute.current = previousRoute;
+                  void nextCall?.().catch((cause: unknown) => {
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : t("Voice connection failed."),
+                    );
+                  });
+                });
+            }
           }
         }
       };
@@ -618,15 +941,54 @@ function useRealtimeCall() {
       return firstMessage;
     } catch (cause) {
       if (disposed) return false;
+      const previousRoute = runRoute.current;
       dispose();
+      if (canFallback && startupFailure) {
+        runRoute.current = previousRoute;
+        return start(
+          ownerId,
+          { ...options, setup: async () => startSettings ?? {} },
+          draft,
+          displayedRunId,
+          {
+            ...retry,
+            forcePcm: true,
+            muted: micMuted,
+            deviceId: selectedDevice,
+            note: t("WebRTC could not connect. Switching to PCM audio."),
+          },
+        );
+      }
       throw cause;
     }
   }
 
-  function sendText(text: string) {
+  function reasonMessage(reason: string): string {
+    switch (reason) {
+      case "duration_limit":
+        return t("Voice call reached its time limit.");
+      case "idle_timeout":
+        return t("Voice call ended after being idle.");
+      case "usage_limit_exceeded":
+        return t("Voice call reached its usage limit.");
+      case "authority_revoked":
+        return t("You no longer have permission to continue this call.");
+      default:
+        return t("Voice connection failed.");
+    }
+  }
+
+  function sendInput({ text, assetIds }: Draft) {
     if (phase !== "ready" || socket.current?.readyState !== WebSocket.OPEN)
-      throw new Error(t("Realtime connection failed"));
-    socket.current.send(JSON.stringify({ type: "text", text }));
+      throw new Error(t("Voice connection failed."));
+    setError("");
+    socket.current.send(
+      JSON.stringify(
+        assetIds.length
+          ? { type: "input", text, asset_ids: assetIds, respond: true }
+          : { type: "text", text },
+      ),
+    );
   }
 
   function decide(callId: string, approve: boolean) {
@@ -639,6 +1001,7 @@ function useRealtimeCall() {
   }
 
   function stop() {
+    userStopped.current = true;
     if (phase === "ready" && socket.current?.readyState === WebSocket.OPEN) {
       const connection = socket.current;
       connection.send(JSON.stringify({ type: "stop" }));
@@ -656,18 +1019,37 @@ function useRealtimeCall() {
     owner,
     activeRun,
     error,
+    note,
+    resume,
+    transport,
+    startedAt,
+    limitAt,
+    muted,
+    deviceId,
+    devices,
+    switchingMic,
+    media,
     setError,
     approvals,
     acceptsText,
     supportsInterruption,
     start,
-    sendText,
+    sendInput,
     stop,
     decide,
     interruptPlayback,
     dialingOwner,
     cleanup,
   };
+}
+
+function isTerminalVoiceReason(reason?: string): reason is string {
+  return (
+    reason === "duration_limit" ||
+    reason === "idle_timeout" ||
+    reason === "usage_limit_exceeded" ||
+    reason === "authority_revoked"
+  );
 }
 
 const CallContext = createContext<ReturnType<typeof useRealtimeCall> | null>(
@@ -709,8 +1091,8 @@ export function ConversationComposer({
   return (
     <>
       {controls?.approvals}
-      {controls?.editor ?? children}
       {controls?.status}
+      {controls?.editor ?? children}
     </>
   );
 }
@@ -739,7 +1121,7 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
   } = voice;
   const {
     owner,
-    sendText,
+    sendInput,
     supportsInterruption,
     interruptPlayback,
     stop,
@@ -749,20 +1131,32 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
   const mine = owner === id || (!!displayedRunId && owner === displayedRunId);
   const phase = mine ? call.phase : "idle";
   const error = mine ? call.error : "";
+  const resume = mine && phase === "idle" ? call.resume : undefined;
   const approvals = mine ? call.approvals : [];
   const acceptsText =
     phase === "ready" ? call.acceptsText : availability.accepts_text;
-  const start = (text?: string) => call.start(id, voice, text, displayedRunId);
+  const imageLimit = availability.accepts_images
+    ? (availability.max_images_per_input ?? 0)
+    : 0;
+  const start = (draft?: Draft) => call.start(id, voice, draft, displayedRunId);
   async function submit(payload: Schema["MessagePayload"]) {
     const text = payload.content
       .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
       .join("\n\n");
-    if (!text || text.length > 8192)
+    const assetIds = payload.content.flatMap((part) =>
+      part.type === "asset" ? [part.asset_id] : [],
+    );
+    if (!text && !assetIds.length)
+      throw new Error(t("Write a message or attach content first."));
+    if (text.length > 8192)
+      throw new Error(t("Messages must be between 1 and 8,192 characters."));
+    if (assetIds.length > imageLimit)
       throw new Error(
-        t("Realtime messages must be between 1 and 8,192 characters."),
+        t("Image limit per message: {{limit}}.", { limit: imageLimit }),
       );
-    if (phase === "idle") return await start(text);
-    sendText(text);
+    const draft = { text, assetIds };
+    if (phase === "idle") return await start(draft);
+    sendInput(draft);
   }
 
   return {
@@ -797,11 +1191,22 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
     )),
     editor: (
       <Composer
-        options={phase === "idle" ? controls : undefined}
+        options={
+          phase === "idle" ? (
+            <>
+              {controls}
+              <VoiceAlpha />
+            </>
+          ) : undefined
+        }
         agentName={agentName}
         initial={initial}
         textInput={acceptsText}
-        attachmentsEnabled={false}
+        attachmentsEnabled={
+          imageLimit > 0 && (phase === "idle" || phase === "ready")
+        }
+        imageTypes={availability.supported_image_types ?? []}
+        imageLimit={imageLimit}
         submitDisabled={
           (phase === "idle" &&
             (disabled || !availability.can_start || call.phase !== "idle")) ||
@@ -809,11 +1214,7 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
           phase === "ending"
         }
         submit={submit}
-        label={
-          phase === "ready"
-            ? t("Send text in voice chat")
-            : t("Start voice chat")
-        }
+        label={phase === "ready" ? t("Send message") : t("Start voice chat")}
         submitIcon={<WaveformIcon size={17} weight="bold" />}
         onEmptySubmit={
           phase === "idle"
@@ -822,50 +1223,66 @@ function useVoiceComposer(voice?: VoiceComposerOptions) {
                   setError(
                     cause instanceof Error
                       ? cause.message
-                      : t("Realtime connection failed"),
+                      : t("Voice connection failed."),
                   );
                 });
               }
             : undefined
         }
-        primaryAction={
-          phase === "idle"
-            ? undefined
-            : {
-                label: t("End realtime chat"),
-                icon: <PhoneDisconnectIcon size={16} />,
-                disabled: phase === "ending",
-                onClick: stop,
-              }
-        }
-        actionBeforeSubmit={
-          phase === "ready" &&
-          supportsInterruption && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("Interrupt response")}
-              title={t("Interrupt response")}
-              onClick={() => interruptPlayback.current?.()}
-            >
-              <SpeakerSlashIcon size={16} />
-            </Button>
-          )
-        }
       />
     ),
     status: (
       <>
-        <span className="sr-only" role="status">
-          {phase === "connecting" && t("Connecting…")}
-          {phase === "ending" && t("Saving conversation…")}
-        </span>
-        {(error || (phase === "idle" && availability.reason)) && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {error || availability.reason}
+        {phase !== "idle" && (
+          <VoiceHud
+            phase={phase}
+            transport={call.transport}
+            startedAt={call.startedAt}
+            limitAt={call.limitAt}
+            muted={call.muted}
+            devices={call.devices}
+            deviceId={call.deviceId}
+            switching={call.switchingMic}
+            media={call.media}
+            stop={stop}
+            interrupt={
+              supportsInterruption
+                ? () => interruptPlayback.current?.()
+                : undefined
+            }
+          />
+        )}
+        {mine && phase !== "idle" && call.note && (
+          <p role="status" className={styles.note}>
+            {call.note}
           </p>
         )}
+        {error || resume ? (
+          <div className={resume ? styles.recovery : undefined}>
+            {error && (
+              <p role="alert" className={styles.error}>
+                <WarningCircleIcon size={14} aria-hidden="true" />
+                {error}
+              </p>
+            )}
+            {resume && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={resume}
+                disabled={!!disabled}
+              >
+                <WaveformIcon size={14} aria-hidden="true" />
+                {t("Resume voice call")}
+              </Button>
+            )}
+          </div>
+        ) : phase === "idle" && availability.reason ? (
+          <p role="status" className={styles.note}>
+            {availability.reason}
+          </p>
+        ) : null}
       </>
     ),
   };

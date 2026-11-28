@@ -348,6 +348,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
         audio_retention: AudioRetention = "transcript_only",
+        retain_images_max: int | None = 100,
         memory_context_bytes: int = 32768,
         webrtc: LiveWebRTC | None = None,
         usage: RunUsage | None = None,
@@ -375,6 +376,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
         self._live_model = model
         self._live_model_settings = deepcopy(model_settings)
         self._audio_retention: AudioRetention = audio_retention
+        self._retain_images_max = retain_images_max
         self._playback_part: int | None = None
         self._muted_part: int | None = None
         self._part_audio: Callable[[bytes], None] | None = None
@@ -426,8 +428,13 @@ class HarnessLiveStream(HarnessRunStream[None]):
         respond: bool | None = None,
     ) -> None:
         session = self._active_session()
-        if respond is not False and isinstance(content, str):
-            await self.recall(content)
+        if respond is not False:
+            if isinstance(content, str):
+                await self.recall(content)
+            elif isinstance(content, Sequence):
+                text = "\n".join(part for part in content if isinstance(part, str))
+                if text:
+                    await self.recall(text)
         await session.send(content, respond=respond)
 
     async def recall(self, text: str) -> None:
@@ -632,7 +639,11 @@ class HarnessLiveStream(HarnessRunStream[None]):
                     await self._webrtc.deliver_answer(answer.sdp)
                     bridge.prepare_dispatcher = True
                 session = await transport.enter_async_context(
-                    native.session(audio_retention=self._audio_retention, provider_session=provider_session)
+                    native.session(
+                        audio_retention=self._audio_retention,
+                        retain_images_max=self._retain_images_max,
+                        provider_session=provider_session,
+                    )
                 )
                 self._session = session
                 for block in bridge.initial.blocks:

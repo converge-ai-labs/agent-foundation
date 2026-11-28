@@ -38,6 +38,18 @@ socket.onmessage = ({ data }) => {
 
 `accepted` identifies the new Run. Wait for `ready` before sending text or media. Send `{"type":"stop"}` to hang up; `sealed` confirms the Run's final status. If you miss it, read the Run status before opening another call on that Thread.
 
+## Attach images to a voice call
+
+Attach images before a call or while it is active, with or without text. The Console offers attachments when the selected model supports them:
+
+- OpenAI Realtime and Azure OpenAI Realtime: up to four JPEG or PNG images per message.
+- Gemini Live: one JPEG per message, because a typed turn can pick up only the most recent frame.
+- GPT-Live and Grok Voice: no attachments. The GPT-Live adapter does not send the typed question and image to the visual backend together.
+
+Each image can be at most 4 MiB. The deployment's upload limits also apply.
+
+API clients read `accepts_images`, `supported_image_types`, and `max_images_per_input` from `GET /api/v1/realtime`. Upload each file with `POST /api/v1/uploads` and promote it with `POST /api/v1/assets`. Pass the asset IDs in the ticket's `draft_asset_ids` for the opening draft. During the call, send `{"type":"input","text":"What do you see?","asset_ids":["ast_…"],"respond":true}` over the WebSocket. Omit `text` for an image-only message. An `invalid_argument` frame with `recoverable: true` means the input was rejected and you can correct it without reconnecting.
+
 ## Choose a provider and transport
 
 | Model API         | Provider              | Voice transports      | PCM input / output | Verification in Service                  |

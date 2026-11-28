@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
@@ -30,6 +31,8 @@ from a13n_service.infra.websocket import secure
 from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
+from a13n_service.resources.assets.schemas import Asset
+from a13n_service.resources.assets.service import get_asset
 from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs.admission import requires_model_reservation
@@ -72,6 +75,8 @@ type Frame = bytes | dict[str, str | int | bool]
 type Transport = Literal["websocket", "webrtc"]
 type HandshakeResult = Literal["ready", "timeout", "failed", "abandoned"]
 type LimitReason = RealtimeCompletionReason | Literal["usage_limit_exceeded"]
+IMAGE_MAX_BYTES = 4 * 1024 * 1024
+
 LIMIT_REASONS = frozenset(("duration_limit", "idle_timeout", "usage_limit_exceeded"))
 type CallEnd = Literal["completed", "client_disconnected", "draining", "transport_error", "failed", "limit_exceeded"]
 
@@ -116,7 +121,7 @@ def _transcript_frame(update: SpeechTranscript) -> dict[str, str | int | bool]:
 class Channel:
     principal_id: str
     workspace_id: str
-    incoming: asyncio.Queue[bytes | str | Media] = field(default_factory=lambda: asyncio.Queue(64))
+    incoming: asyncio.Queue[bytes | str | Media | MessageInput] = field(default_factory=lambda: asyncio.Queue(64))
     outgoing: asyncio.Queue[dict[str, str | int | bool]] = field(default_factory=lambda: asyncio.Queue(512))
     pcm: asyncio.Queue[tuple[int, bytes]] = field(default_factory=lambda: asyncio.Queue(32))
     decisions: dict[str, bool | None] = field(default_factory=dict)
@@ -127,6 +132,7 @@ class Channel:
     attached: bool = False
     audio: bool = True
     draft: str = ""
+    draft_asset_ids: tuple[str, ...] = ()
     playback_epoch: int = 0
     playback_offset: int = 0
     verify_dispatch: Callable[[str], Awaitable[bool]] | None = None
@@ -265,6 +271,7 @@ class RealtimeSessionCreate(BaseModel):
     memories: MemoryMounts = ()
     environments: InitialMounts = ()
     draft: str = Field(default="", max_length=8192)
+    draft_asset_ids: tuple[ObjectId, ...] = Field(default=(), max_length=4)
     max_duration_seconds: int | None = Field(default=None, ge=30)
 
     @model_validator(mode="after")
@@ -321,6 +328,20 @@ class Input(BaseModel):
     text: str = Field(default="", max_length=8192)
 
 
+class MessageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["input"]
+    text: str = Field(default="", max_length=8192)
+    asset_ids: tuple[ObjectId, ...] = Field(default=(), max_length=4)
+    respond: bool = True
+
+    @model_validator(mode="after")
+    def require_content(self) -> MessageInput:
+        if not (self.text.strip() or self.asset_ids):
+            raise ValueError("Provide text or an image asset")
+        return self
+
+
 class Approval(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["approval"]
@@ -340,7 +361,7 @@ class WebRTCOffer(BaseModel):
     sdp: str = Field(min_length=1, max_length=32_768)
 
 
-_COMMAND = TypeAdapter(Annotated[Input | Approval | Media, Field(discriminator="type")])
+_COMMAND = TypeAdapter(Annotated[Input | MessageInput | Approval | Media, Field(discriminator="type")])
 _AUTH = TypeAdapter(Authenticated)
 _OUTPUT = TypeAdapter(dict[str, str | int | bool])
 
@@ -352,12 +373,31 @@ class RealtimeAvailability(BaseModel):
     accepts_text: bool = False
     accepts_images: bool = False
     supported_image_types: tuple[str, ...] = ()
+    max_images_per_input: int = 0
     audio_input_hz: int | None = None
     audio_output_hz: int | None = None
     supports_interruption: bool = False
     max_duration_seconds: int | None = None
     reason: str | None = None
     transports: tuple[Transport, ...] = ()
+
+
+def validate_realtime_image_count(asset_ids: tuple[str, ...], maximum: int, *, field: str) -> None:
+    if not asset_ids:
+        return
+    if not maximum:
+        raise invalid(field, "The selected model does not support image input")
+    if len(asset_ids) > maximum:
+        raise invalid(field, f"This model accepts at most {maximum} image(s) per input")
+
+
+def validate_realtime_image(asset: Asset, supported_types: tuple[str, ...], *, field: str) -> None:
+    if asset.retired_at is not None:
+        raise invalid(field, "Choose an active image asset from this workspace")
+    if asset.content_type not in supported_types:
+        raise invalid(field, "This model accepts only: " + ", ".join(supported_types))
+    if asset.size > IMAGE_MAX_BYTES:
+        raise invalid(field, "Each image must be at most 4 MiB")
 
 
 router = APIRouter()
@@ -455,6 +495,9 @@ async def _inspect(
         realtime=True,
         can_start=reason is None,
         accepts_text=True,
+        accepts_images=bool(protocol.supported_image_types),
+        supported_image_types=protocol.supported_image_types,
+        max_images_per_input=protocol.max_images_per_input,
         audio_input_hz=protocol.audio_input_hz,
         audio_output_hz=protocol.audio_output_hz,
         supports_interruption=protocol.supports_interruption,
@@ -479,6 +522,16 @@ async def create_realtime_session(
     availability, authority = await _inspect(runtime, principal, workspace_id, body)
     if not availability.realtime:
         raise invalid("agent_id", "The Agent's primary model does not use a realtime API")
+    validate_realtime_image_count(body.draft_asset_ids, availability.max_images_per_input, field="draft_asset_ids")
+    for index, asset_id in enumerate(body.draft_asset_ids):
+        field = f"draft_asset_ids.{index}"
+        try:
+            asset = await get_asset(runtime.storage, principal, workspace_id, asset_id)
+        except ServiceError as error:
+            if error.code in {"not_found", "forbidden"}:
+                raise invalid(field, "Choose an available image asset from this workspace") from None
+            raise
+        validate_realtime_image(asset, availability.supported_image_types, field=field)
     if body.transport not in availability.transports:
         raise invalid("transport", "The Agent's primary model does not support WebRTC; use websocket")
     if availability.reason is not None:
@@ -786,6 +839,7 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
                 Offer(
                     control_id=bridge.id,
                     draft=start.draft,
+                    draft_asset_ids=start.draft_asset_ids,
                     principal_id=ticket.credential.principal.id,
                     workspace_id=workspace_id,
                     audio=start.audio,
@@ -921,7 +975,26 @@ async def relay(
                     raise invalid("audio", "Expected a short PCM16 audio frame")
                 frame = b"b" + audio
             else:
-                command = _COMMAND.validate_json(event.get("text") or "")
+                try:
+                    payload: object = json.loads(event.get("text") or "")
+                except (ValueError, RecursionError):
+                    raise invalid("type", "Expected a JSON realtime command") from None
+                if ready.is_set() and isinstance(payload, dict) and payload.get("type") == "input":
+                    try:
+                        command = MessageInput.model_validate(payload)
+                    except ValidationError:
+                        async with asyncio.timeout(5):
+                            await socket.send_json(
+                                {
+                                    "type": "error",
+                                    "code": "invalid_argument",
+                                    "message": "Send text (up to 8,192 characters) or up to four image asset IDs",
+                                    "recoverable": True,
+                                }
+                            )
+                        continue
+                else:
+                    command = _COMMAND.validate_python(payload)
                 if isinstance(command, Input) and command.type == "stop":
                     return None
                 if not ready.is_set():
@@ -1096,6 +1169,7 @@ async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channe
 
         channel.verify_dispatch = verify_dispatch
         channel.draft = offer.draft
+        channel.draft_asset_ids = offer.draft_asset_ids
         async with _worker_io(pipe, channel):
             yield channel
 
@@ -1133,6 +1207,8 @@ async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
                         pipe.epoch += 1
                         while not channel.pcm.empty():
                             channel.pcm.get_nowait()
+                    channel.incoming.put_nowait(command)
+                elif isinstance(command, MessageInput):
                     channel.incoming.put_nowait(command)
                 elif command.text.strip():
                     channel.touch()

@@ -21,6 +21,7 @@ from a13n_harness.providers.model.xai import DEFINITION as XAI
 from a13n_service.infra.crypto import KeyRing, SecretLocation
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.models.realtime import open_realtime_model
 from a13n_service.resources.models.schemas import ModelConfig
@@ -33,17 +34,25 @@ from a13n_service.settings import Providers
 from pydantic import SecretStr
 from pydantic_ai import ApprovalRequired, ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import BinaryAudio, ModelMessage, RealtimeSessionReconnectEvent, RealtimeTurnCompleteEvent
+from pydantic_ai.messages import (
+    BinaryAudio,
+    BinaryImage,
+    ModelMessage,
+    RealtimeSessionReconnectEvent,
+    RealtimeTurnCompleteEvent,
+)
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.realtime import RealtimeModelSettings, WebRTCAnswer, WebRTCSession
 from pydantic_ai.realtime.azure import AzureRealtimeModel
 from pydantic_ai.realtime.codec import (
     AudioDelta,
+    CreateResponse,
     OutputTranscript,
     RealtimeCodecEvent,
     RealtimeConnection,
     RealtimeInput,
     ResponseDone,
+    TextContext,
     ToolCall,
     ToolResult,
     TruncateOutput,
@@ -422,7 +431,21 @@ async def test_app_opens_realtime_over_http_and_websocket(
         assert (checks["audio_input_hz"], checks["audio_output_hz"]) == (input_hz, 24000)
         assert checks["supports_interruption"] is interruption
         assert checks["max_duration_seconds"] == settings.worker.realtime_max_duration_seconds
-        assert not checks["accepts_images"] and checks["supported_image_types"] == []
+        image_types, image_limit = {
+            "openai.realtime": (["image/png", "image/jpeg"], 4),
+            "azure.realtime": (["image/png", "image/jpeg"], 4),
+            "google.realtime": (["image/jpeg"], 1),
+        }.get(api, ([], 0))
+        assert checks["accepts_images"] is bool(image_types)
+        assert checks["supported_image_types"] == image_types
+        assert checks["max_images_per_input"] == image_limit
+        if api == "google.realtime":
+            too_many = await service.client.post(
+                f"{service.api}/realtime/sessions",
+                headers=bearer,
+                json={"agent_id": agent_view["id"], "draft_asset_ids": [new_object_id("ast"), new_object_id("ast")]},
+            )
+            assert too_many.status_code == 400 and "at most 1" in too_many.text
         if api in {"xai.realtime", "google.realtime"}:
             assert checks["transports"] == ["websocket"]
             unsupported = await service.client.post(
@@ -556,6 +579,137 @@ async def test_app_opens_realtime_over_http_and_websocket(
             assert "Order changed" in str(outcomes["call_revalidate"]["content"])
             assert outcomes["call_order"]["state"] == "completed"
             assert outcomes["call_pending"]["content"]["outcome"] == "expired"
+
+
+@pytest.fixture
+async def image_realtime(settings, serve):
+    server = settings.server.model_copy(update={"request_bytes": 8 * 1024 * 1024})
+    worker = settings.worker.model_copy(update={"scan_seconds": 0.05})
+    objects = settings.objects.model_copy(update={"upload_bytes": 8 * 1024 * 1024})
+    async with serve(
+        role="all", settings=settings.model_copy(update={"server": server, "worker": worker, "objects": objects})
+    ) as app:
+        yield app
+
+
+@pytest.mark.parametrize("vision", [True, False])
+async def test_realtime_image_assets_use_the_worker_and_keep_rejected_calls_open(
+    image_realtime, runs_kit, monkeypatch, vision
+):
+    executing = image_realtime
+    from a13n_service.runs.realtime import IMAGE_MAX_BYTES
+
+    provider = ScriptedRealtimeProvider()
+    monkeypatch.setattr(OpenAIRealtimeModel if vision else XaiRealtimeModel, "connect", provider.connect)
+    agent_view = await create_voice_agent(executing, runs_kit, "openai.realtime" if vision else "xai.realtime")
+    api, client = executing.api, executing.client
+    image = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jV0sAAAAASUVORK5CYII="
+    )
+
+    async def asset(name, mime, content, workspace_id=None):
+        scope = {"X-Workspace-ID": workspace_id} if workspace_id else {}
+        staged = await client.post(
+            f"{api}/uploads", files={"file": (name, content, mime)}, headers={**scope, **runs_kit.fresh_key()}
+        )
+        assert staged.status_code == 200, staged.text
+        promoted = await client.post(
+            f"{api}/assets", json={"upload_id": staged.json()["upload_id"], "name": name}, headers=scope
+        )
+        assert promoted.status_code == 201, promoted.text
+        return promoted.json()["id"]
+
+    picture = await asset("picture.png", "image/png", image)
+    request = {"agent_id": agent_view["id"]}
+    with_image = await client.post(
+        f"{api}/realtime/sessions", json={**request, "draft": "Opening image", "draft_asset_ids": [picture]}
+    )
+    invalid_inputs = [([picture] * 5, "too many"), ([], "   ")]
+    if vision:
+        assert with_image.status_code == 201, with_image.text
+        ticket = with_image.json()
+        other = await client.post(f"{executing.organization}/workspaces", json={"name": "Other image workspace"})
+        assert other.status_code == 201, other.text
+        foreign = await asset("foreign.png", "image/png", image, other.json()["id"])
+        text_file = await asset("note.txt", "text/plain", b"not an image")
+        large = await asset("large.png", "image/png", image + bytes(IMAGE_MAX_BYTES))
+        unsupported_image = await asset("picture.gif", "image/gif", b"GIF89a")
+        invalid_ids = (foreign, text_file, large, unsupported_image, new_object_id("ast"))
+        invalid_inputs.extend(([value], "rejected") for value in invalid_ids)
+        for value in invalid_ids:
+            invalid = await client.post(f"{api}/realtime/sessions", json={**request, "draft_asset_ids": [value]})
+            assert invalid.status_code == 400 and invalid.json()["error"]["code"] == "invalid_argument"
+    else:
+        assert with_image.status_code == 400, with_image.text
+        assert with_image.json()["error"]["details"]["field"] == "draft_asset_ids"
+        response = await client.post(f"{api}/realtime/sessions", json=request)
+        assert response.status_code == 201, response.text
+        ticket = response.json()
+        invalid_inputs.append(([picture], "no vision"))
+
+    storage_reads: list[str] = []
+    get_object = executing.runtime.objects.get
+
+    async def record_read(key: str) -> bytes | None:
+        storage_reads.append(key)
+        return await get_object(key)
+
+    monkeypatch.setattr(executing.runtime.objects, "get", record_read)
+
+    async with serve_http(executing.app, lifespan="off") as url, asyncio.timeout(15):
+        async with connect(
+            url.replace("http://", "ws://", 1) + ticket["websocket_path"],
+            subprotocols=[ticket["subprotocol"], ticket["ticket"]],
+        ) as socket:
+            assert json.loads(await socket.recv())["type"] == "accepted"
+            assert json.loads(await socket.recv())["type"] == "ready"
+            if vision:
+                assert await provider.connection.outgoing.get() == TextContext("Opening image")
+                received = await provider.connection.outgoing.get()
+                assert (
+                    isinstance(received, BinaryImage) and received.data == image and received.media_type == "image/png"
+                )
+                assert isinstance(await provider.connection.outgoing.get(), CreateResponse)
+            prior_reads = len(storage_reads)
+            for ids, text in invalid_inputs:
+                await socket.send(json.dumps({"type": "input", "text": text, "asset_ids": ids}))
+                error = json.loads(await socket.recv())
+                assert error["type"] == "error" and error["code"] == "invalid_argument" and error["recoverable"]
+            assert provider.connection.outgoing.empty()
+            assert len(storage_reads) == prior_reads
+            if vision:
+                await socket.send(json.dumps({"type": "input", "asset_ids": [picture], "respond": False}))
+                received = await provider.connection.outgoing.get()
+                assert isinstance(received, BinaryImage) and received.data == image
+                headers = await runs_kit.bearer(executing)
+                async with runs_kit.frames(f"{url}{api}/sessions/{ticket['session_id']}/stream", headers) as stream:
+                    events = await runs_kit.until(
+                        stream,
+                        lambda frame: (
+                            frame[0] == "delta"
+                            and frame[2]["event"].get("name") == "a13n.input.user"
+                            and frame[2]["event"]["value"]["event"]["content"] == ""
+                        ),
+                    )
+                    assert events[-1][2]["event"]["metadata"]["realtime_asset_ids"] == [picture]
+            await socket.send('{"type":"text","text":"Still here"}')
+            assert await provider.connection.outgoing.get() == "Still here"
+            await provider.connection.incoming.put(OutputTranscript("Acknowledged", is_final=True))
+            await provider.connection.incoming.put(ResponseDone())
+            assert json.loads(await socket.recv())["type"] == "transcript"
+            await socket.send('{"type":"stop"}')
+            [sealed] = [json.loads(frame) async for frame in socket if json.loads(frame)["type"] == "sealed"]
+            assert sealed["status"] == "completed"
+
+    items = await runs_kit.items(executing, ticket["run_id"])
+    rendered = [
+        item["content"] for item in items["items"] if item["content"].get("metadata", {}).get("realtime_asset_ids")
+    ]
+    if vision:
+        assert [item["text"] for item in rendered] == ["Opening image", ""]
+        assert all(item["metadata"]["realtime_asset_ids"] == [picture] for item in rendered)
+    else:
+        assert not rendered
 
 
 @pytest.mark.parametrize(

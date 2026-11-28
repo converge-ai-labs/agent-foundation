@@ -1,6 +1,6 @@
 """Assets are created from staged uploads; retirement blocks new use and keeps content readable."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from pydantic import JsonValue
 from sqlalchemy import select
@@ -94,7 +94,13 @@ async def retire_asset(
 
 
 async def read_asset_content(
-    storage: Storage, objects: ObjectStore, actor: Principal, workspace_id: str, asset_id: str
+    storage: Storage,
+    objects: ObjectStore,
+    actor: Principal,
+    workspace_id: str,
+    asset_id: str,
+    *,
+    before_read: Callable[[Asset], None] | None = None,
 ) -> tuple[Asset, bytes]:
     """Retired assets stay readable to anyone who may read the workspace."""
     async with short_session(storage) as session:
@@ -102,6 +108,8 @@ async def read_asset_content(
         row = await find_row(session, actor, AssetRow, scope, asset_id, "read")
         reference = ObjectRef(row.content_ref, row.digest, row.size, row.content_type)
         asset = Asset.model_validate(row)
+    if before_read is not None:
+        before_read(asset)
     return asset, await read(objects, reference)
 
 

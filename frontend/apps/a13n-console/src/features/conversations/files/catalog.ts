@@ -41,6 +41,10 @@ export function publishedFiles(
   items: readonly DisplayItem[],
 ): FileReference[] {
   return items.flatMap((raw) => {
+    if (raw.kind === "text_message") {
+      const item = presentItem(raw);
+      return (item.realtimeAssetIds ?? []).map((assetId) => ({ assetId }));
+    }
     if (raw.kind !== "observation" && raw.kind !== "tool_call") return [];
     const item = presentItem(raw);
     const observed = publishedAsset(raw);

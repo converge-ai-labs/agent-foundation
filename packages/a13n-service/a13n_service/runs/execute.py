@@ -61,6 +61,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import HandleDeferredToolCalls
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
+    BinaryContent,
     EnqueuedMessagesEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -90,10 +91,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.app_plugins import AppActivation
 from a13n_service.app_sdk.hooks import EnvironmentHookAbort
 from a13n_service.infra.db import short_session, transaction
-from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents import stored
+from a13n_service.resources.assets.service import read_asset_content
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, definitions, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
@@ -133,7 +135,16 @@ from a13n_service.runs.inputs import Offered
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.notices import KINDS as NOTICE_KINDS
 from a13n_service.runs.notices import StaleNotice, require_notices
-from a13n_service.runs.realtime import BUDGET_RESTRICTION, INBOX_METADATA, Channel, Media, worker_channel
+from a13n_service.runs.realtime import (
+    BUDGET_RESTRICTION,
+    INBOX_METADATA,
+    Channel,
+    Media,
+    MessageInput,
+    validate_realtime_image,
+    validate_realtime_image_count,
+    worker_channel,
+)
 from a13n_service.runs.realtime_cleanup import provider_call
 from a13n_service.runs.realtime_transcript import LiveTranscripts
 from a13n_service.runs.realtime_transport import ATTACH_SECONDS, TransportError
@@ -160,6 +171,8 @@ from a13n_service.runs.tool_executions.recovery import restore as restore_execut
 from a13n_service.runs.tool_executions.state import SharedCodeActState
 from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, price_snapshot, totals
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
+
+_IMAGE_PROMPT = "Look at the attached image(s)."
 
 logger = get_logger(__name__)
 
@@ -1011,17 +1024,27 @@ class _Attempt:
                     pcm = stream.stream_audio() if webrtc is None and not part_audio else None
                     opening = await self._realtime_notices(stream, channel)
                     opening_id = None
+                    images = await self._realtime_images(channel.draft_asset_ids, field="draft_asset_ids")
                     if opening:
                         if channel.draft:
                             await stream.recall(channel.draft)
+                        if images:
+                            # The enqueued prompt is the only responding turn. Preserve its Inbox metadata.
+                            await stream.send(images, respond=False)
+                        if channel.draft or images:
                             opening.append(
-                                TextContent(channel.draft, metadata={"a13n.steering-source": "user", "display": False})
+                                TextContent(
+                                    channel.draft or _IMAGE_PROMPT,
+                                    metadata={"a13n.steering-source": "user", "display": False},
+                                )
                             )
                         opening_id = stream.enqueue_notice(opening)
+                    elif images:
+                        await self._send_realtime_images(stream, channel.draft, images, respond=True)
                     elif channel.draft:
                         await stream.send(channel.draft, respond=True)
-                    if channel.draft:
-                        output.realtime_input(channel.draft)
+                    if channel.draft or channel.draft_asset_ids:
+                        output.realtime_input(channel.draft, channel.draft_asset_ids)
             except TimeoutError:
                 raise TransportError("The realtime provider did not become ready") from None
             tasks = await stack.enter_async_context(asyncio.TaskGroup())
@@ -1198,6 +1221,49 @@ class _Attempt:
             results.approvals[call.tool_call_id] = decision
         return results
 
+    async def _realtime_images(self, asset_ids: tuple[str, ...], *, field: str) -> list[BinaryContent]:
+        if not asset_ids:
+            return []
+        protocol = self.realtime_protocol
+        assert protocol is not None
+        profile = protocol.for_model(self.plan.agent.model.config.model_name)
+        validate_realtime_image_count(asset_ids, profile.max_images_per_input, field=field)
+        storage, objects = self.runtime.storage, self.runtime.objects
+        principal, workspace_id = self.plan.principal, self.lease.workspace_id
+        images: list[BinaryContent] = []
+        for index, asset_id in enumerate(asset_ids):
+            path = f"{field}.{index}"
+            try:
+                asset, data = await read_asset_content(
+                    storage,
+                    objects,
+                    principal,
+                    workspace_id,
+                    asset_id,
+                    before_read=partial(
+                        validate_realtime_image, supported_types=profile.supported_image_types, field=path
+                    ),
+                )
+            except ServiceError as error:
+                if error.code in {"not_found", "forbidden", "unavailable"}:
+                    raise invalid(path, "Choose an available image asset from this workspace") from None
+                raise
+            images.append(BinaryContent(data, media_type=asset.content_type, identifier=asset_id))
+        return images
+
+    async def _send_realtime_images(
+        self, stream: HarnessLiveStream, text: str, images: list[BinaryContent], *, respond: bool
+    ) -> None:
+        protocol = self.realtime_protocol
+        assert protocol is not None
+        profile = protocol.model_profile(self.plan.agent.model.config.model_name)
+        prompt = [text] if text.strip() else []
+        if respond and not profile.get("supports_manual_turn_control"):
+            # Automatic-VAD models reply to a committed text turn, not to a video frame.
+            await stream.send([*images, *(prompt or [_IMAGE_PROMPT])], respond=True)
+        else:
+            await stream.send([*prompt, *images], respond=respond)
+
     async def _realtime_input(
         self, stream: HarnessLiveStream, channel: Channel, output: Coalescer, tasks: asyncio.TaskGroup
     ) -> None:
@@ -1231,6 +1297,20 @@ class _Attempt:
                     await stream.commit_audio()
                 else:
                     await stream.clear_audio()
+            elif isinstance(payload, MessageInput):
+                try:
+                    images = await self._realtime_images(payload.asset_ids, field="asset_ids")
+                except ServiceError as error:
+                    if error.code != "invalid_argument":
+                        raise
+                    channel.emit({"type": "error", "code": error.code, "message": error.message, "recoverable": True})
+                    continue
+                channel.touch()
+                if images:
+                    await self._send_realtime_images(stream, payload.text, images, respond=payload.respond)
+                else:
+                    await stream.send(payload.text, respond=payload.respond)
+                output.realtime_input(payload.text, payload.asset_ids)
             else:
                 await stream.send(payload, respond=True)
                 output.realtime_input(payload)

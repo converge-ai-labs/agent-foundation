@@ -20938,6 +20938,11 @@
             ],
             "title": "Max Duration Seconds"
           },
+          "max_images_per_input": {
+            "default": 0,
+            "title": "Max Images Per Input",
+            "type": "integer"
+          },
           "realtime": {
             "default": false,
             "title": "Realtime",
@@ -21011,6 +21016,17 @@
             "maxLength": 8192,
             "title": "Draft",
             "type": "string"
+          },
+          "draft_asset_ids": {
+            "default": [],
+            "items": {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Draft Asset Ids",
+            "type": "array"
           },
           "environments": {
             "$ref": "#/components/schemas/InitialMounts",

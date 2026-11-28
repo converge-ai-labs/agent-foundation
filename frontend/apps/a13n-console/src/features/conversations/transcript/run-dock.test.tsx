@@ -722,7 +722,7 @@ it("keeps the dialing call mounted when the Thread announces its successor first
       await screen.findByRole("button", { name: "Start voice chat" }),
     );
     dock.changeThread({ current_run_id: "next" });
-    const stop = screen.getByRole("button", { name: "End realtime chat" });
+    const stop = screen.getByRole("button", { name: "End call" });
     expect(close).not.toHaveBeenCalled();
     fireEvent.click(stop);
     expect(close).toHaveBeenCalledOnce();

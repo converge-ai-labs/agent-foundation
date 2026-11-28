@@ -15,6 +15,7 @@ from typing import Any
 from a13n_harness import HarnessStreamEvent
 from a13n_stream_protocol.display import bound_event
 from ag_ui.core import (
+    CustomEvent,
     TextMessageContentEvent,
     TextMessageEndEvent,
     TextMessageStartEvent,
@@ -96,10 +97,22 @@ class Coalescer:
                     ready += self._accept(_Event.of(app_event))
         self._publish(ready, source)
 
-    def realtime_input(self, text: str) -> None:
-        """Record live text delivered directly over the realtime connection."""
+    def realtime_input(self, text: str, asset_ids: tuple[str, ...] = ()) -> None:
+        """Record delivered input; display and stream retain asset references, not image data."""
         message_id = new_object_id("msg")
         timestamp = int(time.time() * 1000)
+        if asset_ids:
+            event = CustomEvent.model_validate(
+                {
+                    "type": "CUSTOM",
+                    "name": "a13n.input.user",
+                    "timestamp": timestamp,
+                    "metadata": {"realtime_asset_ids": asset_ids},
+                    "value": {"event": {"message_id": message_id, "source": "user", "content": text}},
+                }
+            )
+            self._publish([*self._release(), _Event.of(event.model_dump(mode="json", by_alias=True))])
+            return
         events = (
             TextMessageStartEvent(message_id=message_id, role="user", timestamp=timestamp),
             TextMessageContentEvent(message_id=message_id, delta=text, timestamp=timestamp),

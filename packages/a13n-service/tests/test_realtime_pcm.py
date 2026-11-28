@@ -598,7 +598,7 @@ async def test_control_records_handshake_and_connection_lifetime(monkeypatch, tr
     if scenario == "attach_timeout":
         control.attach_deadline = asyncio.get_running_loop().time() - 1
 
-    start = SimpleNamespace(transport=transport, audio=True, draft="", max_duration_seconds=90)
+    start = SimpleNamespace(transport=transport, audio=True, draft="", draft_asset_ids=(), max_duration_seconds=90)
     credential = SimpleNamespace(principal=SimpleNamespace(id="actor"))
     ticket = SimpleNamespace(start=start, run_id="run", session_id="session", thread_id="thread", credential=credential)
     runtime = SimpleNamespace(

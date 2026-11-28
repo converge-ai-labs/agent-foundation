@@ -1,0 +1,108 @@
+.hud,
+.recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+
+.summary,
+.controls,
+.microphone {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.summary {
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 6px;
+}
+
+.controls {
+  margin-inline-start: auto;
+}
+
+.microphone {
+  gap: 0;
+}
+
+.elapsed {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alpha:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+
+.alpha {
+  display: inline-flex;
+  border-radius: 6px;
+  color: var(--a13n-secondary);
+}
+
+.levels {
+  display: grid;
+  gap: 3px;
+  width: 24px;
+  margin-inline-end: 4px;
+}
+
+.track,
+.level {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+}
+
+.track {
+  background: var(--a13n-border-soft);
+}
+
+.level {
+  background: var(--a13n-secondary);
+  transform-origin: left;
+}
+
+.levels[data-muted="true"] .track:first-child {
+  opacity: 0.45;
+}
+
+.note,
+.error {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.note {
+  color: var(--a13n-secondary);
+}
+
+.error {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--a13n-danger);
+}
+
+.error svg {
+  flex: none;
+  align-self: start;
+  margin-top: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .level {
+    transition: transform 65ms linear;
+  }
+}

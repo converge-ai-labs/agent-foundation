@@ -112,20 +112,31 @@ export function RequestContent({ request }: { request: RunRequest }) {
 export function RealtimeInputMessage({
   text,
   itemId,
+  assetIds,
 }: {
   text: string;
   itemId?: string;
+  assetIds?: string[];
 }) {
   return (
     <div className={styles.userTurn}>
       <article className={styles.userMessage}>
-        <div className={styles.prose}>
-          {itemId ? (
-            <StoredContent itemId={itemId} field="text" value={text} />
-          ) : (
-            text
-          )}
-        </div>
+        {text && (
+          <div className={styles.prose}>
+            {itemId ? (
+              <StoredContent itemId={itemId} field="text" value={text} />
+            ) : (
+              text
+            )}
+          </div>
+        )}
+        {!!assetIds?.length && (
+          <div className={styles.attachments}>
+            {assetIds.map((assetId, index) => (
+              <AssetAttachment key={`${assetId}:${index}`} assetId={assetId} />
+            ))}
+          </div>
+        )}
       </article>
     </div>
   );

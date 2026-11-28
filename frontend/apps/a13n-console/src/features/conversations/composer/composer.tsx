@@ -38,9 +38,10 @@ export function Composer({
   agentName,
   textInput = true,
   attachmentsEnabled = true,
+  imageTypes,
+  imageLimit = 0,
   options,
   primaryAction,
-  actionBeforeSubmit,
   stop,
   stopping = false,
 }: {
@@ -62,9 +63,11 @@ export function Composer({
   agentName?: string;
   textInput?: boolean;
   attachmentsEnabled?: boolean;
+  /** When present, the attachment picker accepts only these image types. */
+  imageTypes?: readonly string[];
+  imageLimit?: number;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
-  actionBeforeSubmit?: ReactNode;
   /** Replaces the primary button while keyboard submission still sends a draft. */
   primaryAction?: {
     label: string;
@@ -103,16 +106,21 @@ export function Composer({
           : [],
     ) ?? [],
   );
-  const attachments = attachmentsEnabled ? draftAttachments : [];
+  const attachments = attachmentsEnabled
+    ? imageTypes
+      ? draftAttachments.filter(({ part }) => part.type === "asset")
+      : draftAttachments
+    : [];
   const [structuredDraft, setStructured] = useState(() => {
     const json = initial?.content.find(
       (part): part is Schema["JsonPart"] => part.type === "json",
     );
     return json ? JSON.stringify(json.value, null, 2) : "";
   });
-  const structured = attachmentsEnabled ? structuredDraft : "";
+  const structured = attachmentsEnabled && !imageTypes ? structuredDraft : "";
   const [key, setKey] = useState(crypto.randomUUID()),
     [uploadFile, setUploadFile] = useState<{ file: File; key: string }>();
+  const [attachmentError, setAttachmentError] = useState("");
   const changed = () => setKey(crypto.randomUUID());
   const upload = useMutation({
     mutationFn: async (selection: { file: File; key: string }) => {
@@ -265,7 +273,13 @@ export function Composer({
         )}
         <div className={styles.tools}>
           <AttachDialog
-            disabled={disabled || busy || !attachmentsEnabled}
+            disabled={disabled || !attachmentsEnabled}
+            imageTypes={imageTypes}
+            imageLimit={imageLimit}
+            selectionDisabled={
+              busy || (!!imageTypes && attachments.length >= imageLimit)
+            }
+            error={attachmentError}
             structured={structured}
             onStructuredChange={(value) => {
               setStructured(value);
@@ -273,6 +287,18 @@ export function Composer({
             }}
             onAttach={attach}
             onUpload={(file) => {
+              setAttachmentError("");
+              if (file && imageTypes) {
+                if (attachments.length >= imageLimit) return;
+                if (!imageTypes.includes(file.type)) {
+                  setAttachmentError(t("Choose a supported image type."));
+                  return;
+                }
+                if (file.size > 4 * 1024 * 1024) {
+                  setAttachmentError(t("Each image must be at most 4 MiB."));
+                  return;
+                }
+              }
               if (!file) {
                 setUploadFile(undefined);
                 return;
@@ -294,7 +320,6 @@ export function Composer({
               {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
             </span>
           )}
-          {actionBeforeSubmit}
           {stopMode ? (
             <Button
               type="button"

@@ -5,7 +5,7 @@ import {
   ModalFrame,
   SegmentedControl,
 } from "a13n-ui";
-import { PaperclipIcon } from "@phosphor-icons/react";
+import { ImageIcon, PaperclipIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../layout/workspace";
@@ -18,6 +18,10 @@ type Mode = "file" | "url" | "structured";
 /** Three ways to add content, one field area: the choice is a segment, not a form. */
 export function AttachDialog({
   disabled,
+  selectionDisabled,
+  imageTypes,
+  imageLimit,
+  error,
   structured,
   onStructuredChange,
   onAttach,
@@ -26,6 +30,10 @@ export function AttachDialog({
   uploadedFile,
 }: {
   disabled: boolean;
+  selectionDisabled: boolean;
+  imageTypes?: readonly string[];
+  imageLimit: number;
+  error: string;
   structured: string;
   onStructuredChange: (value: string) => void;
   onAttach: (attachment: { part: Schema["UrlPart"]; label: string }) => void;
@@ -49,14 +57,25 @@ export function AttachDialog({
           variant="ghost"
           size="icon-sm"
           disabled={disabled}
-          aria-label={t("Attach file or URL")}
+          aria-label={imageTypes ? t("Attach image") : t("Attach file or URL")}
         >
-          <PaperclipIcon size={16} />
+          {imageTypes ? (
+            <ImageIcon size={16} aria-hidden="true" />
+          ) : (
+            <PaperclipIcon size={16} aria-hidden="true" />
+          )}
         </Button>
       }
       size="md"
-      title={t("Attach content")}
-      description={t("Add a file, a URL, or structured input to your message.")}
+      title={imageTypes ? t("Attach image") : t("Attach content")}
+      description={
+        imageTypes
+          ? t(
+              "Image limit per message: {{limit}}. Each image can be at most 4 MiB.",
+              { limit: imageLimit },
+            )
+          : t("Add a file, a URL, or structured input to your message.")
+      }
       closeLabel={t("Close")}
       footer={
         <Button type="button" onClick={() => setOpen(false)}>
@@ -68,27 +87,48 @@ export function AttachDialog({
         disabled={disabled}
         className={`${styles.attach} fieldset-reset`}
       >
-        <SegmentedControl
-          label={t("Attachment type")}
-          className={styles.segments}
-          value={mode}
-          onValueChange={(value) => setMode(value as Mode)}
-          options={[
-            ...(canUpload ? [{ value: "file", label: t("File") }] : []),
-            { value: "url", label: t("URL") },
-            { value: "structured", label: t("Structured JSON") },
-          ]}
-        />
-        {mode === "file" && canUpload && (
+        {!imageTypes && (
+          <SegmentedControl
+            label={t("Attachment type")}
+            className={styles.segments}
+            value={mode}
+            onValueChange={(value) => setMode(value as Mode)}
+            options={[
+              ...(canUpload ? [{ value: "file", label: t("File") }] : []),
+              { value: "url", label: t("URL") },
+              { value: "structured", label: t("Structured JSON") },
+            ]}
+          />
+        )}
+        {(imageTypes || mode === "file") && canUpload && (
           <FileDrop
-            label={t("Upload a file")}
-            hint={t("Drop a file here or choose one to upload.")}
+            label={imageTypes ? t("Upload an image") : t("Upload a file")}
+            accept={imageTypes ? [...imageTypes] : undefined}
+            hint={
+              imageTypes
+                ? t(
+                    "Drop an image here or choose one to upload ({{formats}}).",
+                    {
+                      formats: imageTypes
+                        .map((type) =>
+                          type.slice("image/".length).toUpperCase(),
+                        )
+                        .join(", "),
+                    },
+                  )
+                : t("Drop a file here or choose one to upload.")
+            }
             file={uploadedFile}
-            disabled={disabled || uploading}
+            disabled={disabled || uploading || selectionDisabled}
             onSelect={onUpload}
           />
         )}
-        {mode === "url" && (
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        {!imageTypes && mode === "url" && (
           <div className={styles.attachRow}>
             <FormField className="min-w-0 flex-1" label={t("File URL")}>
               <Input
@@ -110,7 +150,7 @@ export function AttachDialog({
             </Button>
           </div>
         )}
-        {mode === "structured" && (
+        {!imageTypes && mode === "structured" && (
           <TextAreaField
             label={t("Structured input (JSON)")}
             value={structured}
