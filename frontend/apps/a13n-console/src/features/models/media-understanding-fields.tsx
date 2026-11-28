@@ -14,6 +14,7 @@ import {
   workspaceProvidersQuery,
 } from "./api";
 import { ModelIcon, providerBrand } from "./model-icon";
+import { useRequestModelChoices } from "./provider-definitions";
 import styles from "./models.module.css";
 
 export type MediaKind = "image" | "video" | "audio";
@@ -45,9 +46,9 @@ export const mediaKinds: {
     label: "Image",
     description: "Screenshots, photos, and diagrams the agent opens",
     field: "Image understanding",
-    empty: "No enabled model declares image understanding.",
+    empty: "No model is available for image understanding.",
     unavailable:
-      "Saved model {{key}} is disabled or no longer declares image understanding. Choose another.",
+      "Saved model {{key}} is unavailable for image understanding. Choose another.",
     badge: "Image default",
   },
   {
@@ -55,9 +56,9 @@ export const mediaKinds: {
     label: "Video",
     description: "Screen recordings and clips the agent opens",
     field: "Video understanding",
-    empty: "No enabled model declares video understanding.",
+    empty: "No model is available for video understanding.",
     unavailable:
-      "Saved model {{key}} is disabled or no longer declares video understanding. Choose another.",
+      "Saved model {{key}} is unavailable for video understanding. Choose another.",
     badge: "Video default",
   },
   {
@@ -65,9 +66,9 @@ export const mediaKinds: {
     label: "Audio",
     description: "Voice notes and recordings the agent opens",
     field: "Audio understanding",
-    empty: "No enabled model declares audio understanding.",
+    empty: "No model is available for audio understanding.",
     unavailable:
-      "Saved model {{key}} is disabled or no longer declares audio understanding. Choose another.",
+      "Saved model {{key}} is unavailable for audio understanding. Choose another.",
     badge: "Audio default",
   },
 ];
@@ -153,19 +154,23 @@ export function useMediaUnderstandingChoices() {
     client = useClient();
   const models = useQuery(workspaceModelsQuery(client, workspace.id));
   const providers = useQuery(workspaceProvidersQuery(client, workspace.id));
+  const { definitions, accepts } = useRequestModelChoices();
   const enabledProviders = new Set(
     providers.data
       ?.filter((provider) => provider.enabled)
       .map((provider) => provider.id),
   );
   const usable = (models.data ?? []).filter(
-    (model) => model.enabled && enabledProviders.has(model.provider_id),
+    (model) =>
+      model.enabled &&
+      enabledProviders.has(model.provider_id) &&
+      accepts(model),
   );
   const provider = (id: string) =>
     providers.data?.find((entry) => entry.id === id);
   return {
-    error: models.error ?? providers.error,
-    isPending: models.isPending || providers.isPending,
+    error: models.error ?? providers.error ?? definitions.error,
+    isPending: models.isPending || providers.isPending || definitions.isPending,
     eligible: (kind: MediaKind) =>
       usable.filter((model) =>
         model.config.characteristics?.capabilities?.includes(

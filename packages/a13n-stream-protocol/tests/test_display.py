@@ -10,6 +10,8 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    SpeechPart,
+    SpeechPartDelta,
     TextPart,
     TextPartDelta,
     ThinkingPart,
@@ -420,3 +422,34 @@ def test_tool_progress_is_scoped_live_only_and_cleared_at_terminal(finish):
         assert fold.items[item_id].state == finish
         assert report("call", "late update").item is None
     assert "progress" not in fold.live_item(item_id).content
+
+
+def test_realtime_transcripts_replace_text_per_spoken_part() -> None:
+    fold = DisplayFold("run")
+    events = [
+        PartStartEvent(index=1, part=SpeechPart(speaker="user", transcript="")),
+        PartDeltaEvent(index=1, delta=SpeechPartDelta(speaker="user", transcript="Find elm")),
+        PartDeltaEvent(index=2, delta=SpeechPartDelta(speaker="assistant", transcript="I found")),
+        PartDeltaEvent(index=1, delta=SpeechPartDelta(speaker="user", transcript="Find film")),
+        PartEndEvent(index=1, part=SpeechPart(speaker="user", transcript="Find film.")),
+        PartEndEvent(index=2, part=SpeechPart(speaker="assistant", transcript="I found it.")),
+        PartEndEvent(index=3, part=SpeechPart(speaker="user", transcript="Thanks.")),
+        PartEndEvent(index=4, part=SpeechPart(speaker="user", transcript=None)),
+    ]
+    for sequence, event in enumerate(events, 1):
+        source = HarnessEvent(
+            thread_id="thread", run_id="native", sequence=sequence, occurred_at=datetime.now(UTC), event=event
+        )
+        fold.fold(fold.events(source), source)
+        if sequence == 4:
+            assert [(item.content["text"], item.state) for item in fold.items.values()] == [
+                ("Find film", "in_progress"),
+                ("I found", "in_progress"),
+            ]
+            fold = DisplayFold.restore(fold.export())
+
+    assert [(item.content["role"], item.content["text"], item.state) for item in fold.items.values()] == [
+        ("user", "Find film.", "completed"),
+        ("assistant", "I found it.", "completed"),
+        ("user", "Thanks.", "completed"),
+    ]

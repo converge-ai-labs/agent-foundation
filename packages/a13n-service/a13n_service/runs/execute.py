@@ -18,13 +18,14 @@ from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 import anyio
 from a13n_harness import (
     AgentContext,
     DeferredToolResume,
+    ExecutableAgent,
     HarnessError,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -43,10 +44,12 @@ from a13n_harness import (
 from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids, without_input
 from a13n_harness.compaction import CompactionResult
+from a13n_harness.content import request_input_content
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.models import EnvironmentInvocationError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.live import HarnessLiveStream, LiveWebRTC
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.recovery import normalize_interrupted_history
 from a13n_harness.state import encode_messages
@@ -54,8 +57,25 @@ from a13n_harness.tool_execution import RetainedScope
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.messages import ModelMessage, TextContent, UserContent
+from pydantic_ai import RunContext
+from pydantic_ai.capabilities import HandleDeferredToolCalls
+from pydantic_ai.messages import (
+    EnqueuedMessagesEvent,
+    FunctionToolResultEvent,
+    ModelMessage,
+    ModelRequest,
+    RealtimeInputSpeechStartEvent,
+    RealtimeOutputSpeechStartEvent,
+    RealtimeResponseInterruptedEvent,
+    RealtimeSessionReconnectEvent,
+    RealtimeTurnCompleteEvent,
+    TextContent,
+    ToolReturnPart,
+    UserContent,
+)
 from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.realtime import RealtimeModelSettings
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,11 +85,12 @@ from a13n_service.app_sdk.hooks import EnvironmentHookAbort
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents import stored
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, definitions, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
-from a13n_service.runs.admission import CallContext
+from a13n_service.runs.admission import CallContext, requires_model_reservation
 from a13n_service.runs.agent import ResolvedAgent
 from a13n_service.runs.attachments import Recipient
 from a13n_service.runs.attempts import (
@@ -79,8 +100,9 @@ from a13n_service.runs.attempts import (
     LeaseLost,
     authorize_execution,
     lock_thread_lease,
+    prove,
 )
-from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged
+from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged, close_realtime_tool
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.child_messages import ParentMessageCapability
@@ -99,6 +121,9 @@ from a13n_service.runs.inputs import Offered
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.notices import KINDS as NOTICE_KINDS
 from a13n_service.runs.notices import StaleNotice, require_notices
+from a13n_service.runs.realtime import BUDGET_RESTRICTION, INBOX_METADATA, Channel, Media, worker_channel
+from a13n_service.runs.realtime_cleanup import provider_call
+from a13n_service.runs.realtime_transcript import LiveTranscripts
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
@@ -169,18 +194,31 @@ class _Plan:
 
 async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> None:
     """The worker's execution of one leased attempt. Without the lease nothing is written: `LeaseLost` escapes."""
-    try:
-        plan = await _plan(runtime, lease)
-    except LeaseLost:
-        raise
-    except Exception as error:
-        outcome = _failure(lease, error)
-        if outcome is None:
-            await _release(runtime, lease, error)
-        else:
-            await seal_attempt(runtime, lease, outcome)
-        return
-    await _Attempt(runtime, lease, control, plan).run()
+    async with AsyncExitStack() as stack:
+        channel = None
+        try:
+            if lease.realtime:
+                channel = await stack.enter_async_context(worker_channel(runtime, lease))
+            plan = await _plan(runtime, lease)
+        except LeaseLost:
+            raise
+        except Exception as error:
+            outcome = _failure(lease, error)
+            if outcome is None and lease.realtime:
+                outcome = Outcome.failed("realtime_unavailable", "The realtime attempt could not start")
+            if outcome is None:
+                await _release(runtime, lease, error)
+            else:
+                await seal_attempt(runtime, lease, outcome)
+            if channel is not None and outcome is not None:
+                channel.finish(lease.run_id, outcome.status)
+            return
+        await _Attempt(runtime, lease, control, plan, channel=channel).run()
+        if channel is not None:
+            async with short_session(runtime.storage) as session:
+                row = await session.get(RunRow, lease.run_id)
+                if row is not None and row.status in {"completed", "cancelled", "failed", "waiting"}:
+                    channel.finish(row.id, row.status)
 
 
 # Provider failures that a later attempt may not repeat; the others need a changed mount or configuration.
@@ -347,7 +385,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
             )
         input_text = (
             MessagePayload.model_validate(source.payload).text()
-            if source is not None and source.kind == "message"
+            if not lease.realtime and source is not None and source.kind == "message"
             else answers.input.text()
             if answers is not None and answers.input is not None
             else ""
@@ -457,7 +495,8 @@ def _initial(
 class _Offers:
     """Entries offered to this attempt's Harness run, until a checkpoint commit consumes them."""
 
-    def __init__(self, initial: list[Offered]):
+    def __init__(self, initial: list[Offered], *, realtime: bool = False):
+        self.realtime = realtime
         self.initial = {entry.id for entry in initial}
         self.open = {entry.id: entry for entry in initial}
         # Assigned steers the Harness could not take yet: between its native attempts none is active.
@@ -467,6 +506,14 @@ class _Offers:
 
     def incorporated(self, messages: Sequence[ModelMessage]) -> list[str]:
         ids = set(steering_input_ids(messages))
+        if self.realtime:
+            ids.update(
+                item.metadata.source_id
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for item in request_input_content(message)
+                if item.metadata.source_id and (item.metadata.model_extra or {}).get(INBOX_METADATA) is True
+            )
         if self.requested:
             ids |= self.initial
         return [entry_id for entry_id in self.open if entry_id in ids]
@@ -522,7 +569,10 @@ def _post_seal_model_resolver(
 class _Attempt:
     """One Harness run of the attempt: the display it folds, the input it offered and what it committed."""
 
-    def __init__(self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan):
+    def __init__(
+        self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan, *, channel: Channel | None = None
+    ):
+        self.channel = channel
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
         self.last_committed_tail_bytes: bytes | None = None
@@ -530,6 +580,7 @@ class _Attempt:
         assert plan.tail.search is not None
         self.search = Index(plan.tail.search, runtime.settings.run_search)
         worker = runtime.settings.worker
+        self.realtime_protocol = PROTOCOLS.get(plan.agent.model.config.model_api)
         self.fold = DisplayFold(
             lease.run_id,
             plan.tail,
@@ -537,10 +588,11 @@ class _Attempt:
             page_items=worker.page_items,
             page_bytes=worker.page_bytes,
             memory_ids={memory.mount.name: memory.mount.memory_id for memory in plan.host.memories},
+            group_live_user_speech=bool(self.realtime_protocol and self.realtime_protocol.group_user_speech),
         )
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
-        self.offers = _Offers(plan.assigned)
+        self.offers = _Offers(plan.assigned, realtime=lease.realtime)
         self.app_captures = Captures(lease.run_id)
         self.offer_lock = asyncio.Lock()
         self.incoming: asyncio.Task[None] | None = None
@@ -639,6 +691,8 @@ class _Attempt:
                 await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
                 return
             outcome = self._refusal() or _failure(self.lease, error)
+            if outcome is None and self.channel is not None:
+                outcome = Outcome.failed("realtime_unavailable", "The realtime attempt ended before completing")
             if outcome is None:
                 await _release(self.runtime, self.lease, error)
             else:
@@ -726,6 +780,7 @@ class _Attempt:
                 capabilities=lambda node: (
                     [
                         self.boundaries,
+                        *([HandleDeferredToolCalls(handler=self._realtime_approval)] if self.channel else []),
                         *([self.client_recovery] if self.client_recovery is not None else []),
                         InputBoundary(self.boundaries, self.offers.pending_notice),
                         *(
@@ -736,7 +791,11 @@ class _Attempt:
                         ),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
                         *(
-                            [SpawnCapability(self._operator(node).spawn, node.config)]
+                            [
+                                SpawnCapability(
+                                    self._operator(node).spawn, node.config, realtime_parent=self.lease.realtime
+                                )
+                            ]
                             if node.revision_id is not None
                             and node.config.subagents.dynamic.enabled
                             and self.plan.root_run_id == self.lease.run_id
@@ -786,6 +845,10 @@ class _Attempt:
                 producer_observer=output.observe,
                 environment=host.environment,
             )
+            if self.realtime_protocol is not None:
+                return await self._realtime(executable, bindings, output), None
+            if self.lease.realtime:
+                raise ServiceError("conflict", "The Agent's primary model no longer uses a realtime API")
             start = partial(
                 executable.stream,
                 input_factory=self._assigned_input
@@ -819,6 +882,284 @@ class _Attempt:
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result, stream.post_run
+
+    async def _realtime(
+        self, executable: ExecutableAgent, bindings: RunBindings, output: Coalescer
+    ) -> HarnessRunResult:
+        channel = self.channel
+        if (
+            channel is None
+            or channel.attached
+            or channel.closed.is_set()
+            or channel.principal_id != self.plan.principal.id
+            or channel.workspace_id != self.lease.workspace_id
+        ):
+            raise ServiceError("conflict", "The realtime connection is no longer available")
+        if self.plan.resume is not None or self.lease.number != 1:
+            raise ServiceError("conflict", "Start a new browser connection to continue this realtime Thread")
+        if requires_model_reservation(self.runtime.admission):
+            raise ServiceError("conflict", BUDGET_RESTRICTION)
+        channel.attached = True
+        await prove(self.runtime.storage, self.lease)
+        protocol = self.realtime_protocol
+        assert protocol is not None
+        transcripts = LiveTranscripts(group_user_speech=protocol.group_user_speech)
+        webrtc = (
+            LiveWebRTC(
+                channel.webrtc_offer,
+                channel.answer_webrtc,
+                partial(provider_call, self.runtime, self.lease, self.plan.agent.model),
+            )
+            if channel.webrtc_offer is not None
+            else None
+        )
+        settings = (protocol.audio_defaults if channel.audio else protocol.text_defaults).copy()
+        settings.update(
+            cast(
+                RealtimeModelSettings,
+                {**self.plan.agent.model.config.defaults(), **self.plan.agent.config.model_settings},
+            )
+        )
+        self.boundaries.before_dispatch = channel.verify_dispatch
+        async with (
+            agent.open_realtime(
+                self.runtime,
+                self.plan.agent,
+                executable,
+                bindings=replace(bindings, model_call_check=None),
+                usage_limits=UsageLimits(request_limit=self.plan.limit),
+                previous_state=self.plan.state,
+                model_settings=settings,
+                webrtc=webrtc,
+            ) as stream,
+            AsyncExitStack() as stack,
+        ):
+            await claim.start(self.runtime, self.lease, harness_run_id=stream.run_id)
+            self.boundaries.primary = stream.run_id
+            await stack.enter_async_context(
+                self.boundaries.process(partial(self._boundary, stream=stream, output=output))
+            )
+            await stack.enter_async_context(stream)
+            tasks = await stack.enter_async_context(asyncio.TaskGroup())
+            self.offers.requested = True
+            part_audio = webrtc is None and stream.relay_part_audio(channel.emit)
+            pcm = stream.stream_audio() if webrtc is None and not part_audio else None
+            opening = await self._realtime_notices(stream, channel)
+            opening_id = None
+            if opening:
+                if channel.draft:
+                    await stream.recall(channel.draft)
+                    opening.append(
+                        TextContent(channel.draft, metadata={"a13n.steering-source": "user", "display": False})
+                    )
+                opening_id = stream.enqueue_notice(opening)
+            elif channel.draft:
+                await stream.send(channel.draft, respond=True)
+            if channel.draft:
+                output.realtime_input(channel.draft)
+            ready: dict[str, str | int | bool] = {
+                "type": "ready",
+                "accepts_text": True,
+                "supports_interruption": stream.supports_interruption,
+            }
+            if webrtc is None:
+                ready["audio_hz"] = 24000
+            else:
+                ready["transport"] = "webrtc"
+
+            audio: asyncio.Task[None] | None = None
+
+            def start_input() -> asyncio.Task[None]:
+                nonlocal audio
+                channel.emit(ready)
+                if pcm is not None:
+                    audio = tasks.create_task(self._realtime_audio(pcm, channel))
+                return tasks.create_task(self._realtime_input(stream, channel, output, tasks))
+
+            receive = start_input() if opening_id is None else None
+            stop = tasks.create_task(self._close_realtime(stream, channel))
+            notices = tasks.create_task(self._receive_realtime_notices(stream, channel))
+            interrupted_approvals: set[str] = set()
+            try:
+                async for item in stream:
+                    await self._observe(item, output)
+                    if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
+                        if (
+                            receive is None
+                            and isinstance(item.event, EnqueuedMessagesEvent)
+                            and item.event.enqueue_id == opening_id
+                            and not channel.closed.is_set()
+                        ):
+                            receive = start_input()
+                        if (
+                            webrtc
+                            and isinstance(item.event, RealtimeOutputSpeechStartEvent)
+                            and not channel.closed.is_set()
+                        ):
+                            channel.emit({"type": "playback_start"})
+                        if (
+                            isinstance(item.event, (RealtimeInputSpeechStartEvent, RealtimeResponseInterruptedEvent))
+                            and not channel.closed.is_set()
+                        ):
+                            channel.emit({"type": "barge_in"})
+                        # The provider settles lost tool calls before reporting reconnect. Keep
+                        # their IDs so a prompt from the new connection is not cleared with them.
+                        if (
+                            isinstance(item.event, FunctionToolResultEvent)
+                            and isinstance(item.event.part, ToolReturnPart)
+                            and item.event.part.outcome == "interrupted"
+                            and item.event.part.tool_call_id in channel.decisions
+                            and channel.decisions[item.event.part.tool_call_id] is None
+                        ):
+                            interrupted_approvals.add(item.event.part.tool_call_id)
+                        if isinstance(item.event, RealtimeSessionReconnectEvent) and not item.event.state_restored:
+                            if not channel.closed.is_set():
+                                for call_id in interrupted_approvals:
+                                    channel.emit({"type": "approval_expired", "call_id": call_id})
+                            interrupted_approvals.clear()
+                        if isinstance(item.event, (RealtimeTurnCompleteEvent, EnqueuedMessagesEvent)):
+                            await self.boundaries.stage_live(stream.export_state)
+                        if not channel.closed.is_set() and (transcript := transcripts.observe(item)) is not None:
+                            channel.emit(
+                                {
+                                    "type": "transcript",
+                                    "message_id": transcript["message_id"],
+                                    "role": transcript["role"],
+                                    "text": transcript["text"],
+                                    "final": transcript["final"],
+                                }
+                            )
+            finally:
+                if receive is not None:
+                    receive.cancel()
+                stop.cancel()
+                notices.cancel()
+                if audio is not None and channel.closed.is_set():
+                    audio.cancel()
+        if channel.failed or stream.result is None:
+            raise ServiceError("unavailable", "The realtime run ended before it completed")
+        return stream.result
+
+    async def _receive_realtime_notices(self, stream: HarnessLiveStream, channel: Channel) -> None:
+        """Assign durable completion notices and consume them only after native delivery."""
+        async with self.runtime.mailbox.listen(self.lease.thread_id, realtime=True) as ready:
+            while not channel.closed.is_set():
+                await ready.wait()
+                ready.clear()
+                try:
+                    texts = await self._realtime_notices(stream, channel)
+                    if texts:
+                        stream.enqueue_notice(texts)
+                except ServiceError as error:
+                    if error.code != "unavailable":
+                        raise
+                    continue  # The next mailbox scan retries the still-pending rows.
+
+    async def _realtime_notices(self, stream: HarnessLiveStream, channel: Channel) -> list[TextContent]:
+        async with transaction(self.runtime.storage) as session:
+            thread, run, _, _ = await lock_thread_lease(session, self.lease)
+            await authorize_execution(session, self.runtime.access, run)
+            rows = await inbox.assign_steers(
+                session,
+                thread,
+                run,
+                max_count=self.runtime.settings.worker.delivery_count,
+                max_bytes=self.runtime.settings.worker.delivery_bytes,
+                scan=self.runtime.settings.control.inbox_count,
+                kinds=inbox.BACKGROUND_NOTICES,
+            )
+            entries = [Offered.of(row) for row in rows]
+        texts = []
+        for entry in entries:
+            content = await self._read(entry, stream.context.environment)
+            if content and not channel.closed.is_set():
+                source = "tool_execution" if entry.kind == "tool_result" else "async_subagent"
+                texts.extend(
+                    replace(
+                        part,
+                        metadata={
+                            **(part.metadata or {}),
+                            INBOX_METADATA: True,
+                            "display": False,
+                            "a13n.steering-source": source,
+                        },
+                    )
+                    for part in content
+                    if isinstance(part, TextContent)
+                )
+                self.offers.open[entry.id] = entry
+        return texts
+
+    async def _realtime_approval(self, ctx: RunContext, requests: DeferredToolRequests) -> DeferredToolResults | None:
+        channel = self.channel
+        if channel is None or ctx.run_id != self.boundaries.primary or not requests.approvals:
+            return None
+        results = DeferredToolResults()
+        for call in requests.approvals:
+            decision = await channel.approve(call.tool_call_id, call.tool_name, call.args_as_json_str())
+            if decision is None:
+                await close_realtime_tool(ctx)
+            results.approvals[call.tool_call_id] = decision
+        return results
+
+    async def _realtime_input(
+        self, stream: HarnessLiveStream, channel: Channel, output: Coalescer, tasks: asyncio.TaskGroup
+    ) -> None:
+        async def resume_playback() -> None:
+            await stream.wait_for_reply()
+            if not channel.closed.is_set():
+                channel.emit({"type": "playback_end"})
+
+        resume: asyncio.Task[None] | None = None
+        while True:
+            payload = await channel.incoming.get()
+            if isinstance(payload, bytes):
+                if channel.audio:
+                    await stream.send_audio(payload)
+            elif isinstance(payload, Media):
+                if payload.type == "interrupt":
+                    channel.playback_epoch += 1
+                    cancelled = await stream.barge_in(
+                        played_bytes=payload.played_bytes if channel.webrtc_offer is None else None
+                    )
+                    channel.emit({"type": "interrupted"})
+                    if channel.webrtc_offer is not None and not cancelled:
+                        if resume is not None:
+                            resume.cancel()
+                        resume = tasks.create_task(resume_playback())
+                        # Snapshot the outstanding reply before forwarding another queued text turn.
+                        await asyncio.sleep(0)
+                elif payload.type == "audio_commit":
+                    await stream.commit_audio()
+                else:
+                    await stream.clear_audio()
+            else:
+                await stream.send(payload, respond=True)
+                output.realtime_input(payload)
+
+    async def _realtime_audio(self, pcm: AsyncIterator[bytes], channel: Channel) -> None:
+        async for chunk in pcm:
+            if not channel.closed.is_set():
+                channel.emit(chunk)
+
+    async def _close_realtime(self, stream: HarnessLiveStream, channel: Channel) -> None:
+        stopped = asyncio.create_task(self.control.stopped.wait())
+        handoff = asyncio.create_task(self.control.handoff.wait())
+        closed = asyncio.create_task(channel.closed.wait())
+        signals = (stopped, handoff, closed)
+        try:
+            await asyncio.wait(signals, return_when=asyncio.FIRST_COMPLETED)
+            if self.control.stopped.is_set():
+                stream.cancel()
+            else:
+                if self.control.handoff.is_set():
+                    channel.emit({"type": "draining"})
+                async with asyncio.timeout(self.runtime.settings.worker.drain_seconds):
+                    await stream.close()
+        finally:
+            for signal in signals:
+                signal.cancel()
+            await asyncio.gather(*signals, return_exceptions=True)
 
     async def _prepare_environments(self) -> bool:
         """Prepare instances in Service before entering Harness; stop or handoff interrupts the wait."""
@@ -867,7 +1208,9 @@ class _Attempt:
             await self.boundaries.drain()
             output.observe(item)
 
-    async def _boundary(self, staged: Staged, *, stream: HarnessRunStream, output: Coalescer) -> None:
+    async def _boundary(
+        self, staged: Staged, *, stream: HarnessRunStream | HarnessLiveStream, output: Coalescer
+    ) -> None:
         if staged.at in {"input", "model"}:
             self.offers.requested = True
         steers = await self._commit(
@@ -884,7 +1227,8 @@ class _Attempt:
             stream.cancel()
             return
         # A tool boundary waits for the acknowledgement, so steers pending there join the request after the tools.
-        await self._offer(stream, steers)
+        if not isinstance(stream, HarnessLiveStream):
+            await self._offer(stream, steers)
 
     async def _commit(
         self,
@@ -1014,7 +1358,7 @@ class _Attempt:
                     if self.incoming is not None:
                         self.incoming.cancel()
                     await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
-                else:
+                elif not self.lease.realtime:
                     entries = await inbox.assign_steers(
                         session,
                         thread,
@@ -1157,7 +1501,10 @@ class _Attempt:
                 # A rejected receipt is a recorded outcome, not an uncertain tool execution.
                 self.fold.interrupt(open_tool_calls(result.all_messages()))
                 await self._commit(
-                    result.state, cursors=self.cursors.snapshot(), snapshot=self._snapshot(), outcome=failed
+                    result.state,
+                    cursors=self.cursors.snapshot(),
+                    snapshot=self._snapshot(terminal=True),
+                    outcome=failed,
                 )
             else:
                 await self._record_usage()
@@ -1175,7 +1522,7 @@ class _Attempt:
         # Completed and suspended results always carry their state; a waiting one leaves its pending calls open.
         assert result.state is not None
         self.fold.interrupt(open_tool_calls(result.all_messages()))
-        snapshot = self._snapshot()
+        snapshot = self._snapshot(terminal=True)
         if result.status == "completed":
             require_output_size(result.output, self.runtime.settings.worker.output_bytes)
             outcome = Outcome(status="completed", output=result.output)
@@ -1196,7 +1543,7 @@ class _Attempt:
         display = None
         self.fold.interrupt()
         if not near_deadline(self.runtime, self.control):
-            snapshot = self.fold.pending(self._snapshot())
+            snapshot = self.fold.pending(self._snapshot(terminal=True))
             # Only user sources actually visible in this display join a failed/cancelled run's index.
             visible = {
                 str(metadata["source_id"])
@@ -1222,17 +1569,21 @@ class _Attempt:
         inputs = [
             (entry.id, MessagePayload.model_validate(entry.payload).text())
             for key in consumed
-            if (entry := self.offers.open.get(key)) is not None and entry.kind == "message"
+            if (entry := self.offers.open.get(key)) is not None
+            and entry.kind == "message"
+            and (not self.lease.realtime or entry.id != self.plan.source_entry_id)
         ]
         items = [item for page in snapshot.pages for item in page.items] + snapshot.tail.items
         search = await asyncio.to_thread(self.search.prepare, items, inputs)
         return search, Snapshot(snapshot.pages, snapshot.tail.model_copy(update={"search": search.state}))
 
-    def _snapshot(self) -> Snapshot:
+    def _snapshot(self, *, terminal: bool = False) -> Snapshot:
         """The display to commit, with a safe resume hint captured without waiting for queued Redis writes.
 
         The writer replaces one immutable value on the same event loop. Terminal callers read it after close.
         """
+        if terminal and self.channel is not None:
+            self.fold.close_realtime_tools(self.channel.decisions, self.channel.dispatched)
         snapshot = self.fold.snapshot()
         tail, written = snapshot.tail, self.live.last_written if self.live is not None else None
         if (
@@ -1287,7 +1638,7 @@ class _Attempt:
 
     def _operator(self, node: ResolvedAgent) -> ChildRuns:
         """The child runs one async agent of the graph starts through its own edges."""
-        return ChildRuns(self.runtime, self.lease, self.control, node.subagents)
+        return ChildRuns(self.runtime, self.lease, self.control, node.subagents, include_output=self.lease.realtime)
 
     def _bindings(self, resolver: RunModelResolver) -> RunBindings:
         lease = self.lease

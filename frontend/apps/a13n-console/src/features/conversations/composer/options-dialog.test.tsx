@@ -313,6 +313,26 @@ it("sends the chosen model and instructions as the run's overrides", async () =>
   });
 });
 
+it("validates and sends the request limit only for realtime models", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => result.current.setRequestLimit("20"));
+  expect(result.current.build(true).options?.max_usage).toEqual({
+    requests: 20,
+  });
+  act(() => result.current.setModel(vision.key));
+  expect(result.current.build().options).toEqual({
+    overrides: { model: vision.key },
+  });
+
+  act(() => result.current.setRequestLimit("0"));
+  expect(() => result.current.build(true)).toThrow(
+    "Enter a model request limit",
+  );
+  expect(result.current.build().options).toEqual({
+    overrides: { model: vision.key },
+  });
+});
+
 it("accepts model settings in advanced JSON and rejects duplicate dedicated fields", () => {
   const { result } = renderHook(() => useRunOptions());
   act(() => {

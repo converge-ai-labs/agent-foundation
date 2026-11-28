@@ -47,7 +47,8 @@ def tool_results(runtime: Runtime) -> Handler:
                 return
             if not await settle(session, claimed, "delivered"):
                 return
-            await inbox.append_tool_result(session, thread, origin, payload)
+            entry = await inbox.append_tool_result(session, thread, origin, payload)
+            runtime.mailbox.notify(session, entry)
             thread_id = thread.id
         await advance(runtime, thread_id)
 

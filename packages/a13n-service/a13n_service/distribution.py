@@ -157,6 +157,8 @@ from a13n_service.runs.tables import (
     InboxEntryRow,
     ModelDispatchRow,
     PendingAnswerRow,
+    RealtimeCallRow,
+    RealtimeTicketRow,
     RunItemPageRow,
     RunRow,
     SessionRow,
@@ -276,6 +278,17 @@ def _advance_threads(runtime: Runtime) -> Sweep:
         every=control.scan_seconds,
         run=ThreadAdvancer(runtime, batch=control.sweep_batch),
         timeout=max(30, control.scan_seconds * 10),
+    )
+
+
+def _realtime_cleanup(runtime: Runtime) -> Sweep:
+    from a13n_service.runs.realtime_cleanup import reconcile
+
+    return Sweep(
+        name="realtime_cleanup",
+        every=runtime.settings.worker.authority_seconds,
+        run=partial(reconcile, runtime),
+        timeout=max(30, runtime.settings.worker.lease_seconds),
     )
 
 
@@ -464,6 +477,8 @@ OSS = Distribution(
         MemoryFileRow,
         MemoryFileRevisionRow,
         MemoryRecordSourceRow,
+        RealtimeCallRow,
+        RealtimeTicketRow,
         SessionRow,
         SpaceOrganizationRow,
         FileOrganizationRow,
@@ -543,6 +558,7 @@ OSS = Distribution(
         _advance_threads,
         organization_sweep,
         _expire_leases,
+        _realtime_cleanup,
         _reconcile_compactions,
         _clean_thread_objects,
         _reconcile_tool_executions,

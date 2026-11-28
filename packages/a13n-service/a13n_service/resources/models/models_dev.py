@@ -1,7 +1,7 @@
 """The models.dev catalog document, read as the models the Service offers.
 
-A model is offered when a registered model provider type serves its channel, it outputs text and it was
-released on or after `RELEASED_SINCE`. A malformed model is skipped; a malformed or oversized document is refused.
+Offer recent text models and realtime models with a supported voice protocol. Skip malformed entries
+and reject malformed or oversized documents.
 """
 
 import json
@@ -75,14 +75,29 @@ def _catalog_model(
 ) -> CatalogModel | None:
     released = date.fromisoformat(value["release_date"])
     modalities = value["modalities"]
-    if released < RELEASED_SINCE or "text" not in modalities["output"]:
+    if released < RELEASED_SINCE:
         return None
     model = value.get("id", key)
+    api = None
+    if value.get("type") == "realtime":
+        if "audio" not in modalities["input"] or "audio" not in modalities["output"]:
+            return None
+        if channel == "openai" and model.startswith("gpt-realtime"):
+            api = "openai.realtime"
+        elif channel == "openai" and model.startswith("gpt-live"):
+            api = "openai.live"
+        elif channel in {"xai", "x-ai"} and model.startswith("grok-voice"):
+            api = "xai.realtime"
+        if api is None:
+            return None
+    elif "text" not in modalities["output"]:
+        return None
     identity, name = _identity(channel, model, value.get("name", model), identities)
     pricing, warning = _pricing(value.get("cost"), channel, model, value.get("last_updated") or value["release_date"])
     inputs = modalities.get("input", ())
     return CatalogModel(
         ref=CatalogRef(provider=channel, model=model),
+        model_api=api,
         identity=identity,
         name=name,
         provider_name=provider_name,

@@ -2585,6 +2585,37 @@
     "Worker": {
       "additionalProperties": false,
       "properties": {
+        "realtime_slots": {
+          "default": 8,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Realtime Slots",
+          "type": "integer"
+        },
+        "realtime_call_limit": {
+          "default": 32,
+          "minimum": 1,
+          "title": "Realtime Call Limit",
+          "type": "integer"
+        },
+        "realtime_pcm_limit": {
+          "default": 8,
+          "minimum": 1,
+          "title": "Realtime Pcm Limit",
+          "type": "integer"
+        },
+        "realtime_accepted_limit": {
+          "default": 16,
+          "minimum": 1,
+          "title": "Realtime Accepted Limit",
+          "type": "integer"
+        },
+        "realtime_ticket_limit": {
+          "default": 128,
+          "minimum": 1,
+          "title": "Realtime Ticket Limit",
+          "type": "integer"
+        },
         "slots": {
           "default": 128,
           "maximum": 1024,

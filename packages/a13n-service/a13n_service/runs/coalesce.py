@@ -8,13 +8,21 @@ leaves the display's items as folding its parts would, apart from the stream pos
 """
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from a13n_harness import HarnessStreamEvent
 from a13n_stream_protocol.display import bound_event
-from ag_ui.core import ToolCallArgsEvent, ToolCallResultEvent
+from ag_ui.core import (
+    TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
+    ToolCallArgsEvent,
+    ToolCallResultEvent,
+)
 
+from a13n_service.infra.ids import new_object_id
 from a13n_service.runs import images
 from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, extend, fragment
@@ -87,6 +95,19 @@ class Coalescer:
                 if app_event is not None:
                     ready += self._accept(_Event.of(app_event))
         self._publish(ready, source)
+
+    def realtime_input(self, text: str) -> None:
+        """Record live text delivered directly over the realtime connection."""
+        message_id = new_object_id("msg")
+        timestamp = int(time.time() * 1000)
+        events = (
+            TextMessageStartEvent(message_id=message_id, role="user", timestamp=timestamp),
+            TextMessageContentEvent(message_id=message_id, delta=text, timestamp=timestamp),
+            TextMessageEndEvent(message_id=message_id, timestamp=timestamp),
+        )
+        self._publish(
+            [*self._release(), *(_Event.of(event.model_dump(mode="json", by_alias=True)) for event in events)]
+        )
 
     def flush(self) -> None:
         """Fold and stream the held fragment now."""

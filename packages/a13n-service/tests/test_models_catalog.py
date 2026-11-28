@@ -63,6 +63,10 @@ def test_the_catalog_offers_recent_text_models_of_served_channels() -> None:
                     "name": "OpenAI",
                     "models": {
                         "future": model(id="future-model"),
+                        "gpt-realtime-2.1": model(
+                            type="realtime",
+                            modalities={"input": ["text", "audio", "image"], "output": ["text", "audio"]},
+                        ),
                         "old": model(release_date="2026-04-22"),
                         "undated": model(release_date=""),
                         "images": model(modalities={"input": ["text"], "output": ["image"]}),
@@ -74,7 +78,9 @@ def test_the_catalog_offers_recent_text_models_of_served_channels() -> None:
         ),
         CHANNELS,
     )
-    [item] = items
+    item, realtime = items
+    assert realtime.ref == CatalogRef(provider="openai", model="gpt-realtime-2.1")
+    assert realtime.model_api == "openai.realtime"
     assert item.ref == CatalogRef(provider="openai", model="future-model")
     assert (item.identity, item.name, item.provider_name) == ("openai/future-model", "Future", "OpenAI")
     assert item.characteristics.context_window_tokens == 100000

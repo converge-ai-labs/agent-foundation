@@ -559,3 +559,43 @@ it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
     client.close();
   },
 );
+
+it("updates a spoken guidance item in place when its transcript is revised", () => {
+  const normalizer = new DisplayNormalizer();
+  const items = new Map<string, DisplayItem>();
+  for (const [sequence, text, final] of [
+    [1, "Find elm", false],
+    [2, "Find film", false],
+    [3, "Find film.", true],
+  ] as const) {
+    const frame = delta(sequence);
+    normalizer.apply(items, {
+      ...frame,
+      event: {
+        type: "CUSTOM",
+        name: "a13n.realtime.transcript",
+        value: {
+          event: { message_id: "run:speech:1", role: "user", text, final },
+        },
+      },
+      item: {
+        id: "message",
+        kind: "text_message",
+        state: final ? "completed" : "in_progress",
+        ordinal: 1,
+      },
+    });
+    expect([...items.values()]).toEqual([
+      expect.objectContaining({
+        state: final ? "completed" : "in_progress",
+        content: {
+          messageId: "run:speech:1",
+          role: "user",
+          text,
+          speech: true,
+        },
+        first_stream_id: "1-1",
+      }),
+    ]);
+  }
+});

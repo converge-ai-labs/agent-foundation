@@ -20,7 +20,13 @@ from a13n_harness import (
     RunBindings,
     RunCleanupError,
 )
-from a13n_harness.capabilities import CodeActCapability
+from a13n_harness.capabilities import (
+    CodeActCapability,
+    FileMemoryCapability,
+    FileMount,
+    RecordMemoryCapability,
+    RecordMount,
+)
 from a13n_harness.model_context import (
     ModelContextBlock,
     ModelContextPlacement,
@@ -43,6 +49,8 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    RealtimeInputSpeechEndEvent,
+    RealtimeInputSpeechStartEvent,
     RealtimeSessionErrorEvent,
     RealtimeTurnCompleteEvent,
     RetryPromptPart,
@@ -59,12 +67,14 @@ from pydantic_ai.realtime.codec import (
     ClearAudio,
     CommitAudio,
     CreateResponse,
+    InputTranscript,
     OutputTranscript,
     RealtimeCodecEvent,
     RealtimeConnection,
     RealtimeInput,
     ResponseDone,
     SessionUsage,
+    TextContext,
     ToolCall,
     ToolResult,
     TruncateOutput,
@@ -74,6 +84,8 @@ from pydantic_ai.realtime.lifecycle import InferredLifecycle, LifecycleEvent, Re
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.toolsets import DynamicToolset, FunctionToolset
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
+
+from .memory_helpers import FakeFileStore, FakeRecordStore
 
 pytestmark = pytest.mark.anyio
 
@@ -150,6 +162,7 @@ async def test_live_closes_with_one_terminal_result_and_portable_speech() -> Non
         AgentDefinition(output_type=str, agent=AgentSpec(instructions="Work carefully."))
     )
     model = _Model()
+    assert not hasattr(executable, "realtime")
     live = executable.live(model=model)
     assert not model.opened
     async with live:
@@ -379,10 +392,11 @@ async def test_live_approval_resolves_inline_without_executing_denied_tool(appro
 
     async def approve(ctx: RunContext[AgentContext], requests: DeferredToolRequests) -> DeferredToolResults:
         assert ctx.run_id == live.run_id
-        assert len(requests.approvals) == 1
+        (request,) = requests.approvals
+        assert request.tool_name == "change"
         waiting.set()
         await decide.wait()
-        return DeferredToolResults(approvals={request.tool_call_id: approved for request in requests.approvals})
+        return DeferredToolResults(approvals={request.tool_call_id: approved})
 
     executable = HarnessBuilder().build(
         AgentDefinition(
@@ -633,7 +647,7 @@ async def test_live_external_retry_preserves_native_control_signal(retry: RetryP
     assert returns[0].tool_name == "lookup" and returns[0].tool_call_id == "call-1"
 
 
-async def test_live_missing_approval_handler_fails_tool_without_executing_it() -> None:
+async def test_live_unresolved_approval_fails_tool_without_executing_it() -> None:
     def change() -> None:
         raise AssertionError("unapproved tool must not run")
 
@@ -1046,3 +1060,132 @@ async def test_live_reconnect_preserves_run_notices_but_retries_unconfirmed_chan
     )
     bridge.reconnected()
     assert not prepare("change").blocks
+
+
+async def test_realtime_preloads_file_memory_and_recalls_records_before_typed_turn() -> None:
+    store = FakeRecordStore(["The launch code is saffron telescope."])
+    executable = HarnessBuilder().build(
+        AgentDefinition(
+            output_type=str,
+            agent=AgentSpec(),
+            capabilities=(
+                FileMemoryCapability(
+                    [
+                        FileMount(
+                            "proof", FakeFileStore({"proof.txt": "winter juniper"}), "read", always_load=("proof.txt",)
+                        )
+                    ]
+                ),
+                RecordMemoryCapability([RecordMount("facts", store, "read", recall=True)]),
+            ),
+        )
+    )
+    model = _Model()
+    async with asyncio.timeout(5), executable.live(model=model) as live:
+        collector = asyncio.create_task(_collect(live))
+        opening = await model.connection.sent.get()
+        assert isinstance(opening, TextContext)
+        assert "winter juniper" in opening.text
+        assert store.searches == []
+
+        await live.send("What is the launch code?")
+        recalled = await model.connection.sent.get()
+        assert isinstance(recalled, TextContext)
+        assert "saffron telescope" in recalled.text
+        assert store.searches[0][0] == "What is the launch code?"
+        assert await model.connection.sent.get() == "What is the launch code?"
+        await live.close()
+        await collector
+
+
+async def test_late_spoken_recall_is_silent_at_the_next_turn_boundary() -> None:
+    store = FakeRecordStore(["winter juniper"])
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def delay(operation: str) -> None:
+        if operation == "search":
+            started.set()
+            await release.wait()
+
+    store.before = delay
+    agent = HarnessBuilder().build(
+        AgentDefinition(
+            output_type=str,
+            agent=AgentSpec(),
+            capabilities=(RecordMemoryCapability([RecordMount("facts", store, "read", recall=True)]),),
+        )
+    )
+    model = _Model()
+    async with asyncio.timeout(5), agent.live(model=model) as live:
+        turns = asyncio.Queue[None]()
+
+        async def observe():
+            async for item in live:
+                if isinstance(item, HarnessEvent) and isinstance(item.event, RealtimeTurnCompleteEvent):
+                    turns.put_nowait(None)
+
+        observer = asyncio.create_task(observe())
+        for event in (
+            RealtimeInputSpeechStartEvent(item_id="speech"),
+            RealtimeInputSpeechEndEvent(item_id="speech"),
+            InputTranscript("What is the code?", is_final=True, item_id="speech"),
+            OutputTranscript("First reply", is_final=True),
+            ResponseDone(),
+        ):
+            await model.connection.events.put(event)
+        await started.wait()
+        await turns.get()
+        release.set()
+        while not store.searches:
+            await asyncio.sleep(0)
+        assert model.connection.sent.empty()
+        await model.connection.events.put(OutputTranscript("Second reply", is_final=True))
+        await model.connection.events.put(ResponseDone())
+        await turns.get()
+        injection = await model.connection.sent.get()
+        assert isinstance(injection, TextContext)
+        context = json.loads(injection.text)
+        assert context["turn"] == 1 and context["trust"] == "untrusted" and context["mount"] == "facts"
+        assert context["query"] == "What is the code?" and "winter juniper" in context["content"]
+        assert model.connection.sent.empty()
+        await live.close()
+        await observer
+
+
+async def test_live_recall_deduplicates_across_turns_and_spends_one_byte_budget() -> None:
+    store = FakeRecordStore(["A" * 120])
+    agent = HarnessBuilder().build(
+        AgentDefinition(
+            output_type=str,
+            agent=AgentSpec(),
+            capabilities=(RecordMemoryCapability([RecordMount("facts", store, "read", recall=True)]),),
+        )
+    )
+    model = _Model()
+    async with asyncio.timeout(5), agent.live(model=model, memory_context_bytes=1024) as live:
+        consumer = asyncio.create_task(_collect(live))
+        for letter in ("A", "B", "A"):
+            store.records["r1"] = letter * 120
+            await live.recall("Recall the record.")
+        delivered = [model.connection.sent.get_nowait(), model.connection.sent.get_nowait()]
+        assert all(isinstance(frame, TextContext) for frame in delivered)
+        assert "A" * 120 in delivered[0].text and "B" * 120 in delivered[1].text
+        assert model.connection.sent.empty()
+        spent = sum(len(frame.text.encode()) for frame in delivered)
+        store.records["r1"] = "音" * 180
+        await live.recall("Recall the record.")
+        assert model.connection.sent.empty()
+        await live.close()
+        await consumer
+
+    # A fresh call can fit the same UTF-8 result within its own budget.
+    model = _Model()
+    async with asyncio.timeout(5), agent.live(model=model, memory_context_bytes=1024) as live:
+        consumer = asyncio.create_task(_collect(live))
+        await asyncio.gather(live.recall("Recall the record."), live.recall("Recall the record."))
+        frame = model.connection.sent.get_nowait()
+        assert isinstance(frame, TextContext) and "音" * 180 in frame.text
+        assert len(frame.text.encode()) <= 1024 < spent + len(frame.text.encode())
+        assert model.connection.sent.empty()
+        await live.close()
+        await consumer

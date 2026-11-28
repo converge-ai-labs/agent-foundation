@@ -23,6 +23,7 @@ from a13n_service.providers.endpoints import check_endpoint, dialed_endpoint
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.environment.recipes import TemplateRecipe as TemplateRecipe
 from a13n_service.providers.model_settings import check_settings, settings_schema
+from a13n_service.providers.realtime import PROTOCOLS
 
 type RegisteredProvider = ProviderDefinition
 
@@ -79,6 +80,9 @@ class Registry:
                 case _:
                     raise ValueError(f"Unsupported provider domain: {definition.DOMAIN}")
         apis = {api for definition in models for api in definition.supported_model_apis}
+        apis.update(
+            api for api, protocol in PROTOCOLS.items() if any(model.type == protocol.provider for model in models)
+        )
         return cls(
             ProviderCatalog(models),
             ProviderCatalog(environments),

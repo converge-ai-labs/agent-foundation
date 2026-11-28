@@ -479,6 +479,11 @@ class ToolExecutions(Section):
 
 
 class Worker(Section):
+    realtime_slots: int = Field(default=8, ge=1, le=1024)
+    realtime_call_limit: int = Field(default=32, ge=1)
+    realtime_pcm_limit: int = Field(default=8, ge=1)
+    realtime_accepted_limit: int = Field(default=16, ge=1)
+    realtime_ticket_limit: int = Field(default=128, ge=1)
     slots: int = Field(default=128, ge=1, le=1024)
     max_attempts: int = Field(default=3, ge=1, le=20)
     lease_seconds: int = Field(default=30, ge=3, le=300)

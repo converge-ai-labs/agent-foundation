@@ -14,7 +14,7 @@ import {
   useStoredReference,
 } from "../stored-content";
 import { AssetAttachment } from "./attachment";
-import { GuidanceMessage } from "./user-message";
+import { GuidanceMessage, RealtimeInputMessage } from "./user-message";
 import { WorkLine } from "./work-line";
 import styles from "./transcript.module.css";
 
@@ -86,6 +86,12 @@ export function AgentTurn({
                 toolCallId: block.asset.toolCallId,
                 legacy: block.legacy,
               }}
+            />
+          ) : block.kind === "user_input" ? (
+            <RealtimeInputMessage
+              key={block.id}
+              text={block.entry.text}
+              itemId={block.entry.id}
             />
           ) : block.kind === "guidance" ? (
             <GuidanceMessage

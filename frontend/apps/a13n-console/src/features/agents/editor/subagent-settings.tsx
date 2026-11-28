@@ -25,6 +25,9 @@ import { TextAreaField } from "../../../shared/forms";
 import { FieldHelp } from "../../../shared/forms/field-help";
 import { OptionsRefresh } from "../../../shared/forms/options-refresh";
 import { environmentTemplates } from "../../environments/api";
+import { useAgentChoices } from "../choices";
+import { useModelProviderDefinitions } from "../../models/provider-definitions";
+import { realtimeModelApis } from "../../models/model-options";
 import { AgentAvatar } from "../avatar";
 import { agentRevisionsQuery } from "../queries";
 import {
@@ -79,6 +82,19 @@ export function SubagentSettings({
   const revisions = useQuery(
     agentRevisionsQuery(client, workspace.id, child?.agent_id ?? ""),
   );
+  const choices = useAgentChoices();
+  const definitions = useModelProviderDefinitions();
+  const realtimeApis = realtimeModelApis(definitions.data?.items);
+  const realtimeModels = new Set(
+    choices.data.models
+      .filter((model) => realtimeApis.has(model.config.model_api))
+      .map((model) => model.key),
+  );
+  const selectedRevision = revisions.data?.find(
+    (item) => item.id === (child?.revision_id || selected?.default_revision_id),
+  );
+  const incompatible =
+    selectedRevision && realtimeModels.has(selectedRevision.config.model);
   const templates = useQuery({
     queryKey: ["environment-template-choices", workspace.id],
     enabled: !!child && advanced && mode === "async",
@@ -102,7 +118,7 @@ export function SubagentSettings({
     event.preventDefault();
     event.stopPropagation();
     setAttempted(true);
-    if (!child || readOnly || nameError) return;
+    if (!child || readOnly || nameError || incompatible) return;
     const message = subagentLimitsError(mode, child.usage_limits);
     if (message) {
       setError(new Error(t(message)));
@@ -129,6 +145,7 @@ export function SubagentSettings({
   const versionOptions = (revisions.data ?? []).map((item) => ({
     value: item.id,
     label: `v${item.number}`,
+    disabled: realtimeModels.has(item.config.model),
     hint:
       item.id === selected?.default_revision_id
         ? t("Default")
@@ -142,12 +159,14 @@ export function SubagentSettings({
       value: child.revision_id,
       label: child.revision_id,
       hint: undefined,
+      disabled: false,
     });
   if (child && !child.revision_id)
     versionOptions.unshift({
       value: "",
       label: t("Default version pinned on save"),
       hint: undefined,
+      disabled: false,
     });
   const environment = child?.environment ?? { mode: "shared" as const };
   const templateOptions = (templates.data ?? []).map((item) => ({
@@ -185,7 +204,16 @@ export function SubagentSettings({
             {t(readOnly ? "Close" : "Cancel")}
           </Button>
           {child && !readOnly && (
-            <Button type="submit" form={formId}>
+            <Button
+              type="submit"
+              form={formId}
+              disabled={
+                incompatible ||
+                (!definitions.data &&
+                  (!initial || initial.revision_id !== child.revision_id)) ||
+                (!initial && (revisions.isPending || choices.models.isPending))
+              }
+            >
               {t(initial ? "Apply to draft" : "Add to draft")}
             </Button>
           )}
@@ -290,6 +318,11 @@ export function SubagentSettings({
             </FormField>
             <ChoiceField
               label={t("Pinned version")}
+              error={
+                incompatible
+                  ? t("Subagents require a non-realtime model.")
+                  : undefined
+              }
               readOnly={readOnly}
               value={child.revision_id ?? ""}
               onValueChange={(revision_id) =>
@@ -299,6 +332,10 @@ export function SubagentSettings({
               description={t(
                 "Updates to the child agent do not change this selection. Choose a newer version to adopt them.",
               )}
+            />
+            <ErrorNotice
+              error={definitions.error}
+              retry={() => void definitions.refetch()}
             />
             <ErrorNotice
               error={revisions.error}

@@ -200,6 +200,7 @@ class SubagentExecutionView(AsyncExecutionView):
 
     input: str | None = Field(default=None, max_length=_MAX_PROMPT_LENGTH)
     activity: SubagentActivitySnapshot | None = None
+    output: JsonValue = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class SubagentInfoResult(BaseModel):

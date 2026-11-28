@@ -18,7 +18,9 @@ export function RunOptions({
   newThread = true,
   agentId,
   defaultEnvironment,
+  showRequestLimit,
 }: {
+  showRequestLimit?: boolean;
   options: RunOptionsState;
   showAgent?: boolean;
   newThread?: boolean;
@@ -97,6 +99,7 @@ export function RunOptions({
           if (saved) options.restore(saved);
           setOpen(false);
         }}
+        showRequestLimit={showRequestLimit}
         focus={focus}
       />
     </>

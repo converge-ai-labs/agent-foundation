@@ -3,9 +3,18 @@
 from datetime import UTC, datetime
 
 import pytest
+from a13n_harness import HarnessEvent
 from a13n_service.runs.display import DisplayFold, Item, Tail
 from a13n_service.runs.schemas import Outcome, Pending, PendingCall
 from pydantic import ValidationError
+from pydantic_ai.messages import (
+    PartDeltaEvent,
+    PartEndEvent,
+    PartStartEvent,
+    RealtimeTurnCompleteEvent,
+    SpeechPart,
+    SpeechPartDelta,
+)
 
 PENDING = Pending(approvals=(), calls=(PendingCall(tool_call_id="call_test", tool_name="lookup", arguments={}),))
 FAILURE = {"code": "test_failure", "message": "Failed"}
@@ -288,3 +297,57 @@ def test_active_tail_roundtrips_without_interrupting_or_renumbering():
     assert restored.export() == fold.export()
     assert restored.snapshot().tail.items[0].ordinal == 3
     assert frozen.tail.items[0].content["text"] == "half"
+
+
+def test_realtime_reply_stays_in_the_tail_until_the_exchange_completes():
+    fold = DisplayFold("run", Tail(), attempt=1, page_items=1, page_bytes=65536)
+    events = [
+        PartStartEvent(index=1, part=SpeechPart(speaker="assistant")),
+        PartEndEvent(index=1, part=SpeechPart(speaker="assistant", transcript="Hello")),
+        PartStartEvent(index=1, part=SpeechPart(speaker="assistant", transcript="Hello")),
+        PartEndEvent(index=1, part=SpeechPart(speaker="assistant", transcript="Hello again.")),
+        RealtimeTurnCompleteEvent(),
+    ]
+    for sequence, event in enumerate(events, 1):
+        source = HarnessEvent(
+            thread_id="thread", run_id="native", sequence=sequence, occurred_at=datetime.now(UTC), event=event
+        )
+        fold.fold(fold.events(source), source)
+        if sequence == 2:
+            snapshot = fold.snapshot()
+            assert snapshot.pages == []
+            fold.committed(snapshot)
+
+    speech = [item for page in fold.snapshot().pages for item in page.items if item.kind == "text_message"]
+    assert [item.content["text"] for item in speech] == ["Hello again."]
+
+
+def test_gpt_live_groups_late_user_speech_within_the_exchange():
+    fold = DisplayFold("run", Tail(), attempt=1, page_items=1, page_bytes=65536, group_live_user_speech=True)
+    events = [
+        PartStartEvent(index=0, part=SpeechPart(speaker="user")),
+        PartEndEvent(index=0, part=SpeechPart(speaker="user", transcript="Read it")),
+        PartStartEvent(index=1, part=SpeechPart(speaker="assistant")),
+        PartDeltaEvent(index=2, delta=SpeechPartDelta(speaker="user", transcript=" black")),
+        PartEndEvent(index=2, part=SpeechPart(speaker="user", transcript="back.")),
+        RealtimeTurnCompleteEvent(),
+        PartEndEvent(index=3, part=SpeechPart(speaker="user", transcript="Thanks.")),
+    ]
+    for sequence, event in enumerate(events, 1):
+        source = HarnessEvent(
+            thread_id="thread", run_id="native", sequence=sequence, occurred_at=datetime.now(UTC), event=event
+        )
+        fold.fold(fold.events(source), source)
+        if sequence == 2:
+            snapshot = fold.snapshot()
+            assert snapshot.pages == []
+            fold.committed(snapshot)
+        if sequence == 4:
+            (message,) = fold.items.values()
+            assert (message.content["text"], message.state) == ("Read it black", "in_progress")
+
+    messages = [item for item in fold.items.values() if item.kind == "text_message"]
+    assert [(message.content["text"], message.state) for message in messages] == [
+        ("Read it back.", "completed"),
+        ("Thanks.", "completed"),
+    ]
