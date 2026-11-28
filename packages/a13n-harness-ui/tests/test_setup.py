@@ -510,7 +510,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
     import json
     from datetime import UTC, datetime, timedelta
 
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -571,7 +571,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
             else FunctionModel(stream_function=main_stream, profile={"supports_thinking": True})
         )
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", build)
+    monkeypatch.setattr(runtime, "SubscriptionCodexModel", build)
     path = tmp_path / "config" / "config.yaml"
     selection = _selection(tmp_path)
     await preview_setup(path, selection, validate_candidate=_validate())
@@ -730,7 +730,7 @@ async def test_api_key_setup_publishes_only_reference_and_additional_instruction
 async def test_setup_run_delivers_base_and_additions_through_distinct_native_channels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
@@ -763,7 +763,7 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
 
     monkeypatch.setattr(
         runtime,
-        "CodexRequestModel",
+        "SubscriptionCodexModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
     )
     path = tmp_path / "config" / "config.yaml"

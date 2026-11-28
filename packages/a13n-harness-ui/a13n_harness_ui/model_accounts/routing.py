@@ -271,11 +271,18 @@ class SubscriptionGroupModel(WrapperModel):
                     model = await self._model(account, request_scope)
                     response = await operation(model)
                 except Exception as error:
+                    from .codex_transport import CodexRefreshGrantRejected
+
                     failure = account_failure(error)
                     if failure is None:
                         raise
                     reason, last_error = failure, error
-                    await self.usage.reject(account, self.model_name)
+                    await self.usage.reject(
+                        account,
+                        self.model_name,
+                        grant_rejected=isinstance(error, CodexRefreshGrantRejected),
+                        fingerprint=error.fingerprint if isinstance(error, CodexRefreshGrantRejected) else None,
+                    )
                     continue
                 self._active_id = account.id
                 if report:
@@ -331,11 +338,18 @@ class SubscriptionGroupModel(WrapperModel):
                         model.request_stream(messages, model_settings, model_request_parameters, run_context)
                     )
                 except Exception as error:
+                    from .codex_transport import CodexRefreshGrantRejected
+
                     failure = account_failure(error)
                     if failure is None:
                         raise
                     reason, last_error = failure, error
-                    await self.usage.reject(account, self.model_name)
+                    await self.usage.reject(
+                        account,
+                        self.model_name,
+                        grant_rejected=isinstance(error, CodexRefreshGrantRejected),
+                        fingerprint=error.fingerprint if isinstance(error, CodexRefreshGrantRejected) else None,
+                    )
                     continue
                 # Stream iteration, cleanup and caller exceptions must never enter the retry loop.
                 self._active_id = account.id

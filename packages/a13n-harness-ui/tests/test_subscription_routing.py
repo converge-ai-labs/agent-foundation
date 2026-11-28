@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from contextlib import AsyncExitStack
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.model.oauth import CodexLoginResult
 from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccounts
-from a13n_harness_ui.model_accounts.routing import SubscriptionGroupModel
-from a13n_harness_ui.model_accounts.usage import CodexUsage
+from a13n_harness_ui.model_accounts.routing import SubscriptionGroupModel, choose_account
+from a13n_harness_ui.model_accounts.usage import CodexUsage, UsageSignInRequired
 from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import FunctionModel
 
-from .test_model_accounts import _NOW, _codex_tokens
+from .test_model_accounts import _NOW, _codex_credential, _codex_tokens, _jwt
 
 pytestmark = pytest.mark.anyio
 PARAMETERS = ModelRequestParameters()
@@ -399,9 +401,151 @@ async def test_usage_manual_refresh_and_cross_instance_convergence(tmp_path):
     snapshot = await first.refresh(accounts[0].id)
     assert snapshot.usage is not None and snapshot.error is not None
     assert snapshot.observed_at == 1000
+    projection, _ = await second.inspect(accounts[0])
+    assert projection.usable and snapshot.required_action == "refresh"
     assert (await second.read(accounts[0])) == snapshot
     await catalog.logout(accounts[0].id)
     assert (await first.read(await catalog.get(accounts[0].id))).usage is None
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("rotated", [False, True])
+async def test_only_current_rejected_grant_changes_account_status(tmp_path, streaming, rotated):
+    import httpx2
+    from a13n_harness_ui.model_accounts.codex_transport import SubscriptionCodexModel
+
+    catalog, accounts, group = await _accounts(tmp_path)
+    selected = accounts[0]
+    group = group.model_copy(update={"accounts": group.accounts[:1]})
+
+    async def read(account):
+        return CodexUsage(account_id=account.id, plan_type="pro")
+
+    usage = SubscriptionUsage(catalog, reader=read, clock=lambda: 1000)
+
+    def respond(request):
+        if request.url.path == "/oauth/token":
+            if rotated:
+                # A peer wins rotation after this exact refresh token was sent.
+                path = catalog.store(selected).policy.path
+                document = json.loads(path.read_text())
+                document["tokens"]["refresh_token"] = "new-grant-from-peer"
+                path.write_text(json.dumps(document))
+            return httpx2.Response(401, json={"error": {"message": "x" * 600, "code": "refresh_token_invalidated"}})
+        return httpx2.Response(401, json={"error": {"message": "Unauthorized"}})
+
+    async with AsyncExitStack() as clients:
+
+        def factory(account):
+            client = httpx2.AsyncClient(transport=httpx2.MockTransport(respond))
+            clients.push_async_callback(client.aclose)
+            return SubscriptionCodexModel("gpt-5", credential_source=catalog.store(account), http_client=client)
+
+        async with SubscriptionGroupModel(group, catalog, usage, factory) as model:
+            with pytest.raises(ModelResolutionError):
+                if streaming:
+                    async with model.request_stream([], {"openai_transport": "http"}, PARAMETERS):
+                        pass
+                else:
+                    await model.request([], {"openai_transport": "http"}, PARAMETERS)
+    another = SubscriptionUsage(SubscriptionAccounts(tmp_path))
+    projection, snapshot = await another.inspect(selected)
+    assert projection.required_action == ("none" if rotated else "reauthenticate")
+    assert projection.usable == rotated
+    assert not rotated or snapshot.required_action is None
+    assert snapshot.usage.plan_type == "pro" and snapshot.observed_at == 1000
+
+
+async def test_usage_rejection_and_same_account_relogin_preserve_last_observation_until_refresh(tmp_path):
+    catalog, accounts, _ = await _accounts(tmp_path)
+    original = accounts[0]
+    now = [1000.0]
+
+    async def read(account):
+        if now[0] == 1100:
+            raise UsageSignInRequired("Sign in again.")
+        if now[0] == 1200:
+            raise ValueError("timeout")
+        return CodexUsage(account_id=account.id, plan_type="pro")
+
+    usage = SubscriptionUsage(catalog, reader=read, clock=lambda: now[0])
+    await usage.refresh(original.id)
+    now[0] = 1100
+    await usage.refresh(original.id, force=True)
+    now[0] = 1200
+    failed = await usage.refresh(original.id, force=True)
+    assert failed.error == "Sign in again." and failed.observed_at == 1000
+    assert (await usage.inspect(original))[0].required_action == "reauthenticate"
+
+    async def login(request):
+        # The revoked access token still advertises a later local expiry.
+        expires = datetime.now(UTC) + timedelta(hours=2)
+        return CodexLoginResult(
+            credentials=_codex_credential(account_id=original.id, marker="new", expires_at=expires),
+            id_token=_jwt(account_id=original.id, expires_at=expires),
+        )
+
+    await catalog.login_codex(original.id, login)
+    current = await catalog.get(original.id)
+    assert (await catalog.store(current).load()).refresh_token == "refresh-new"
+    await usage.reject(original, "old-model", grant_rejected=True)
+    projection, snapshot = await usage.inspect(current)
+    assert projection.usable and snapshot.required_action == "refresh" and not snapshot.rejected
+    assert snapshot.observed_at == 1000 and snapshot.usage.account_id == original.id
+    now[0] = 1300
+    fresh = await usage.refresh(current.id)
+    assert fresh.observed_at == 1300 and fresh.required_action is None and fresh.error is None
+    await usage.reject(current, "rejected", grant_rejected=True)
+    await catalog.logout(current.id)
+    logged_out, snapshot = await usage.inspect(await catalog.get(current.id))
+    assert logged_out.required_action == "login" and snapshot.usage is None
+
+
+async def test_revoked_grant_is_skipped_after_cooldown_until_forced_usage_refresh(tmp_path):
+    catalog, accounts, group = await _accounts(tmp_path)
+    first, second = accounts
+    now = [1000.0]
+    reads = []
+
+    async def read(account):
+        reads.append(account.id)
+        return CodexUsage(account_id=account.id, plan_type="plus")
+
+    usage = SubscriptionUsage(catalog, reader=read, clock=lambda: now[0])
+    await usage.refresh(first.id)
+    await usage.reject(first, "another-model", grant_rejected=True)
+    now[0] += 601
+    assert (await usage.refresh(first.id)).required_action == "reauthenticate"
+    routed = await choose_account(group, catalog, usage, "my-model", (first.id, second.id), active_id=first.id)
+    assert routed.id == second.id
+    assert reads == [first.id, second.id]
+
+    recovered = await usage.refresh(first.id, force=True)
+    assert recovered.required_action is None and recovered.error is None and recovered.observed_at == now[0]
+    assert (await choose_account(group, catalog, usage, "my-model", (first.id, second.id))).id == first.id
+
+
+async def test_live_usage_repairs_temporary_failure_but_does_not_unrevoke_grant(tmp_path):
+    catalog, accounts, _ = await _accounts(tmp_path)
+    account = accounts[0]
+    now = [1000.0]
+
+    async def unavailable(account):
+        raise ValueError("temporary failure")
+
+    usage = SubscriptionUsage(catalog, reader=unavailable, clock=lambda: now[0])
+    assert (await usage.refresh(account.id)).required_action == "refresh"
+    now[0] += 1
+    await usage.observe_headers(account, _usage_headers("18"))
+    fresh = await usage.read(account)
+    assert fresh.observed_at == now[0] and fresh.required_action is None and fresh.error is None
+
+    await usage.mark_reauthenticate(account, UsageSignInRequired("Sign in again."))
+    now[0] += 1
+    await usage.observe_headers(account, _usage_headers("19"))
+    updated = await usage.read(account)
+    assert updated.observed_at == now[0] and updated.required_action == "reauthenticate"
+    assert updated.error == "Sign in again."
 
 
 async def test_usage_prefers_included_allowance_then_opted_in_credits(tmp_path):
@@ -823,7 +967,8 @@ async def test_response_usage_is_immediate_revision_scoped_and_preserves_other_b
     assert (await usage.read(await catalog.get(accounts[0].id))).usage is None
 
 
-async def test_slow_api_refresh_cannot_overwrite_response_usage(tmp_path):
+@pytest.mark.parametrize("rejected", [False, True])
+async def test_slow_api_refresh_cannot_overwrite_response_usage(tmp_path, rejected):
     from anyio import Event, create_task_group
 
     catalog, accounts, _ = await _accounts(tmp_path)
@@ -833,6 +978,8 @@ async def test_slow_api_refresh_cannot_overwrite_response_usage(tmp_path):
     async def reader(account):
         started.set()
         await release.wait()
+        if rejected:
+            raise UsageSignInRequired("Sign in again.")
         return CodexUsage(account_id=account.id, plan_type="plus")
 
     usage = SubscriptionUsage(catalog, reader=reader, clock=lambda: now[0])
@@ -845,3 +992,32 @@ async def test_slow_api_refresh_cannot_overwrite_response_usage(tmp_path):
     snapshot = await usage.read(accounts[0])
     assert snapshot.usage.rate_limit.primary_window.used_percent == 100
     assert snapshot.observed_at == 1001
+    assert snapshot.required_action == ("reauthenticate" if rejected else None)
+
+
+async def test_successful_forced_check_recovers_auth_without_overwriting_newer_headers(tmp_path):
+    from anyio import Event, create_task_group
+
+    catalog, accounts, _ = await _accounts(tmp_path)
+    account = accounts[0]
+    started, release = Event(), Event()
+    now = [1000.0]
+
+    async def reader(account):
+        started.set()
+        await release.wait()
+        return CodexUsage(account_id=account.id, plan_type="plus")
+
+    usage = SubscriptionUsage(catalog, reader=reader, clock=lambda: now[0])
+    await usage.reject(account, "my-model", grant_rejected=True)
+    now[0] += 1
+    async with create_task_group() as tasks:
+        tasks.start_soon(lambda: usage.refresh(account.id, force=True))
+        await started.wait()
+        now[0] += 1
+        await usage.observe_headers(account, _usage_headers("18"))
+        release.set()
+    snapshot = await usage.read(account)
+    assert snapshot.usage.rate_limit.primary_window.used_percent == 18
+    assert snapshot.observed_at == 1002 and snapshot.required_action is None and snapshot.error is None
+    assert not snapshot.rejected

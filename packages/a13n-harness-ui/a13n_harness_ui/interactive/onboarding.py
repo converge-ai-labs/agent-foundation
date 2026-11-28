@@ -327,7 +327,11 @@ async def _ensure_account(
                     Choice(f"source-{index}", item.label, "Use this saved account and source")
                     for index, item in enumerate(candidates)
                 ),
-                Choice("retry", "Check again", "After signing in externally or fixing the account store"),
+                *(
+                    (Choice("retry", "Check again", "After signing in externally or fixing the account store"),)
+                    if account.action != "reauthenticate"
+                    else ()
+                ),
                 Choice(
                     "later",
                     "Configure without signing in",

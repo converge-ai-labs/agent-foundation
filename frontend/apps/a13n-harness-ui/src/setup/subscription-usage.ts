@@ -58,6 +58,17 @@ export function quotaTime(timestamp: number, compact = false) {
   });
 }
 
+export function compactObservedTime(timestamp: number, now = new Date()) {
+  const observed = new Date(timestamp);
+  if (observed.toDateString() !== now.toDateString())
+    return quotaTime(timestamp, true);
+  return observed.toLocaleTimeString(i18n.language, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
 export function grokAllowance(
   billing: Schema<"GrokBilling"> | null | undefined,
 ) {
@@ -97,7 +108,7 @@ export function compactAllowance(usage: Schema<"UsageSnapshot">["usage"]) {
           ),
         }),
       )
-      .join(" - ");
+      .join(" · ");
   }
   if ("windows" in usage) return "";
   const value = grokAllowance(usage.config);

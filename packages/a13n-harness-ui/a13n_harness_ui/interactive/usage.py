@@ -11,6 +11,7 @@ from uuid import uuid4
 from a13n_harness.providers.model.openai_chatgpt import DEFINITION as CHATGPT_DEFINITION
 from pydantic_ai.exceptions import UserError
 
+from a13n_harness_ui.model_accounts.models import RequiredAction
 from a13n_harness_ui.model_accounts.provider_usage import GrokUsage
 from a13n_harness_ui.model_accounts.subscriptions import SubscriptionAccountUpdate, SubscriptionCatalog
 from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest
@@ -264,7 +265,17 @@ def subscription_text(catalog: SubscriptionCatalog) -> str:
     names = {view.account.id: view.account.name for view in catalog.accounts}
     for view in catalog.accounts:
         account = view.account
-        state = "paused" if not account.enabled else view.authentication.availability.value
+        authentication = view.authentication
+        if not account.enabled:
+            state = "paused"
+        elif authentication.required_action is RequiredAction.REAUTHENTICATE:
+            state = "reauthentication required"
+        elif authentication.required_action is RequiredAction.LOGIN:
+            state = "sign-in required"
+        elif authentication.required_action is RequiredAction.REFRESH or view.usage.required_action == "refresh":
+            state = "refresh required"
+        else:
+            state = authentication.availability.value
         usage = view.usage.usage
         windows = usage.rate_limit if isinstance(usage, CodexUsage) else None
         remaining = (
@@ -302,7 +313,8 @@ def subscription_text(catalog: SubscriptionCatalog) -> str:
             if vouchers is not None:
                 lines.append(f"  Reset vouchers: {vouchers.available_count} available")
         if view.usage.error:
-            lines.append(f"  Refresh failed: {view.usage.error}")
+            detail = authentication.message if authentication.required_action is RequiredAction.REAUTHENTICATE else None
+            lines.append(f"  {detail or view.usage.error}")
     lines.extend(["", "Account groups"])
     for group in catalog.groups:
         members = ", ".join(

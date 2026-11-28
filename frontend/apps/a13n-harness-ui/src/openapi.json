@@ -29761,6 +29761,21 @@
             ],
             "title": "Error"
           },
+          "required_action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "reauthenticate",
+                  "refresh"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Action"
+          },
           "rejected": {
             "additionalProperties": {
               "type": "number"

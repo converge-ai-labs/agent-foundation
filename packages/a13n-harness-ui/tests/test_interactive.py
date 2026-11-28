@@ -244,7 +244,7 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, shell_review
 async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     cwd = tmp_path / "workspace"
@@ -267,7 +267,9 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         seen.append((messages, info.instructions))
         yield "done"
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -333,7 +335,7 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
 async def test_session_overrides_capture_native_context_and_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     before = (path.parent / "models/codex.yaml").read_bytes()
@@ -346,7 +348,7 @@ async def test_session_overrides_capture_native_context_and_resume(
 
     monkeypatch.setattr(
         runtime,
-        "CodexRequestModel",
+        "SubscriptionCodexModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
     )
     async with open_harness_ui_app(
@@ -442,7 +444,7 @@ async def test_terminal_flush_retains_semantic_output_independently_of_draw() ->
 async def test_native_compaction_is_active_not_only_written_to_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
     from pydantic_ai.messages import ModelResponse, TextPart
 
@@ -465,7 +467,7 @@ async def test_native_compaction_is_active_not_only_written_to_config(
 
     monkeypatch.setattr(
         runtime,
-        "CodexRequestModel",
+        "SubscriptionCodexModel",
         lambda *args, **kwargs: FunctionModel(function=reply, stream_function=stream_reply),
     )
     async with open_harness_ui_app(
@@ -565,7 +567,7 @@ async def test_setup_model_view_uses_declared_media_without_an_external_provider
 ) -> None:
     from io import BytesIO
 
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
     from PIL import Image
     from pydantic_ai import BinaryContent
@@ -602,7 +604,7 @@ async def test_setup_model_view_uses_declared_media_without_an_external_provider
             yield {0: DeltaToolCall(name="view", tool_call_id="view-image", json_args='{"file_path":"image.png"}')}
 
     monkeypatch.setattr(
-        runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
     )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
@@ -631,7 +633,7 @@ async def test_native_image_input_reaches_model_and_survives_continuation(
 ) -> None:
     from io import BytesIO
 
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from PIL import Image
     from pydantic_ai import BinaryContent
     from pydantic_ai.messages import ModelRequest, UserPromptPart
@@ -648,7 +650,7 @@ async def test_native_image_input_reaches_model_and_survives_continuation(
 
     monkeypatch.setattr(
         runtime,
-        "CodexRequestModel",
+        "SubscriptionCodexModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream_model, profile={"supports_thinking": True}),
     )
     async with open_harness_ui_app(
@@ -710,7 +712,7 @@ async def test_queued_guidance_reaches_native_model_in_order_without_another_roo
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, composed: bool, mode: str
 ) -> None:
 
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from a13n_harness_ui.interactive.inline_attachments import InlineAttachments
     from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
 
@@ -729,7 +731,7 @@ async def test_queued_guidance_reaches_native_model_in_order_without_another_roo
             yield "Guidance received"
 
     monkeypatch.setattr(
-        runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream_model)
     )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
@@ -830,7 +832,7 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
 
 @pytest.mark.anyio
 async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -863,7 +865,9 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
             assert returned[-1].content == 2
             yield "Stored value is available."
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -884,7 +888,7 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
 async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from a13n_harness_ui.interactive.commands import CommandRegistry
 
     path = await _seed(tmp_path, monkeypatch)
@@ -906,7 +910,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
 
     monkeypatch.setattr(
         runtime,
-        "CodexRequestModel",
+        "SubscriptionCodexModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_thinking": True}),
     )
     async with open_harness_ui_app(
@@ -947,7 +951,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
 @pytest.mark.anyio
 async def test_usage_updates_before_root_operation_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
@@ -964,7 +968,9 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
             await release.wait()
             yield "Done"
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -1052,7 +1058,7 @@ def test_add_agent_cli_routes_to_terminal_with_explicit_advanced_flag(monkeypatc
 
 @pytest.mark.anyio
 async def test_resumed_notes_list_the_key_and_keep_the_complete_value_on_demand(tmp_path: Path, monkeypatch) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
     from pydantic_ai.models.function import DeltaToolCall
 
@@ -1090,7 +1096,9 @@ async def test_resumed_notes_list_the_key_and_keep_the_complete_value_on_demand(
             )
             yield "Note saved."
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
@@ -1118,7 +1126,7 @@ async def test_resumed_notes_list_the_key_and_keep_the_complete_value_on_demand(
 async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
     tmp_path: Path, monkeypatch, tier_key: str
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1134,7 +1142,7 @@ async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
         observed.append(info.model_settings.get("openai_service_tier") or info.model_settings.get("service_tier"))
         yield "Reply."
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -1184,7 +1192,7 @@ async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
 
 @pytest.mark.anyio
 async def test_pro_uses_model_default_and_preserves_independent_controls(tmp_path, monkeypatch):
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1201,7 +1209,7 @@ async def test_pro_uses_model_default_and_preserves_independent_controls(tmp_pat
         observed.append(dict(info.model_settings))
         yield "Reply."
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -1243,7 +1251,7 @@ async def test_pro_uses_model_default_and_preserves_independent_controls(tmp_pat
 
 @pytest.mark.anyio
 async def test_ultrafast_session_switches_and_reset_reach_runtime_without_persisting(tmp_path, monkeypatch):
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1259,7 +1267,7 @@ async def test_ultrafast_session_switches_and_reset_reach_runtime_without_persis
         observed.append(info.model_settings.get("openai_service_tier") or info.model_settings.get("service_tier"))
         yield "Reply."
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:

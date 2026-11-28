@@ -181,7 +181,7 @@ async def subscription(tmp_path, monkeypatch):
 
     monkeypatch.setattr("a13n_harness.models.codex_dictation.transcribe", asr)
     monkeypatch.setattr(dictation, "create_model_http_client", client)
-    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", model)
+    monkeypatch.setattr("a13n_harness_ui.model_accounts.codex_transport.SubscriptionCodexModel", model)
 
     async def run(selected_group=group):
         return await dictation.transcribe_subscription(

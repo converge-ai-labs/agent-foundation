@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
 
-import a13n_harness.models.codex as codex
+import a13n_harness_ui.model_accounts.codex_transport as codex
 from a13n_harness.capabilities.tool_review import ToolReviewAssessment, ToolReviewResult
 from a13n_harness.tools.permissions import ToolPermissionsCapability
 from pydantic_ai.messages import ToolCallPart, ToolReturnPart, UserPromptPart
@@ -79,7 +79,7 @@ sys.path.insert(0, {str(Path(__file__).parent)!r})
 from acp_test_support import codex, FunctionModel, ToolPermissionsCapability, _model, review
 from a13n_harness_ui.cli import main
 ToolPermissionsCapability.review = review
-codex.CodexRequestModel = lambda name, **kw: _model(name, workspace=Path.cwd())
+codex.SubscriptionCodexModel = lambda name, **kw: _model(name, workspace=Path.cwd())
 main()
 """
 
@@ -159,7 +159,7 @@ async def _in_process_agent(path: Path, tmp_path: Path, monkeypatch, *, unattend
     def default_model(name, **kwargs):
         return _model(name, workspace=tmp_path)
 
-    monkeypatch.setattr(codex, "CodexRequestModel", model_factory or default_model)
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", model_factory or default_model)
     monkeypatch.setattr(ToolPermissionsCapability, "review", review)
     source = await load_harness_ui_settings(path, data_root=tmp_path / "data")
     async with open_harness_ui_app(source.settings, configuration_path=source.path, unattended=unattended) as app:

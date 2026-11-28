@@ -366,6 +366,7 @@ class CodexAccountStore:
         *,
         allow_account_switch: bool = False,
         now: datetime | None = None,
+        before_authorization: JsonSnapshot | None = None,
     ) -> AccountProjection:
         current_time = ensure_aware(now)
         initial = await self._load()
@@ -403,7 +404,8 @@ class CodexAccountStore:
                 provider=Provider.CODEX,
             )
         if (
-            latest.credential is not None
+            latest.snapshot.digest != (before_authorization or initial.snapshot).digest
+            and latest.credential is not None
             and latest.credential.account_id == result.account_id
             and _newer(latest.credential, result)
         ):

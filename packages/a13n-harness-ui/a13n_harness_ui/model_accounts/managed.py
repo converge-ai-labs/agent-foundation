@@ -15,7 +15,7 @@ from a13n_harness_ui.configuration.models import SubscriptionGroupMember, Subscr
 from a13n_harness_ui.model_providers.credentials import PluginAccountStore
 from a13n_harness_ui.model_providers.sdk import AuthorizedAccount
 
-from ._common import read_json_snapshot, write_json_if_unchanged
+from ._common import JsonSnapshot, read_json_snapshot, write_json_if_unchanged
 from .codex import CodexAccountStore, CodexLoginCallback, CodexLoginRequest, resolve_codex_policy
 from .coordination import store_lock
 from .grok import (
@@ -338,8 +338,11 @@ class SubscriptionAccounts:
         account = await self.get(account_id)
         if account.provider != "codex":
             raise ValueError("A Codex account is required.")
+        store = self.store(account)
+        assert isinstance(store, CodexAccountStore) and store.policy.path is not None
+        before = await read_json_snapshot(store.policy.path, provider=Provider.CODEX)
         result = await login(CodexLoginRequest(replacing_shared_account=False))
-        return await self._publish_login(account, result)
+        return await self._publish_login(account, result, codex_before=before)
 
     async def login_grok(self, account_id: str, login: GrokLoginCallback) -> AccountProjection:
         account = await self.get(account_id)
@@ -351,7 +354,11 @@ class SubscriptionAccounts:
         return await self._publish_login(account, result)
 
     async def _publish_login(
-        self, initial: SubscriptionAccount, result: CodexLoginResult | GrokCredentials
+        self,
+        initial: SubscriptionAccount,
+        result: CodexLoginResult | GrokCredentials,
+        *,
+        codex_before: JsonSnapshot | None = None,
     ) -> AccountProjection:
         identity = result.credentials.account_id if isinstance(result, CodexLoginResult) else result.account_id
         async with store_lock(self.path):
@@ -377,7 +384,7 @@ class SubscriptionAccounts:
                     async def codex_result(request: CodexLoginRequest) -> CodexLoginResult:
                         return result
 
-                    projection = await store.login(codex_result)
+                    projection = await store.login(codex_result, before_authorization=codex_before)
                 elif isinstance(store, GrokAccountStore) and isinstance(result, GrokCredentials):
 
                     async def grok_result(request: GrokLoginRequest) -> GrokCredentials:

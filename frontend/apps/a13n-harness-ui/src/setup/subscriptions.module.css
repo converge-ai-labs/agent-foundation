@@ -31,11 +31,10 @@
 }
 .accountCard {
   min-width: 0;
-  padding: 12px 12px;
+  padding: 12px;
 }
 .accountHeader,
 .accountIdentity,
-.accountName,
 .accountMeta,
 .cardActions,
 .summaryItem,
@@ -51,13 +50,9 @@
   min-width: 0;
   gap: 12px;
 }
-.accountName {
-  flex-wrap: wrap;
-  gap: 8px;
-}
 .accountMeta {
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 4px 8px;
 }
 .cardActions {
   flex-shrink: 0;
@@ -73,7 +68,11 @@
   text-transform: capitalize;
 }
 .status {
-  gap: 4px;
+  gap: 6px;
+}
+.status svg,
+.status::before {
+  flex-shrink: 0;
 }
 .status::before {
   content: "";
@@ -82,8 +81,43 @@
   border-radius: 50%;
   background: var(--a13n-secondary);
 }
-.status[data-connected="true"]::before {
+.status[data-tone="success"]::before {
   background: var(--a13n-success);
+}
+.status[data-tone="warning"],
+.usageWarning {
+  color: var(--warning-foreground);
+}
+.status[data-tone="warning"]::before {
+  display: none;
+}
+.allowanceRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 4px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.allowanceRow .allowanceButton {
+  height: auto;
+  min-height: 32px;
+  max-width: 100%;
+  padding-inline: 0;
+  text-align: start;
+  white-space: normal;
+}
+.allowanceButton svg {
+  flex-shrink: 0;
+}
+@media (pointer: coarse) {
+  .allowanceRow .allowanceButton {
+    min-height: 44px;
+  }
+}
+.lastKnown {
+  font-variant-numeric: tabular-nums;
 }
 .balanceSummary {
   display: grid;
@@ -173,7 +207,12 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 24px;
 }
-.quotaDetail {
+.freshness {
+  display: grid;
+  gap: 4px;
+}
+.quotaDetail,
+.freshness {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
 }
@@ -227,9 +266,18 @@
   color: var(--a13n-text);
 }
 .members > span {
-  background: var(--a13n-elevated);
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
   padding: 4px 8px;
   border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.memberDetail,
+.members > [data-tone="muted"] {
+  color: var(--a13n-secondary);
+}
+.members > [data-tone="warning"] .memberDetail {
+  color: var(--warning-foreground);
 }
 .voucherList {
   display: grid;
@@ -379,9 +427,6 @@
   text-decoration: underline;
 }
 @media (max-width: 700px) {
-  .accountCard {
-    padding: 12px;
-  }
   .accountIdentity {
     gap: 8px;
   }
@@ -465,10 +510,9 @@
   transform: rotate(90deg);
 }
 .usageDetails {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--a13n-surface);
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border-soft);
 }
 .usageToolbar {
   display: flex;
@@ -478,18 +522,6 @@
   font-size: var(--a13n-text-body);
   font-weight: 500;
 }
-@media (max-width: 600px) {
-  .listToolbar {
-    gap: 12px;
-  }
-  .allowanceSummary {
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .legacyUsage {
   composes: details from "../shell/workbench.module.css";
   margin-top: 8px;

@@ -10399,6 +10399,8 @@ export interface components {
             usage?: components["schemas"]["CodexUsage"] | components["schemas"]["GrokUsage"] | components["schemas"]["PluginUsageSnapshot"] | null;
             /** Error */
             error?: string | null;
+            /** Required Action */
+            required_action?: ("reauthenticate" | "refresh") | null;
             /** Rejected */
             rejected?: {
                 [key: string]: number;

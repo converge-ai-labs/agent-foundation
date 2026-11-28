@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import a13n_harness.models.codex as codex
+import a13n_harness_ui.model_accounts.codex_transport as codex
 import httpx
 import pytest
 from a13n_harness_ui.app import HarnessUiApp, open_harness_ui_app
@@ -105,7 +105,7 @@ async def test_tasks_discover_poll_and_reopen_old_run_after_followup(tmp_path, m
         await finish.wait()
         yield next(outputs)
 
-    monkeypatch.setattr(codex, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with _server(config, data) as (client, app):
         discovered = _result(await _rpc(client, "server/discover", tasks=False))
         assert discovered["capabilities"]["extensions"][_EXTENSION] == {}
@@ -156,7 +156,7 @@ async def test_unnegotiated_calls_keep_the_receipt_and_are_not_tasks(tmp_path, m
     async def stream(messages, info):
         yield "done"
 
-    monkeypatch.setattr(codex, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with _server(config, tmp_path / "data") as (client, app):
         first = _result(
             await _rpc(
@@ -199,7 +199,7 @@ async def test_tasks_cancel_only_the_matching_run_and_report_execution_failure(t
             await blocked.wait()
         raise RuntimeError("private model exception")
 
-    monkeypatch.setattr(codex, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with _server(config, tmp_path / "data") as (client, _):
         first = await _tool(client, "create_thread", prompt="start")
         completed = await _terminal(client, first["taskId"])
@@ -245,7 +245,7 @@ async def test_task_finishes_with_webui_guidance_for_pending_approval(tmp_path, 
             )
         }
 
-    monkeypatch.setattr(codex, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with _server(config, tmp_path / "data") as (client, app):
         created = await _tool(client, "create_thread", prompt="request approval")
         assert created["resultType"] == "task"

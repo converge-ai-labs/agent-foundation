@@ -108,7 +108,7 @@ async def stubborn(messages, info):
 
 HarnessUiApp._stop = stop
 AgentSideConnection.close = close
-codex.CodexRequestModel = lambda *a, **kw: FunctionModel(stream_function=stubborn)
+codex.SubscriptionCodexModel = lambda *a, **kw: FunctionModel(stream_function=stubborn)
 """
     async with _agent(path, tmp_path, hooks=hooks, discard_stdout=True) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])

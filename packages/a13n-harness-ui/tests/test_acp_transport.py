@@ -221,7 +221,7 @@ async def thinking(messages, info):
     Path('model-finished').touch()
 
 RootCheckpointCapability._checkpoint = checkpoint
-codex.CodexRequestModel = lambda *a, **kw: WrapperModel(WrapperModel(FunctionModel(stream_function=thinking)))
+codex.SubscriptionCodexModel = lambda *a, **kw: WrapperModel(WrapperModel(FunctionModel(stream_function=thinking)))
 """
     async with _agent(path, tmp_path, hooks=hooks, discard_stdout=True) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])

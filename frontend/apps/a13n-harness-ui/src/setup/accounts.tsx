@@ -13,6 +13,7 @@ import {
   ArrowsClockwise,
   Check,
   Copy,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -24,6 +25,7 @@ import { CredentialKeys } from "./credential-keys";
 import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
 import { copyText } from "../platform";
 import { accountMessage, loginMessage } from "./account-messages";
+import { accountStatus } from "./account-status";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -232,10 +234,8 @@ export function ProviderAccount({
       });
     }
   }, [login.data?.state, queries, provider, accountKey]);
-  const ready =
-    !!account.data?.usable ||
-    (account.data?.availability === "available" &&
-      account.data.required_action === "refresh");
+  const status = accountStatus(account.data);
+  const { canRefresh: ready, reauthenticate } = status;
   useEffect(() => {
     onReady?.(ready && !select.isPending && !logout.isPending);
   }, [onReady, ready, select.isPending, logout.isPending]);
@@ -276,12 +276,16 @@ export function ProviderAccount({
   const accountActions = (
     <div className={styles.actions}>
       <Button
-        variant="outline"
+        variant={reauthenticate ? "default" : "outline"}
         loading={start.isPending}
         disabled={!!activeLogin.data?.session_id || !loginMethods.length}
         onClick={() => start.mutate(false)}
       >
-        {account.data?.usable ? t("Reconnect account") : t("Connect account")}
+        {reauthenticate
+          ? t("Sign in again")
+          : account.data?.usable
+            ? t("Reconnect account")
+            : t("Connect account")}
       </Button>
       <Button
         variant="ghost"
@@ -317,16 +321,12 @@ export function ProviderAccount({
         <>
           <div className={accountStyles.accountHeader}>
             <div className={accountStyles.identity}>
-              <p className={accountStyles.accountStatus}>
-                {account.isPending
-                  ? t("Checking account…")
-                  : account.data?.usable
-                    ? t("Connected")
-                    : ready
-                      ? t("Account available - refreshes on first use")
-                      : t("Not connected")}
-                {account.data?.availability === "available" &&
-                  ` - ${account.data.source}${account.data.expiry === "unknown" ? "" : ` - ${account.data.expiry}`}`}
+              <p
+                className={accountStyles.accountStatus}
+                data-tone={status.tone}
+              >
+                {reauthenticate && <WarningCircle aria-hidden />}
+                {account.isPending ? t("Checking account…") : t(status.label)}
               </p>
               {account.data?.account_id && (
                 <p>
@@ -336,24 +336,23 @@ export function ProviderAccount({
                     : t("Host account")}
                 </p>
               )}
-              {account.data?.expires_at && (
+              {!reauthenticate && account.data?.expires_at && (
                 <p className={accountStyles.help}>
                   {t("Session expires {{date}}", {
                     date: new Date(account.data.expires_at).toLocaleString(
                       i18n.resolvedLanguage,
                     ),
                   })}
-                  {account.data.required_action === "refresh"
-                    ? t(" - refreshes on first use")
-                    : ""}
                 </p>
-              )}
-              {account.data?.message && (
-                <p role="status">{accountMessage(account.data.message, t)}</p>
               )}
             </div>
             {accountActions}
           </div>
+          {account.data?.message && (
+            <p className={accountStyles.accountMessage} data-tone={status.tone}>
+              {accountMessage(account.data.message, t)}
+            </p>
+          )}
           {!inline && connection.allowance_view === "copilot" && (
             <CopilotAllowance
               key={identity}

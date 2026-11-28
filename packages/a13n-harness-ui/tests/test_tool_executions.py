@@ -1013,7 +1013,7 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
     import asyncio
     import sys
 
-    import a13n_harness.models.codex as codex
+    import a13n_harness_ui.model_accounts.codex_transport as codex
     from a13n_harness.toolsets.process_manager import _ProcessController
     from a13n_harness_ui.cli import CliRequest
     from a13n_harness_ui.interactive.backend import SessionBackend
@@ -1095,7 +1095,7 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
             profile={"supports_thinking": True, "supports_json_object_output": True},
         )
 
-    monkeypatch.setattr(codex, "CodexRequestModel", build)
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", build)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         assert await backend.initialize()
@@ -1181,7 +1181,7 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
 async def test_tui_observes_existing_goal_receipt_and_stop_before_attach(tmp_path, monkeypatch, attach):
     import asyncio
 
-    import a13n_harness.models.codex as codex
+    import a13n_harness_ui.model_accounts.codex_transport as codex
     from a13n_harness_ui.cli import CliRequest
     from a13n_harness_ui.interactive.backend import SessionBackend
     from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
@@ -1201,7 +1201,7 @@ async def test_tui_observes_existing_goal_receipt_and_stop_before_attach(tmp_pat
             await finish.wait()
         yield "First iteration." if calls == 1 else "Final iteration.\n[GOAL_COMPLETE]"
 
-    monkeypatch.setattr(codex, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         assert await backend.initialize()
@@ -1245,7 +1245,7 @@ async def test_tui_observes_existing_goal_receipt_and_stop_before_attach(tmp_pat
 async def test_tui_background_observer_drains_burst_and_handles_terminal_receipt(tmp_path, monkeypatch, switch_thread):
     import asyncio
 
-    import a13n_harness.models.codex as codex
+    import a13n_harness_ui.model_accounts.codex_transport as codex
     from a13n_harness_ui.cli import CliRequest
     from a13n_harness_ui.interactive.backend import SessionBackend
     from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
@@ -1262,7 +1262,7 @@ async def test_tui_background_observer_drains_burst_and_handles_terminal_receipt
     async def model(messages, info):
         yield "Background answer."
 
-    monkeypatch.setattr(codex, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
+    monkeypatch.setattr(codex, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         assert await backend.initialize()

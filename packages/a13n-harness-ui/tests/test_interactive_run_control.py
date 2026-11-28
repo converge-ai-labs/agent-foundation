@@ -25,7 +25,7 @@ pytestmark = pytest.mark.usefixtures("migrated_databases")
 async def test_cancel_is_receipt_owned_and_session_is_reusable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     entered = asyncio.Event()
@@ -36,7 +36,9 @@ async def test_cancel_is_receipt_owned_and_session_is_reusable(
         await asyncio.sleep(60)
         yield "Never reached"
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -68,7 +70,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 ) -> None:
     if mode == "sandbox" and os.environ.get("A13N_HARNESS_UI_TEST_SANDBOX") != "1":
         pytest.skip("Set A13N_HARNESS_UI_TEST_SANDBOX=1 with a compatible envd binary and native isolation support")
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -122,7 +124,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 
     monkeypatch.setattr(
         runtime,
-        "CodexRequestModel",
+        "SubscriptionCodexModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream, profile={"supports_json_object_output": True}),
     )
     envd = EnvdRuntimeSettings(executable=Path(os.environ["A13N_ENVD_EXECUTABLE"]) if mode == "sandbox" else None)
@@ -159,7 +161,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     tmp_path: Path, monkeypatch, timeout: bool, mode
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -217,7 +219,9 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
                 assert "No answer or approval was provided" in str(messages)
             yield "Choice applied.\n[GOAL_COMPLETE]" if mode == "goal" else "Choice applied."
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -254,7 +258,7 @@ async def test_goal_live_status_and_saved_outcome_share_app_execution(
 ) -> None:
     import asyncio
 
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     waiting, release = asyncio.Event(), asyncio.Event()
@@ -270,7 +274,9 @@ async def test_goal_live_status_and_saved_outcome_share_app_execution(
             await release.wait()
             yield "All requirements checked.\n[GOAL_COMPLETE]"
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:

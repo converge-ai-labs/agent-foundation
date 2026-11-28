@@ -1,10 +1,22 @@
 import { expect, it } from "vitest";
 import {
   availableVouchers,
+  compactObservedTime,
+  quotaTime,
   voucherSummary,
   windowLabel,
 } from "./subscription-usage";
 import type { Schema } from "../transport/client";
+
+it("shows the observation day when cached allowance is from an earlier local day", () => {
+  const observed = new Date(2026, 10, 27, 21, 34).getTime();
+  expect(compactObservedTime(observed, new Date(2026, 10, 27, 23))).toBe(
+    "21:34",
+  );
+  expect(compactObservedTime(observed, new Date(2026, 10, 28))).toBe(
+    quotaTime(observed, true),
+  );
+});
 
 it("names actual window durations rather than assuming primary and secondary meanings", () => {
   expect([18000, 604800, 86400, 7200, 90].map(windowLabel)).toEqual([

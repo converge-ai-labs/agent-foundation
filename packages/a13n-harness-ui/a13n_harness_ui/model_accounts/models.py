@@ -11,6 +11,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+CODEX_SIGN_IN_REQUIRED = "The Codex authorization is no longer valid. Sign in again."
+
 
 class MainAccountSelection(BaseModel):
     """Actual subscription identity for the latest successful MAIN request."""

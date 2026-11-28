@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
@@ -15,6 +16,14 @@ if TYPE_CHECKING:
 from .codex import BoundCodexCredentialSource
 
 _BASE_URL = "https://chatgpt.com/backend-api/wham"
+
+
+class UsageSignInRequired(ValueError):
+    """The account operation requires a new authorization."""
+
+    def __init__(self, message: str, *, fingerprint: str | None = None) -> None:
+        super().__init__(message)
+        self.fingerprint = fingerprint
 
 
 class _ProviderView(BaseModel):
@@ -123,6 +132,17 @@ class CodexUsageClient:
             credential_source=BoundCodexCredentialSource(source, account_id=expected_account_id),
             http_client=client,
         )
+        self.grant_rejection: UsageSignInRequired | None = None
+        self.client.event_hooks["response"].append(self._observe_refresh)
+
+    async def _observe_refresh(self, response: httpx2.Response) -> None:
+        from .codex_transport import CodexRefreshGrantRejected, check_codex_refresh_response
+
+        try:
+            await check_codex_refresh_response(response)
+        except CodexRefreshGrantRejected as exc:
+            self.grant_rejection = UsageSignInRequired(exc.message, fingerprint=exc.fingerprint)
+            raise
 
     async def _request(
         self, method: str, path: str, *, body: dict[str, str] | None = None
@@ -131,14 +151,14 @@ class CodexUsageClient:
 
         try:
             async with self.client.stream(method, _BASE_URL + path, json=body, timeout=10) as response:
+                if method == "GET" and self.grant_rejection is not None:
+                    raise self.grant_rejection from None
                 response.raise_for_status()
                 chunks = bytearray()
                 async for chunk in response.aiter_bytes():
                     chunks.extend(chunk)
                     if len(chunks) > 512 * 1024:
                         raise ValueError("Codex usage response exceeded the supported size.")
-                import json
-
                 value = json.loads(chunks)
                 if not isinstance(value, dict):
                     raise ValueError("Codex returned an unsupported usage response.")
@@ -146,6 +166,8 @@ class CodexUsageClient:
         except (CredentialsRefreshError, CredentialsPersistenceError):
             # Upstream token errors may include provider response text. Account
             # diagnostics retain the outcome category, never that raw payload.
+            if self.grant_rejection is not None:
+                raise self.grant_rejection from None
             raise ValueError(
                 "Codex credentials could not be refreshed or saved. Check the shared account store before retrying."
             ) from None
@@ -171,6 +193,8 @@ class CodexUsageClient:
             if credit_account != account_id:
                 raise ValueError("Codex account changed during the usage query; refresh before confirming a reset.")
             credits = ResetCredits.model_validate(raw_credits)
+        except UsageSignInRequired:
+            raise
         except ValueError as exc:
             diagnostic = str(exc)
         return CodexUsage.model_validate(

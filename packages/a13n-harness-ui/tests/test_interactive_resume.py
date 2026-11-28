@@ -65,7 +65,7 @@ async def test_cross_directory_resume_reassigns_thread_without_retargeting_proje
 async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, historical_project: str
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
     from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
     from pydantic_ai.models.function import DeltaToolCall
@@ -100,7 +100,9 @@ async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
         else:
             yield "Saved answer"
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
@@ -394,7 +396,7 @@ async def test_cross_directory_resume_failure_preserves_saved_and_local_selectio
 async def test_model_selection_is_remembered_for_project_and_preserves_agent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
 
     path = await _seed(tmp_path, monkeypatch)
@@ -407,7 +409,7 @@ async def test_model_selection_is_remembered_for_project_and_preserves_agent(
     async def stream(messages, info):
         yield "Reply from the selected model."
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(runtime, "SubscriptionCodexModel", lambda *a, **kw: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
@@ -458,7 +460,7 @@ async def test_model_selection_is_remembered_for_project_and_preserves_agent(
 
 @pytest.mark.anyio
 async def test_resume_browser_end_to_end_with_saved_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     from a13n_harness_ui.interactive.shell import CliShell
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input
@@ -476,7 +478,9 @@ async def test_resume_browser_end_to_end_with_saved_execution(tmp_path: Path, mo
             while not predicate():
                 await asyncio.sleep(0.01)
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
@@ -907,7 +911,7 @@ async def test_resume_respects_mcp_overrides_and_headless_selection(tmp_path, mo
 @pytest.mark.anyio
 @pytest.mark.parametrize("header", [{"env": "MISSING_MCP_TOKEN"}, "Bearer ${MISSING_MCP_TOKEN}"])
 async def test_missing_mcp_credential_reports_actionable_root_failure(tmp_path, monkeypatch, header):
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import yaml
     from a13n_harness_ui.surfaces import RootOperationStatus
 
@@ -918,7 +922,9 @@ async def test_missing_mcp_credential_reports_actionable_root_failure(tmp_path, 
         pytest.fail("Missing MCP credentials must fail before model dispatch")
         yield "unreachable"
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    monkeypatch.setattr(
+        runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=stream)
+    )
     mcp = path.parent / "mcp" / "test.yaml"
     mcp.parent.mkdir(exist_ok=True)
     mcp.write_text(
