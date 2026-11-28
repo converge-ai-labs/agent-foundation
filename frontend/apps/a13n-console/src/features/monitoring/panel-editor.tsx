@@ -132,6 +132,7 @@ export function PanelEditor({
           </FormField>
           <div className={styles.row}>
             <ChoiceField
+              data-field-layout="stacked"
               label={t("Visualization")}
               value={draft.visualization ?? "timeseries"}
               options={[
@@ -145,6 +146,7 @@ export function PanelEditor({
               }
             />
             <ChoiceField
+              data-field-layout="stacked"
               label={t("Unit")}
               value={draft.unit ?? "auto"}
               options={unitOptions(t)}
@@ -153,6 +155,7 @@ export function PanelEditor({
               }
             />
             <ChoiceField
+              data-field-layout="stacked"
               label={t("Legend")}
               value={draft.legend === false ? "off" : "on"}
               options={[

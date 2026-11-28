@@ -29,10 +29,14 @@ pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
     ],
     ids=["paginated-output"],
 )
+@pytest.mark.parametrize("auto_mark_read", [True, False])
 async def test_child_question_competing_response_history_and_restart(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_output: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_output: str, auto_mark_read: bool
 ) -> None:
     root = _write_configuration(tmp_path, allow_agent_creation=True)
+    config = yaml.safe_load(root.read_text())
+    config["inbox"] = {"auto_mark_read": auto_mark_read}
+    root.write_text(yaml.safe_dump(config))
     agent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(agent_path.read_text())
     parent["subagents"] = [{"agent": "agent-worker"}]
@@ -90,10 +94,10 @@ async def test_child_question_competing_response_history_and_restart(
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread_id}"
-            unread = f"/api/inbox/threads/{thread_id}/unread"
+            inbox_posts = f"/api/inbox/threads/{thread_id}"
             await app.inbox().post_from_mcp(thread_id=thread_id, kind="result", title="Earlier", message="Ready")
             first = (await api.post(prefix + "/submit", json={"parts": ["Delegate then ask"]})).json()["receipt_id"]
-            assert (await api.get(unread)).json() == []
+            assert ((await api.get(inbox_posts)).json()[0]["read_at"] is not None) is auto_mark_read
             assert (await settled(api, first))["status"] == "suspended"
             children = (await api.get(prefix + "/children")).json()
             assert children["total"] == 1
@@ -124,10 +128,12 @@ async def test_child_question_competing_response_history_and_restart(
             )
             duplicate = await api.post(prefix + "/decisions", json={**body, "responses": body["responses"] * 2})
             assert duplicate.status_code == 400 and duplicate.json()["error"]["code"] == "request_invalid"
-            assert [post["item_id"] for post in (await api.get(unread)).json()] == [pending.item_id]
+            state = {post["item_id"]: post for post in (await api.get(inbox_posts)).json()}
+            assert state[pending.item_id]["read_at"] is None
             resumed = await api.post(prefix + "/decisions", json=body)
             assert resumed.status_code == 200, resumed.text
-            assert (await api.get(unread)).json() == []
+            state = {post["item_id"]: post for post in (await api.get(inbox_posts)).json()}
+            assert (state[pending.item_id]["read_at"] is not None) is auto_mark_read
             second = resumed.json()["receipt_id"]
             with fail_after(10):
                 await resumed_started.wait()

@@ -1253,6 +1253,48 @@ async def test_workspace_media_defaults_fill_what_an_agent_leaves_unselected(ser
     assert await media() == {}
 
 
+@pytest.mark.parametrize("api", ["openai.realtime", "openai.live"])
+async def test_auxiliary_models_are_revalidated_when_their_api_changes(executing, scripted_model, runs_kit, api):
+    service = executing
+    primary = await runs_kit.create_model(service, scripted_model)
+    characteristics = {"capabilities": ["audio_understanding"]}
+    auxiliary = await create_model(service, characteristics=characteristics)
+    selections = [
+        ("reviewer.model", {"reviewer": {"model": auxiliary}}),
+        ("media_understanding.audio", {"media_understanding": {"audio": auxiliary}}),
+    ]
+    agents = [await create_agent(service, field, primary, **selection) for field, selection in selections]
+    inherited = await create_agent(service, "Inherited", primary)
+    defaults = f"{service.api}/media-understanding-defaults"
+    current = await service.client.get(defaults)
+    saved = await service.client.put(defaults, json={"audio": auxiliary}, headers={"if-match": current.headers["etag"]})
+    assert saved.status_code == 200, saved.text
+
+    item = f"{service.api}/models/{auxiliary}"
+    model = await service.client.get(item)
+    changed = await service.client.patch(
+        item,
+        json={"config": {"model_name": "voice", "model_api": api, "characteristics": characteristics}},
+        headers={"if-match": model.headers["etag"]},
+    )
+    assert changed.status_code == 200, changed.text
+    for (field, selection), authored in zip(selections, agents, strict=True):
+        refused = await service.client.post(
+            f"{service.api}/agents/validate", json={"config": {"model": primary, **selection}}
+        )
+        assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == field, refused.text
+        submitted = await runs_kit.start_thread(service, authored, "Start")
+        failed = await runs_kit.sealed(service, submitted["run"]["id"])
+        assert failed["status"] == "failed" and failed["failure"]["code"] == "invalid_argument", failed
+        assert field in failed["failure"]["message"] and "non-realtime" in failed["failure"]["message"]
+    refused = await service.client.put(defaults, json={"audio": auxiliary}, headers={"if-match": saved.headers["etag"]})
+    assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "audio", refused.text
+    scripted_model.say("Done")
+    submitted = await runs_kit.start_thread(service, inherited, "Start")
+    completed = await runs_kit.sealed(service, submitted["run"]["id"])
+    assert completed["status"] == "completed", completed
+
+
 def test_computer_tools_require_explicit_enablement_and_preserve_per_tool_choices() -> None:
     legacy = config().toolsets
     assert not legacy["computer"].enabled

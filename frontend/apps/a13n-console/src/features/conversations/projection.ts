@@ -40,6 +40,7 @@ export interface PresentedItem {
   steeringSource?: string;
   sourceId?: string;
   inputSource?: string;
+  speech?: boolean;
 }
 
 export interface PublishedAsset {
@@ -88,7 +89,10 @@ export function presentItem(item: DisplayItem): PresentedItem {
     state:
       item.kind === "tool_call" && toolExecutionReceipt(content.result)
         ? "handed_off"
-        : item.state,
+        : item.kind === "tool_call" &&
+            (content.outcome === "expired" || content.outcome === "interrupted")
+          ? content.outcome
+          : item.state,
     firstPosition: item.first_stream_id,
     lastPosition: item.last_stream_id,
     startedAt: item.started_at,
@@ -114,6 +118,11 @@ export function presentItem(item: DisplayItem): PresentedItem {
     // Harness input groups are not Service entry IDs. Service authorship lives in metadata.
     sourceId: sourceId && sourceId.length <= 72 ? sourceId : undefined,
     inputSource: text(content.input_source) || undefined,
+    // Older realtime runs retained only the synthetic message ID.
+    speech:
+      content.speech === true ||
+      /^run-[\w-]+:speech:\d+$/.test(text(content.messageId)) ||
+      undefined,
     protectedReasoning: "encrypted_value" in content,
     ...(typeof metadata.display === "boolean"
       ? { display: metadata.display }

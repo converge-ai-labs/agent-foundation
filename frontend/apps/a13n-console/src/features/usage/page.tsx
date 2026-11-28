@@ -182,32 +182,34 @@ function UsageBrowser() {
               />
             )}
           </div>
-          <ComposerAction
-            target={{
-              kind: "usage",
-              ...window,
-              timezone,
-              principal_id: principalId,
-              agent_id: agent?.agent_id,
-              group_by: group,
-              metric,
-            }}
-          />
-          <RefreshButton
-            pending={fetching > 0}
-            onRefresh={() => {
-              if ("preset" in range)
-                update({
-                  now: new Date().toISOString(),
-                  breakdownPages: [],
-                  sessionPages: [],
-                });
-              else
-                void cache.invalidateQueries({
-                  queryKey: ["usage", workspace.id],
-                });
-            }}
-          />
+          <div className={styles.toolbarActions}>
+            <ComposerAction
+              target={{
+                kind: "usage",
+                ...window,
+                timezone,
+                principal_id: principalId,
+                agent_id: agent?.agent_id,
+                group_by: group,
+                metric,
+              }}
+            />
+            <RefreshButton
+              pending={fetching > 0}
+              onRefresh={() => {
+                if ("preset" in range)
+                  update({
+                    now: new Date().toISOString(),
+                    breakdownPages: [],
+                    sessionPages: [],
+                  });
+                else
+                  void cache.invalidateQueries({
+                    queryKey: ["usage", workspace.id],
+                  });
+              }}
+            />
+          </div>
         </div>
       }
     >

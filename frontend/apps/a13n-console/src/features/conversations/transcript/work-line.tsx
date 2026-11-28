@@ -92,11 +92,12 @@ export function WorkLine({
             state === "working" &&
             "progress" in entry &&
             entry.progress && (
-              <ToolProgressLine
-                key={id}
-                value={entry.progress}
-                label={entryLabel(entry, t).name}
-              />
+              <div key={id} className={styles.workProgress}>
+                <ToolProgressLine
+                  value={entry.progress}
+                  label={entryLabel(entry, t).name}
+                />
+              </div>
             ),
         )}
       {open && (

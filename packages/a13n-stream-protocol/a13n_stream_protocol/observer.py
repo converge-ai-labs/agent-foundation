@@ -58,6 +58,8 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    SpeechPart,
+    SpeechPartDelta,
     TextPart,
     TextPartDelta,
     ThinkingPart,
@@ -70,6 +72,7 @@ from pydantic_ai.messages import (
 
 from a13n_stream_protocol.content import public_tool_value, tool_result_content
 from a13n_stream_protocol.fragments import fragment_custom_event
+from a13n_stream_protocol.realtime import speech_transcript, transcript_event
 
 _AGUI_EVENT_ADAPTER = TypeAdapter(Event)
 _ANY_ADAPTER = TypeAdapter(Any)
@@ -257,6 +260,12 @@ class HarnessAguiObserver:
             return [*_close_parts(item, state), self._convert_terminal(item)]
 
         source = item.event
+        if (isinstance(source, PartDeltaEvent) and isinstance(source.delta, SpeechPartDelta)) or (
+            isinstance(source, PartStartEvent | PartEndEvent) and isinstance(source.part, SpeechPart)
+        ):
+            transcript = speech_transcript(item)
+            return [transcript_event(item, transcript)] if transcript is not None else []
+
         events: list[Event]
         if isinstance(source, HarnessExtensionEvent):
             if (

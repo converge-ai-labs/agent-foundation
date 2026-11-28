@@ -206,6 +206,10 @@ async def recover(
     if run.cancel_requested_at is not None:
         await seal(session, runtime, thread, run, attempt, Outcome.cancelled(), at=at)
         return
+    if run.trigger == "realtime":
+        failure = failure or Failure(code="realtime_unavailable", message="The realtime attempt lost its connection")
+        await seal(session, runtime, thread, run, attempt, Outcome(status="failed", failure=failure), at=at)
+        return
     if status == "failed" and run.attempts >= run.max_attempts:
         await seal(session, runtime, thread, run, attempt, Outcome(status="failed", failure=failure), at=at)
         return

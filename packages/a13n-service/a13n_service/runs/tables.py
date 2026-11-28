@@ -518,6 +518,27 @@ _RUN_PROGRESS = (
 )
 
 
+class RealtimeTicketRow(Base):
+    __tablename__ = "realtime_tickets"
+    __table_args__ = (Index("ix_realtime_tickets_workspace_expiry", "workspace_id", "expires_at"),)
+
+    digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    request: Mapped[dict] = mapped_column(JSONB)
+
+
+class RealtimeCallRow(Base):
+    """Private metadata used for live authority, quotas and orphaned provider calls."""
+
+    __tablename__ = "realtime_calls"
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    transport: Mapped[str] = mapped_column(String(16))
+    credential: Mapped[dict] = mapped_column(JSONB)
+    provider_session: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    hangup_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class RunRow(AppOwned, Stamped, Base):
     __tablename__ = "runs"
     __table_args__ = (
@@ -592,7 +613,7 @@ class RunRow(AppOwned, Stamped, Base):
             "revision_selection IN ('pinned', 'default', 'inherited', 'snapshot')", name="revision_selection"
         ),
         CheckConstraint(
-            "trigger IN ('input', 'queued', 'resume', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')",
+            "trigger IN ('input', 'queued', 'resume', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned', 'realtime')",
             name="trigger",
         ),
         CheckConstraint("lineage IN ('root', 'continue', 'fork')", name="lineage"),
@@ -601,7 +622,7 @@ class RunRow(AppOwned, Stamped, Base):
         ),
         CheckConstraint("wait_reason IN ('approval', 'call', 'multiple', 'desktop_control')", name="wait_reason"),
         # A run starts from exactly one source: a queued entry or the answers resuming its parent.
-        CheckConstraint("(source_entry_id IS NULL) <> (resume IS NULL)", name="source"),
+        CheckConstraint("(source_entry_id IS NULL) = (trigger IN ('resume', 'realtime'))", name="source"),
         CheckConstraint("(resume IS NULL) = (resumed_by_id IS NULL)", name="resumed_by"),
         CheckConstraint("(request_key IS NULL) = (request_digest IS NULL)", name="request"),
         CheckConstraint("request_key IS NULL OR resume IS NOT NULL", name="request_resume"),

@@ -73,7 +73,7 @@ Input, output, commands, changes and errors remain inspectable in ordinary mode;
 
 Keep the editor above a single action row: attachment, Chat options, active draft modes, then the right-aligned Model, microphone when available, and Send. Reserve one line for input even when the draft is empty. Avoid accumulated editor gutters, oversized action backgrounds and a disproportionately large Send button.
 
-Active draft modes appear as **Coordinator** and **Goal** buttons with regular-weight labels and a quiet, neutral selected tint. Select a button to turn off its mode. Narrow composers show icons with accessible names and help, leaving room for the Model, microphone and Send. Touch retains 44px targets without enlarging the visible buttons. Dictation temporarily replaces the action controls without changing the selected modes.
+Active draft modes appear as **Coordinator**, **Goal**, and **Worktree** buttons with regular-weight labels and a quiet, neutral selected tint. Select a button to turn off its mode. Narrow composers show icons with accessible names and help, leaving room for the Model, microphone and Send. Touch retains 44px targets without enlarging the visible buttons. Dictation temporarily replaces the action controls without changing the selected modes.
 
 While Send waits on a readiness check, its disabled control explains why and loading indicators stay inline. For ACP option loading, refresh and updates, the spinner belongs in Agent & Model. Errors and action-required notices appear above the editor with their recovery actions.
 
@@ -92,6 +92,8 @@ Input predictions replace the empty composer placeholder with quiet, upright gho
 Content fades continuously toward the header and composer. No hard seam, ghosted text, text-shadow halo or blurred strip crosses a readable line. Apply the effect at the reading boundary; keep controls crisp and content fully readable away from it. Prose, tables and code retain their geometry through scrolling.
 
 Chat headers use the same compact height without a bottom divider in single-column and split layouts. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
+
+The chat header's **Activity** button keeps its quiet running count and adds compact worktree and link icons with counts when the open owner chat has references, keeping the sidebar free of worktree or link indicators. Inside the **Activity** floating card and supporting tabs, **Worktrees** and **Links** follow **Tasks** and **Notes** in the same section pattern; each row leads with the resource name, keeps branch or artifact status secondary, keeps open actions beside its worktree, and keeps the unlink affordance quiet.
 
 ## Background Work
 

@@ -143,7 +143,7 @@ jobs:
         id: matrix
         env:
           TESTS_CHANGED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.tests == 'true' }}
-          PYTHON_VERSIONS: ${{ github.event_name == 'push' && '["3.13"]' || '["3.13","3.14","3.15"]' }}
+          PYTHON_VERSIONS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["3.13","3.14","3.15"]' || '["3.13"]' }}
         run: |
           python - <<'PY'
           import json
@@ -151,8 +151,11 @@ jobs:
           from pathlib import Path
           from scripts.run_python_tests import balanced_shards
 
-          python_versions = json.loads(os.environ.get("PYTHON_VERSIONS", '["3.13","3.14","3.15"]'))
-          matrix = [{"name": "checks", "python_version": "3.13", "runner": "ubuntu-24.04", "targets": ""}]
+          python_versions = json.loads(os.environ["PYTHON_VERSIONS"])
+          matrix = [
+              {"name": name, "python_version": "3.13", "runner": "ubuntu-24.04", "targets": ""}
+              for name in ("checks", "dev-tools")
+          ]
           if os.environ["TESTS_CHANGED"] == "true":
               root = Path("packages/a13n-service/tests")
               # Keep whole files together, matching loadgroup's file-local fixture isolation.
@@ -164,12 +167,13 @@ jobs:
                       root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py",
                       root / "test_monitoring_bundle_live.py",
                       root / "test_browser_native_live.py", root / "test_browser_selfhost_live.py",
+                      root / "test_browser_external_native.py",
                   }
                   and not path.is_relative_to(root / "environment_providers")
               )
               # Weights never select tests: new files receive the current suite's median.
               durations = json.loads(Path(".github/service-test-durations.json").read_text())
-              shards = balanced_shards(files, 5, durations)
+              shards = balanced_shards(files, 8, durations)
               for shard, targets in enumerate(shards, start=1):
                   assert targets, "Service test shards must not be empty"
                   print(f"Service shard {shard}: {len(targets)} files")
@@ -221,46 +225,50 @@ jobs:
           cache-dependency-glob: uv.lock
           cache-suffix: py${{ matrix.task.python_version }}-service
 
-      - name: Synchronize Python workspace
-        run: uv sync --locked --all-packages
+      - name: Synchronize Service and workspace development tools
+        run: uv sync --locked --package a13n-service --package a13n-workspace
 
       - name: Type-check a13n Service Python packages
         if: matrix.task.name == 'checks'
         run: >-
-          uv run --locked pyright
+          uv run --locked --no-sync pyright
           packages/a13n-logging/a13n_logging
           packages/a13n-service/a13n_service
 
       - name: Check Service import boundaries
         if: matrix.task.name == 'checks'
-        run: make service-boundaries
+        env:
+          UV_NO_SYNC: "true"
+        run: make --assume-old=sync service-boundaries
 
       # Generated contracts use the canonical development/release interpreter.
       - name: Check Service contract export
         if: matrix.task.name == 'checks'
-        run: uv run --locked python scripts/export-a13n-service-openapi.py --check
+        run: uv run --locked --no-sync python scripts/export-a13n-service-openapi.py --check
 
       - name: Test Service contract export
         if: matrix.task.name == 'checks'
-        run: uv run --locked python -m pytest scripts/tests/test_service_contract.py --junitxml=test-results/contract.xml
+        run: uv run --locked --no-sync python -m pytest scripts/tests/test_service_contract.py --junitxml=test-results/contract.xml
 
       - name: Test logging
         if: matrix.task.name == 'checks'
-        run: uv run --locked python -m pytest packages/a13n-logging/tests --junitxml=test-results/logging.xml
+        run: uv run --locked --no-sync python -m pytest packages/a13n-logging/tests --junitxml=test-results/logging.xml
 
       - name: Check local Service development tools
-        if: matrix.task.name == 'checks'
-        run: make dev-state-check
+        if: matrix.task.name == 'dev-tools'
+        env:
+          UV_NO_SYNC: "true"
+        run: make --assume-old=sync dev-state-check
 
       - name: Set up Chrome for Testing
-        if: startsWith(matrix.task.name, 'tests-') || matrix.task.name == 'native'
+        if: matrix.task.name == 'native'
         id: chrome
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
 
       - name: Allow the test browser to create sandbox namespaces
-        if: startsWith(matrix.task.name, 'tests-') || matrix.task.name == 'native'
+        if: matrix.task.name == 'native'
         shell: bash
         env:
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
@@ -282,17 +290,15 @@ jobs:
         timeout-minutes: 10
         env:
           TEST_TARGETS: ${{ matrix.task.targets }}
-          BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           targets=()
           while IFS= read -r target; do
             targets+=("$target")
           done <<< "$TEST_TARGETS"
-          /usr/bin/time -p uv run --locked python -m pytest \
-            -n 4 --dist loadgroup --max-worker-restart=0 \
+          /usr/bin/time -p uv run --locked --no-sync python -m pytest \
+            -n 4 --dist loadgroup --no-loadscope-reorder --max-worker-restart=0 \
             -vv --tb=short --durations=30 -r a \
             --junitxml=test-results/service.xml \
-            --browser-executable="$BROWSER_EXECUTABLE" \
             -o faulthandler_timeout=120 \
             -o faulthandler_exit_on_timeout=true \
             "${targets[@]}"
@@ -308,7 +314,9 @@ jobs:
         env:
           A13N_TEST_BROWSER_NATIVE_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          uv run --locked pytest -q --junitxml=test-results/browser-native.xml \
+          uv run --locked --no-sync pytest -q --junitxml=test-results/browser-native.xml \
+            --browser-executable="$A13N_TEST_BROWSER_NATIVE_CHROMIUM" \
+            packages/a13n-service/tests/test_browser_external_native.py \
             packages/a13n-service/tests/test_browser_native_live.py \
             'packages/a13n-service/tests/test_browser_selfhost_live.py::test_selfhost_service_asset_transfer[native]'
           python - <<'PY'
@@ -319,7 +327,7 @@ jobs:
 
       - name: Test native Environment management drivers
         if: matrix.task.name == 'native'
-        run: uv run --locked python -m pytest packages/a13n-service/tests/environment_providers --junitxml=test-results/environment-providers.xml
+        run: uv run --locked --no-sync python -m pytest packages/a13n-service/tests/environment_providers --junitxml=test-results/environment-providers.xml
 
       - name: Require Service execution without skips
         if: startsWith(matrix.task.name, 'tests-')
@@ -356,12 +364,14 @@ jobs:
 
       - name: Build a13n Service Python distributions
         if: matrix.task.name == 'checks'
+        env:
+          UV_NO_SYNC: "true"
         run: |
           make a13n-service-assets
           uv build --package a13n-logging --out-dir dist/a13n-service
           uv build --package a13n-service --out-dir dist/a13n-service
           # uv builds the wheel from the sdist. Search that artifact, not the editable checkout.
-          uv run --locked python - <<'PY'
+          uv run --locked --no-sync python - <<'PY'
           import json
           import sys
           from pathlib import Path

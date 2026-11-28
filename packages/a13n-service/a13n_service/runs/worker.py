@@ -52,6 +52,7 @@ class Worker:
         self.id = new_object_id("wrk")
         self.build = version("a13n-service")
         self.free = runtime.settings.worker.slots
+        self.realtime_free = runtime.settings.worker.realtime_slots if runtime.realtime_bridge is not None else 0
         self.slot_released = asyncio.Event()
         self.running: dict[str, _Running] = {}
         self.stopping = False
@@ -95,7 +96,7 @@ class Worker:
                         logger.error("Tool execution admission closed; forcing process exit after drain")
                         os._exit(1)
                     members = await self.members.refresh()
-                    if self.free == 0:
+                    if self.free == 0 and self.realtime_free == 0:
                         self.slot_released.clear()
                         # Recheck failed tool admission even when every attempt slot remains occupied.
                         try:
@@ -106,45 +107,64 @@ class Worker:
                         except TimeoutError:
                             pass
                         continue
-                    requested = self.free if members is not None else min(self.free, FALLBACK_BATCH)
-                    sent = asyncio.get_running_loop().time()
-                    try:
-                        leases = await claim(
-                            self.runtime,
-                            worker_id=self.id,
-                            worker_build=self.build,
-                            limit=requested,
-                            members=members if members is not None else 1,
+                    saturated = claimed = failed = False
+                    for realtime, requested in ((False, self.free), (True, self.realtime_free)):
+                        if not requested:
+                            continue
+                        if members is None:
+                            requested = min(requested, FALLBACK_BATCH)
+                        sent = asyncio.get_running_loop().time()
+                        try:
+                            leases = await claim(
+                                self.runtime,
+                                worker_id=self.id,
+                                worker_build=self.build,
+                                limit=requested,
+                                members=members if members is not None else 1,
+                                realtime=realtime,
+                            )
+                        except Exception as error:
+                            CLAIMS.record(asyncio.get_running_loop().time() - sent, {"result": "failed"})
+                            # Running attempts keep their slots and leases; the next scan tries again.
+                            logger.warning(
+                                "Claim failed",
+                                extra={
+                                    "error_type": type(error).__name__,
+                                    "exception_details": exception_details(error),
+                                },
+                            )
+                            failed = True
+                            continue
+                        CLAIMS.record(
+                            asyncio.get_running_loop().time() - sent, {"result": "claimed" if leases else "empty"}
                         )
-                    except Exception as error:
-                        CLAIMS.record(asyncio.get_running_loop().time() - sent, {"result": "failed"})
-                        # Running attempts keep their slots and leases; the next scan tries again.
-                        logger.warning(
-                            "Claim failed",
-                            extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
-                        )
-                        await asyncio.sleep(settings.scan_seconds)
-                        continue
-                    CLAIMS.record(
-                        asyncio.get_running_loop().time() - sent, {"result": "claimed" if leases else "empty"}
-                    )
-                    for lease in leases:
-                        self.free -= 1
-                        control = AttemptControl(
-                            deadline=sent + settings.lease_seconds, renewal_margin=settings.lease_seconds / 3
-                        )
-                        task = group.create_task(self._attempt(lease, control), name=f"attempt-{lease.attempt_id}")
-                        self.running[lease.attempt_id] = _Running(lease, control, task)
-                    self._report_slots()
-                    if leases:
-                        logger.info(
-                            "Worker claim batch",
-                            extra={"members": members, "claimed": len(leases), "free_slots": self.free},
-                        )
-                    if leases and members != 1:
+                        for lease in leases:
+                            if realtime:
+                                self.realtime_free -= 1
+                            else:
+                                self.free -= 1
+                            control = AttemptControl(
+                                deadline=sent + settings.lease_seconds, renewal_margin=settings.lease_seconds / 3
+                            )
+                            task = group.create_task(self._attempt(lease, control), name=f"attempt-{lease.attempt_id}")
+                            self.running[lease.attempt_id] = _Running(lease, control, task)
+                        self._report_slots()
+                        saturated |= len(leases) == requested
+                        if leases:
+                            claimed = True
+                            logger.info(
+                                "Worker claim batch",
+                                extra={
+                                    "members": members,
+                                    "claimed": len(leases),
+                                    "free_slots": self.realtime_free if realtime else self.free,
+                                    "realtime": realtime,
+                                },
+                            )
+                    if failed or (claimed and members != 1):
                         # Wake markers must not let one worker immediately consume another share.
                         await asyncio.sleep(settings.scan_seconds)
-                    elif len(leases) < requested:
+                    elif not saturated:
                         await wait_for_wake(self.runtime.redis, timeout=settings.scan_seconds)
             except asyncio.CancelledError:
                 await self._drain()
@@ -211,7 +231,10 @@ class Worker:
                 )
             finally:
                 self.running.pop(lease.attempt_id, None)
-                self.free += 1
+                if lease.realtime:
+                    self.realtime_free += 1
+                else:
+                    self.free += 1
                 self._report_slots()
                 self.slot_released.set()
 

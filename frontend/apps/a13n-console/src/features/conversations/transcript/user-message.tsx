@@ -22,6 +22,7 @@ export function UserMessage({
   principalId?: string | null;
 }) {
   const { t } = useTranslation();
+  if (request.kind === "realtime_session") return null;
   return (
     <div className={styles.userTurn}>
       {request.kind === "message" ? (
@@ -39,6 +40,8 @@ export function UserMessage({
 /** The words a resolved request is worth; the decision itself is `request.ts`. */
 export function requestLabel(request: RunRequest, t: TFunction): string {
   switch (request.kind) {
+    case "realtime_session":
+      return t("Realtime session");
     case "memory_organization":
       return t("Memory organization");
     case "feedback":
@@ -63,6 +66,7 @@ export function requestLabel(request: RunRequest, t: TFunction): string {
 /** What the request carried, rendered the same way at either level. */
 export function RequestContent({ request }: { request: RunRequest }) {
   const { t } = useTranslation();
+  if (request.kind === "realtime_session") return null;
   if (request.kind === "tool_result")
     return (
       <>
@@ -103,6 +107,28 @@ export function RequestContent({ request }: { request: RunRequest }) {
       </>
     );
   return <InputContent input={request.input} fallback={request.text} />;
+}
+
+export function RealtimeInputMessage({
+  text,
+  itemId,
+}: {
+  text: string;
+  itemId?: string;
+}) {
+  return (
+    <div className={styles.userTurn}>
+      <article className={styles.userMessage}>
+        <div className={styles.prose}>
+          {itemId ? (
+            <StoredContent itemId={itemId} field="text" value={text} />
+          ) : (
+            text
+          )}
+        </div>
+      </article>
+    </div>
+  );
 }
 
 /** Guidance arrived while the agent worked: the same bubble, drawn open. */

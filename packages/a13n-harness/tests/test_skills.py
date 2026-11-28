@@ -1191,7 +1191,7 @@ async def test_skill_file_views_survive_cold_resume_without_current_skill_catalo
         assert part.metadata == ({"a13n.cold-start": "preserve"} if path in protected else None)
         assert part.content["ok"] is (path != failed)
         if path != failed:
-            assert part.content["content"] == (tmp_path / path).read_text(encoding="utf-8")
+            assert part.content["content"] == (tmp_path / path).read_text(encoding="utf-8", newline="")
             assert "a13n.cold-start" not in part.content
 
     history = list(first.state.message_history)
@@ -1618,15 +1618,16 @@ async def test_file_source_can_skip_invalid_plugin_entries_without_hiding_valid_
 
 
 # Each case once exceeded its view profile's page budget; ordinary files at 2000 never did.
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize(("skill_path", "max_line_length"), [(True, 2000), (False, 262_144)])
 async def test_large_view_bounds_return_successful_pages(
-    tmp_path: Path, skill_path: bool, max_line_length: int
+    tmp_path: Path, skill_path: bool, max_line_length: int, line_ending: str
 ) -> None:
     skill = tmp_path / ".agents" / "skills" / "review"
     skill.mkdir(parents=True)
-    content = "---\nname: review\ndescription: Review code.\n---\n\n" + "line\n" * 46
-    (skill / "SKILL.md").write_text(content)
-    (tmp_path / "notes.md").write_text(content)
+    content = ("---\nname: review\ndescription: Review code.\n---\n\n" + "line\n" * 46).replace("\n", line_ending)
+    (skill / "SKILL.md").write_text(content, encoding="utf-8", newline="")
+    (tmp_path / "notes.md").write_text(content, encoding="utf-8", newline="")
     relative = ".agents/skills/review/SKILL.md" if skill_path else "notes.md"
     viewed = await _run_single_view(
         tmp_path,
@@ -1651,7 +1652,7 @@ async def test_skill_default_and_larger_agent_line_requests_are_effective(
     skill = tmp_path / ".agents" / "skills" / "review"
     skill.mkdir(parents=True)
     content = "---\nname: review\ndescription: Review code.\n---\n\n" + "line\n" * 900
-    (skill / "SKILL.md").write_text(content)
+    (skill / "SKILL.md").write_text(content, encoding="utf-8", newline="\n")
     viewed = await _run_single_view(
         tmp_path,
         capability=SkillsCapability(_manager()),
@@ -1674,7 +1675,7 @@ async def test_model_clipped_first_line_does_not_skip_later_source_lines(
     (skill / "SKILL.md").write_text("---\nname: review\ndescription: Review.\n---\n")
     first_line = "中文𐐀" * 12_000 + "\n"
     path = skill / "guide.md" if skill_path else tmp_path / "notes.md"
-    path.write_text(first_line + tail, encoding="utf-8")
+    path.write_text(first_line + tail, encoding="utf-8", newline="\n")
     logical_path = f"/workspace/{path.relative_to(tmp_path).as_posix()}"
     viewed = await _run_single_view(
         tmp_path,

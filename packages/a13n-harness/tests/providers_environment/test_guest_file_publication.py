@@ -86,12 +86,12 @@ async def test_guest_new_file_permissions_retain_guest_umask(tmp_path, guest_fil
     assert not list(tmp_path.glob(".a13n-write-*"))
 
 
-async def test_guest_replacement_preserves_symlink_and_target_permissions(tmp_path, guest_files):
+async def test_guest_replacement_preserves_symlink_and_target_permissions(tmp_path, guest_files, symlink):
     target = tmp_path / "target"
     target.write_text("old\n")
     target.chmod(0o755)
     link = tmp_path / "link"
-    link.symlink_to(target.name)
+    symlink(link, target.name)
     await guest_files.write_text("/link", "new\n", mode="replace")
     assert link.is_symlink()
     assert target.read_text() == "new\n"
@@ -173,7 +173,7 @@ async def test_guest_archive_uploads_once_and_extracts_only_manifest(tmp_path, g
 
 
 @pytest.mark.parametrize("existing", ["directory", "file", "symlink"])
-async def test_guest_archive_never_overwrites_existing_destination(tmp_path, guest_files, existing):
+async def test_guest_archive_never_overwrites_existing_destination(tmp_path, guest_files, existing, symlink):
     target = tmp_path / "target"
     target.mkdir()
     (target / "keep").write_bytes(b"keep")
@@ -183,7 +183,7 @@ async def test_guest_archive_never_overwrites_existing_destination(tmp_path, gue
     elif existing == "file":
         destination.write_bytes(b"keep")
     else:
-        destination.symlink_to(target, target_is_directory=True)
+        symlink(destination, target, target_is_directory=True)
     with pytest.raises(EnvironmentError) as error:
         await guest_files.write_archive("/candidate", archive({"SKILL.md": b"new"}))
     assert error.value.code == "environment_conflict"

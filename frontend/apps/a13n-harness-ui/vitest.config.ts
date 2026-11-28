@@ -1,4 +1,11 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
+
+// Keep the Python App protocol suites and their fixture tests off the jsdom runners in CI.
+const protocolTests = [
+  "**/protocol.test.ts",
+  "**/*-protocol.test.ts",
+  "tests/app-fixture.test.ts",
+];
 
 export default defineConfig({
   test: {
@@ -6,8 +13,21 @@ export default defineConfig({
     // Threads share one process; forks re-load every dependency per worker.
     pool: "threads",
     // Bound concurrent jsdom initialization so focus/readiness checks retain
-    // their normal deadlines; also leave capacity for real Python App fixtures.
+    // their normal deadlines.
     maxWorkers: 4,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          exclude: [...configDefaults.exclude, ...protocolTests],
+        },
+      },
+      {
+        extends: true,
+        test: { name: "protocol", include: protocolTests },
+      },
+    ],
     deps: {
       optimizer: {
         client: {

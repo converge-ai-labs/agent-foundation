@@ -7,9 +7,10 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import Literal, TypedDict, cast
 
 from sqlalchemy import ColumnElement, Select, and_, case, delete, exists, func, or_, select, true, update
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import aliased
 
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
@@ -17,6 +18,7 @@ from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 from a13n_harness_ui.external_context import ExternalContext
+from a13n_harness_ui.thread_link_models import ThreadLink, ThreadLinkKind, UrlLink, WorktreeLink
 
 from .compaction import CompactionSettlement, settle_compaction
 from .contracts import (
@@ -53,11 +55,25 @@ from .models import (
     ResourceIndexRecord,
     ShareGrantRecord,
     ThreadConfigurationRecord,
+    ThreadLinkRecord,
     ThreadRecord,
     ThreadRunRecord,
     ToolExecutionHeadRecord,
 )
 from .objects import ObjectKind, ObjectRef
+
+
+class _LinkFields(TypedDict):
+    label: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+def _thread_link(row: ThreadLinkRecord) -> ThreadLink:
+    details = _LinkFields(label=row.label, created_at=row.created_at, updated_at=row.updated_at)
+    if row.kind == "worktree":
+        return WorktreeLink(path=row.target, **details)
+    return UrlLink(url=row.target, **details)
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,6 +356,44 @@ class ThreadRepository:
             await session.flush()
             return _thread_value(record, configuration)
 
+    async def links(self, thread_id: str) -> tuple[ThreadLink, ...]:
+        async with short_session(self._sessions) as session:
+            rows = await session.scalars(
+                select(ThreadLinkRecord)
+                .where(ThreadLinkRecord.thread_id == thread_id)
+                .order_by(ThreadLinkRecord.created_at, ThreadLinkRecord.kind, ThreadLinkRecord.target)
+            )
+            return tuple(_thread_link(row) for row in rows)
+
+    async def link(self, thread_id: str, kind: ThreadLinkKind, target: str, label: str | None) -> ThreadLink:
+        now = datetime.now(UTC)
+        statement = insert(ThreadLinkRecord).values(
+            thread_id=thread_id, kind=kind, target=target, label=label, created_at=now, updated_at=now
+        )
+        async with transaction(self._sessions) as session:
+            await session.execute(
+                statement.on_conflict_do_update(
+                    index_elements=[ThreadLinkRecord.thread_id, ThreadLinkRecord.kind, ThreadLinkRecord.target],
+                    set_={"label": label, "updated_at": now},
+                    where=ThreadLinkRecord.label.is_distinct_from(label),
+                )
+            )
+            row = await session.get_one(ThreadLinkRecord, (thread_id, kind, target))
+            return _thread_link(row)
+
+    async def unlink(self, thread_id: str, kind: ThreadLinkKind, target: str) -> bool:
+        async with transaction(self._sessions) as session:
+            result = await session.execute(
+                delete(ThreadLinkRecord)
+                .where(
+                    ThreadLinkRecord.thread_id == thread_id,
+                    ThreadLinkRecord.kind == kind,
+                    ThreadLinkRecord.target == target,
+                )
+                .returning(ThreadLinkRecord.target)
+            )
+            return result.scalar_one_or_none() is not None
+
     async def fork(
         self,
         *,
@@ -430,14 +484,34 @@ class ThreadRepository:
             await session.flush()
             copied_configuration = source.configuration.model_copy(update={"version": 1})
             session.add(_configuration_record(thread_id, copied_configuration))
+            links = await session.scalars(
+                select(ThreadLinkRecord).where(ThreadLinkRecord.thread_id == source.thread_id)
+            )
+            session.add_all(
+                ThreadLinkRecord(
+                    thread_id=thread_id,
+                    kind=link.kind,
+                    target=link.target,
+                    label=link.label,
+                    created_at=link.created_at,
+                    updated_at=link.updated_at,
+                )
+                for link in links
+            )
             await session.flush()
             return _thread_value(record, copied_configuration)
 
-    async def promote_coordinator(self, thread_id: str) -> None:
+    async def promote_coordinator(
+        self,
+        thread_id: str,
+        *,
+        clear_acp_state: bool = False,
+        acp_state_json: str | None = None,
+    ) -> bool:
         """Atomically establish a one-way role; worker ownership is never inferred."""
         async with transaction(self._sessions) as session:
             if await session.get(CoordinatorRecord, thread_id) is not None:
-                return
+                return False
             thread = await session.get(ThreadRecord, thread_id)
             configuration = await session.get(ThreadConfigurationRecord, thread_id)
             worker = await session.get(CoordinatorWorkerRecord, thread_id)
@@ -450,6 +524,9 @@ class ThreadRepository:
             if thread.archived:
                 raise StoreConflictError("Restore the Thread before converting it.", code="thread_archived")
             session.add(CoordinatorRecord(thread_id=thread_id))
+            if clear_acp_state:
+                thread.acp_state_json = acp_state_json
+            return True
 
     async def coordinators(self, thread_ids: tuple[str, ...] | None = None) -> dict[str, Coordinator]:
         if thread_ids is not None and not thread_ids:

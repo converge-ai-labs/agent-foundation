@@ -128,7 +128,9 @@ export function DebugRunSection({
           {!open && (
             <>
               <span className={styles.headingExcerpt}>
-                {resultExcerpt(request.text, 200) || t("No request text")}
+                {request.kind === "realtime_session"
+                  ? requestLabel(request, t)
+                  : resultExcerpt(request.text, 200) || t("No request text")}
               </span>
               <span className={styles.headingDuration}>
                 {formatDuration(duration)}
@@ -179,25 +181,27 @@ export function DebugRunSection({
       {open && (
         <RunLog>
           <AgentRow scope={scope} onOpen={() => setConfiguring(true)} />
-          <LogBlock
-            time={formatOffset(0)}
-            label={t("Input")}
-            source={
-              request.kind === "message" ? (
-                <MessageAuthor
-                  entryId={run.source_entry_id}
-                  principalId={run.principal_id}
-                  plain
-                />
-              ) : (
-                requestLabel(request, t)
-              )
-            }
-          >
-            <Clamp>
-              <RequestContent request={request} />
-            </Clamp>
-          </LogBlock>
+          {request.kind !== "realtime_session" && (
+            <LogBlock
+              time={formatOffset(0)}
+              label={t("Input")}
+              source={
+                request.kind === "message" ? (
+                  <MessageAuthor
+                    entryId={run.source_entry_id}
+                    principalId={run.principal_id}
+                    plain
+                  />
+                ) : (
+                  requestLabel(request, t)
+                )
+              }
+            >
+              <Clamp>
+                <RequestContent request={request} />
+              </Clamp>
+            </LogBlock>
+          )}
           {(timeline.coverage === "partial" ||
             timeline.coverage === "unavailable") && (
             <p role="status" className={styles.coverage}>

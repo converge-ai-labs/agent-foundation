@@ -31,6 +31,7 @@ from a13n_service.providers.traces import TraceProvider
 from a13n_service.resources.builtin_skills import BuiltinPackage, BuiltinSkillName
 from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.mailbox import Mailbox
+from a13n_service.runs.realtime_transport import Bridge
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access
 from a13n_service.tenancy.workspaces import WorkspaceCreated
@@ -80,6 +81,7 @@ class Runtime:
     has_environment_subscribers: bool = False
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
+    realtime_bridge: Bridge | None = field(default=None, repr=False)
 
     @cached_property
     def post_run_tasks(self) -> set[asyncio.Task[None]]:

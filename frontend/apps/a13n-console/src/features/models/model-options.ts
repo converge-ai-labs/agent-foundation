@@ -1,3 +1,13 @@
+import type { Schema } from "../../shared/api";
+
+export function realtimeModelApis(
+  definitions: Schema["ProviderType"][] | undefined,
+) {
+  return new Set(
+    definitions?.flatMap((item) => item.realtime_model_apis ?? []),
+  );
+}
+
 /** A model key: lowercase letters, digits, `-` and `.`. */
 export const keyPattern = "[a-z0-9][a-z0-9.\\-]{0,127}";
 

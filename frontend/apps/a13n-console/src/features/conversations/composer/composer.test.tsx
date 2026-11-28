@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,10 +9,17 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
+import { RealtimeCallProvider, RealtimeComposer } from "../realtime";
 import { Composer } from "./composer";
 
+const getRun = vi.hoisted(() => vi.fn());
+const ticketRequest = vi.hoisted(() => vi.fn());
 vi.mock("../../../auth/context", () => ({
-  useClient: () => ({ http: {}, workspace: () => ({}) }),
+  useClient: () => ({
+    http: {},
+    workspace: () => ({ POST: ticketRequest, GET: getRun }),
+  }),
 }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -25,7 +33,7 @@ vi.mock("react-i18next", () => ({
 }));
 afterEach(cleanup);
 
-function mount(submit: (input: unknown, key: string) => Promise<unknown>) {
+function mount(submit: (input: unknown, key: string) => Promise<void | false>) {
   render(
     <QueryClientProvider
       client={
@@ -98,4 +106,367 @@ it("retains message and attachment drafts when closing the attachment dialog", a
     type: "url",
     url: "https://example.com/report.pdf",
   });
+});
+
+it("keeps the waveform action usable after audio startup fails with an empty draft", async () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <RealtimeCallProvider>
+          <RealtimeComposer
+            agentId="agent"
+            availability={{
+              realtime: true,
+              can_start: true,
+              accepts_text: true,
+            }}
+            onAccepted={vi.fn()}
+          />
+        </RealtimeCallProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const input = screen.getByRole("textbox", { name: "Message" });
+  expect(input).toBeInstanceOf(HTMLTextAreaElement);
+  const voice = screen.getByRole("button", { name: "Start voice chat" });
+  expect(voice.closest("form")).toBe(input.closest("form"));
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      constructor() {
+        throw new Error("Audio output unavailable");
+      }
+    },
+  );
+  try {
+    fireEvent.click(voice);
+    expect(await screen.findByText("Audio output unavailable")).toBeTruthy();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  fireEvent.change(input, { target: { value: "Typed input" } });
+  const withDraft = screen.getByRole("button", { name: "Start voice chat" });
+  expect((withDraft as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+});
+
+it("keeps an unsent draft when opening the microphone is cancelled", async () => {
+  let finishPermission!: (stream: MediaStream) => void;
+  const permission = new Promise<MediaStream>((resolve) => {
+    finishPermission = resolve;
+  });
+  const getUserMedia = vi.fn(() => permission);
+  const track = { stop: vi.fn() };
+  const close = vi.fn(async () => {});
+  const originalMedia = Object.getOwnPropertyDescriptor(
+    navigator,
+    "mediaDevices",
+  );
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia },
+  });
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      resume = async () => {};
+      close = close;
+    },
+  );
+  const connect = vi.fn();
+  vi.stubGlobal(
+    "WebSocket",
+    class {
+      constructor() {
+        connect();
+      }
+    },
+  );
+  try {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <RealtimeCallProvider>
+            <RealtimeComposer
+              agentId="agent"
+              initial={{ content: [{ type: "text", text: "Keep this draft" }] }}
+              availability={{
+                realtime: true,
+                can_start: true,
+                accepts_text: true,
+              }}
+              onAccepted={vi.fn()}
+            />
+          </RealtimeCallProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const input = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Message",
+    });
+    const start = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Start voice chat",
+    });
+    fireEvent.click(start);
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
+    finishPermission({ getTracks: () => [track] } as unknown as MediaStream);
+    await waitFor(() => {
+      expect(start.disabled).toBe(false);
+      expect(track.stop).toHaveBeenCalledOnce();
+    });
+    expect(close).toHaveBeenCalledOnce();
+    expect(connect).not.toHaveBeenCalled();
+    expect(input.value).toBe("Keep this draft");
+    expect(screen.queryByRole("alert")).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+    if (originalMedia)
+      Object.defineProperty(navigator, "mediaDevices", originalMedia);
+    else Reflect.deleteProperty(navigator, "mediaDevices");
+  }
+});
+
+it("uses the ordinary composer shortcuts for a voice draft", async () => {
+  const submit = vi.fn(async (_payload: unknown) => {});
+  const open = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Composer submit={submit} onEmptySubmit={open} />
+    </QueryClientProvider>,
+  );
+  const input = screen.getByRole("textbox", { name: "Message" });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(open).not.toHaveBeenCalled();
+
+  fireEvent.change(input, { target: { value: "Typed input" } });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+  expect(submit.mock.calls[0]![0]).toEqual({
+    content: [{ type: "text", text: "Typed input" }],
+  });
+});
+
+it.each([true, false])("follows a Run (accepted: %s)", async (seen) => {
+  const receipt = {
+    session_id: "session",
+    thread_id: "thread",
+    run_id: "run",
+  };
+  const path = "/workspace/design/sessions/session/threads/thread/runs/run";
+  ticketRequest.mockResolvedValue({
+    response: new Response(),
+    data: {
+      ...receipt,
+      websocket_path: "/realtime",
+      subprotocol: "test",
+      ticket: "ticket",
+    },
+  });
+  const close = vi.fn();
+  const send = vi.fn();
+  const accepted = vi.fn();
+  getRun.mockReset();
+  let socket: Socket;
+  class Socket {
+    static OPEN = 1;
+    static CLOSING = 2;
+    readyState = Socket.OPEN;
+    close = close;
+    send = send;
+    onmessage?: (event: MessageEvent) => void;
+    onclose?: (event: CloseEvent) => void;
+    constructor() {
+      socket = this;
+    }
+  }
+  const stop = vi.fn();
+  let clock = 0;
+  const sources: {
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+  }[] = [];
+  const port = {
+    onmessage: undefined as ((event: MessageEvent) => void) | undefined,
+  };
+  vi.stubGlobal("WebSocket", Socket);
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      get currentTime() {
+        return clock;
+      }
+      getOutputTimestamp = () => ({ contextTime: clock });
+      createBuffer = (_channels: number, count: number) => ({
+        duration: count / 24000,
+        getChannelData: () => new Float32Array(count),
+      });
+      createBufferSource = () => {
+        const source = { start: vi.fn(), stop: vi.fn(), connect: vi.fn() };
+        sources.push(source);
+        return source;
+      };
+      resume = async () => {};
+      close = async () => {};
+      audioWorklet = { addModule: async () => {} };
+      createMediaStreamSource = () => ({ connect: vi.fn() });
+    },
+  );
+  vi.stubGlobal(
+    "AudioWorkletNode",
+    class {
+      port = port;
+      connect() {}
+      disconnect() {}
+    },
+  );
+  const media = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: async () => ({ getTracks: () => [{ stop }] }),
+    },
+  });
+  function Dial({ inRun }: { inRun: boolean }) {
+    const navigate = useNavigate();
+    return (
+      <RealtimeComposer
+        agentId="agent"
+        displayedRunId={inRun ? "run" : undefined}
+        availability={{
+          realtime: true,
+          can_start: !inRun,
+          accepts_text: true,
+        }}
+        onAccepted={(receipt) => {
+          accepted(receipt);
+          navigate(path);
+        }}
+      />
+    );
+  }
+  const receive = (frame: object) =>
+    act(() =>
+      socket.onmessage?.(
+        new MessageEvent("message", { data: JSON.stringify(frame) }),
+      ),
+    );
+  try {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/new"]}>
+          <RealtimeCallProvider>
+            <Routes>
+              <Route path="/new" element={<Dial key="new" inRun={false} />} />
+              <Route path={path} element={<Dial key="run" inRun />} />
+            </Routes>
+          </RealtimeCallProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start voice chat" }));
+    await waitFor(() => expect(socket?.onmessage).toBeDefined());
+    if (!seen) {
+      getRun.mockResolvedValueOnce({
+        response: new Response(null, { status: 404 }),
+      });
+      getRun.mockResolvedValueOnce({
+        response: new Response(),
+        data: { sealed_at: null },
+      });
+      vi.useFakeTimers();
+      await act(async () =>
+        socket.onclose?.(new CloseEvent("close", { code: 1006 })),
+      );
+      expect(getRun).toHaveBeenCalledOnce();
+      expect(accepted).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(500));
+      expect(getRun).toHaveBeenCalledTimes(2);
+      expect(accepted).toHaveBeenCalledExactlyOnceWith(receipt);
+      return;
+    }
+    receive({ type: "accepted", ...receipt });
+    receive({
+      type: "ready",
+      accepts_text: true,
+      supports_interruption: true,
+    });
+    expect(
+      screen.getByRole("button", { name: "Interrupt response" }),
+    ).toBeTruthy();
+    receive({
+      type: "approval_required",
+      call_id: "old",
+      name: "Lookup order",
+      arguments: "{}",
+    });
+    receive({
+      type: "approval_required",
+      call_id: "new",
+      name: "Look up stock",
+      arguments: "{}",
+    });
+    receive({ type: "approval_expired", call_id: "old" });
+    expect(screen.queryByText("Lookup order")).toBeNull();
+    expect(screen.getByText("Look up stock")).toBeTruthy();
+    const speech = () =>
+      port.onmessage?.(new MessageEvent("message", { data: "speech" }));
+    speech();
+    expect(send).not.toHaveBeenCalled();
+    for (const offset of [0, 9600]) {
+      if (offset) receive({ type: "playback_position", offset });
+      act(() =>
+        socket.onmessage?.(
+          new MessageEvent("message", { data: new ArrayBuffer(4800) }),
+        ),
+      );
+      const current = sources.at(-1)!;
+      clock = current.start.mock.calls[0]![0] + 0.03125;
+      speech();
+      expect(current.stop).toHaveBeenCalledOnce();
+      expect(send).toHaveBeenLastCalledWith(
+        JSON.stringify({ type: "interrupt", played_bytes: offset + 1500 }),
+      );
+      receive({ type: "interrupted" });
+      clock = 1;
+    }
+    act(() =>
+      socket.onmessage?.(
+        new MessageEvent("message", { data: new ArrayBuffer(4800) }),
+      ),
+    );
+    clock += 1;
+    const count = send.mock.calls.length;
+    speech();
+    expect(send).toHaveBeenCalledTimes(count);
+    expect(close).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
+    expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "stop" }));
+    expect(stop).toHaveBeenCalledOnce();
+    getRun.mockResolvedValueOnce({
+      response: new Response(),
+      data: { sealed_at: null },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10500);
+    });
+    expect(close).toHaveBeenCalled();
+    expect(getRun).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Saving conversation…")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+    cleanup();
+    vi.unstubAllGlobals();
+    if (media) Object.defineProperty(navigator, "mediaDevices", media);
+    else Reflect.deleteProperty(navigator, "mediaDevices");
+  }
 });

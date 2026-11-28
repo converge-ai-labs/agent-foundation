@@ -133,8 +133,13 @@ async def test_worker_uses_member_count_and_waits_between_shared_batches(service
         storage=original.storage,
         redis=original.redis,
         executions=original.executions,
+        realtime_bridge=original.realtime_bridge,
         settings=original.settings.model_copy(
-            update={"worker": original.settings.worker.model_copy(update={"slots": 128, "scan_seconds": 0.05})}
+            update={
+                "worker": original.settings.worker.model_copy(
+                    update={"slots": 128, "realtime_slots": 12, "scan_seconds": 0.05}
+                )
+            }
         ),
     )
     membership = SimpleNamespace(refresh=AsyncMock(return_value=count), leave=AsyncMock())
@@ -147,11 +152,14 @@ async def test_worker_uses_member_count_and_waits_between_shared_batches(service
 
     async def take(runtime, **kwargs):
         calls.append((asyncio.get_running_loop().time(), kwargs))
-        if len(calls) == 2:
+        if len(calls) == 3:
             reached.set()
         # Single-worker full batches may immediately refill; all other successful
         # batches must wait even when there are free slots and wake markers.
-        return [SimpleNamespace(attempt_id=f"attempt-{len(calls)}-{i}") for i in range(kwargs["limit"])]
+        return [
+            SimpleNamespace(attempt_id=f"attempt-{len(calls)}-{i}", realtime=kwargs["realtime"])
+            for i in range(kwargs["limit"])
+        ]
 
     worker = module.Worker(runtime, None)
     monkeypatch.setattr(module, "claim", take)
@@ -162,7 +170,10 @@ async def test_worker_uses_member_count_and_waits_between_shared_batches(service
 
     async def finish(lease, control):
         worker.running.pop(lease.attempt_id)
-        worker.free += 1
+        if lease.realtime:
+            worker.realtime_free += 1
+        else:
+            worker.free += 1
         worker.slot_released.set()
 
     async def drain():
@@ -175,10 +186,13 @@ async def test_worker_uses_member_count_and_waits_between_shared_batches(service
     try:
         async with asyncio.timeout(3):
             await reached.wait()
-        assert calls[0][1]["limit"] == expected_limit
-        assert calls[0][1]["members"] == (count if count is not None else 1)
+        assert [(call["realtime"], call["limit"], call["members"]) for _, call in calls[:3]] == [
+            (False, expected_limit, count if count is not None else 1),
+            (True, 8 if count is None else 12, count if count is not None else 1),
+            (False, expected_limit, count if count is not None else 1),
+        ]
         if count != 1:
-            assert calls[1][0] - calls[0][0] >= runtime.settings.worker.scan_seconds
+            assert calls[2][0] - calls[1][0] >= runtime.settings.worker.scan_seconds
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)

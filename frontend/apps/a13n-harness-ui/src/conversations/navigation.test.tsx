@@ -485,8 +485,12 @@ it("switches search language without losing scope, focus, loaded history or the 
   );
   const older = await screen.findByRole("link", { name: "Older two" });
   const selected = screen.getByRole("link", { name: "selected-old" });
-  await user.click(screen.getByRole("button", { name: "Search chats" }));
+  const calls = activity.length;
+  const trigger = screen.getByRole("button", { name: "Search chats" });
+  await user.click(trigger);
   const search = screen.getByRole("searchbox", { name: "Find chats" });
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  expect(activity).toHaveLength(calls);
   await user.click(screen.getByRole("combobox", { name: "Project scope" }));
   const projectSearch = screen.getByRole("combobox", { name: "Find project" });
   await user.type(projectSearch, "Tw");
@@ -499,7 +503,8 @@ it("switches search language without losing scope, focus, loaded history or the 
   expect(document.activeElement).toBe(projectSearch);
   expect(vi.mocked(fetch).mock.calls).toHaveLength(beforeFilterSwitch);
   await user.click(screen.getByRole("option", { name: "Two" }));
-  await user.type(search, "match");
+  expect(activity).toHaveLength(calls);
+  fireEvent.change(search, { target: { value: "match" } });
   const match = await screen.findByRole("link", { name: "Global match" });
   expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-two");
   const beforeSwitch = vi.mocked(fetch).mock.calls.length;
@@ -515,12 +520,29 @@ it("switches search language without losing scope, focus, loaded history or the 
   expect(vi.mocked(fetch).mock.calls).toHaveLength(beforeSwitch);
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(trigger);
+  expect(activity).toHaveLength(calls + 1);
   expect(screen.getByRole("link", { name: "Older two" })).toBe(older);
   expect(screen.getByRole("link", { name: "selected-old" })).toBe(selected);
   expect(selected.getAttribute("aria-current")).toBe("page");
   expect(screen.getByLabelText("Current route").textContent).toBe(
     "/threads/selected-old",
   );
+  await user.click(trigger);
+  expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("combobox", { name: "Project scope" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Clear project filter" }),
+  ).toBeNull();
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "match" },
+  });
+  const globalMatch = await screen.findByRole("link", { name: "Global match" });
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(globalMatch);
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByText("/threads/Global%20match")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "One" }));
   await act(() => i18n.changeLanguage("zh-CN"));
   expect(
@@ -911,49 +933,6 @@ it("does not cancel an in-flight Show more when a summary event refreshes naviga
   expect(screen.getByText("Older two")).toBeTruthy();
   expect(activity).toHaveLength(4); // first + next, then one coalesced two-page refresh
   expect(pageAborted).toBe(false);
-});
-
-it("scopes the search dialog without resetting the sidebar's loaded pages", async () => {
-  mount();
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "One" }));
-  await screen.findByText("Recent 5");
-  await user.click(
-    screen.getByRole("button", { name: "Show more chats in One" }),
-  );
-  await screen.findByText("Older two");
-  const calls = activity.length;
-  const trigger = screen.getByRole("button", { name: "Search chats" });
-  await user.click(trigger);
-  const search = screen.getByRole("searchbox", { name: "Find chats" });
-  await waitFor(() => expect(document.activeElement).toBe(search));
-  expect(activity).toHaveLength(calls);
-  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
-  await user.click(await screen.findByRole("option", { name: "Two" }));
-  expect(activity).toHaveLength(calls);
-  fireEvent.change(search, { target: { value: "match" } });
-  await screen.findByText("Global match");
-  expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-two");
-  await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(document.activeElement).toBe(trigger);
-  expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
-  expect(activity).toHaveLength(calls + 1);
-  await user.click(trigger);
-  expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
-  expect(screen.getByRole("combobox", { name: "Project scope" })).toBeTruthy();
-  expect(
-    screen.queryByRole("button", { name: "Clear project filter" }),
-  ).toBeNull();
-  fireEvent.change(screen.getByRole("searchbox"), {
-    target: { value: "match" },
-  });
-  const match = await screen.findByRole("link", { name: "Global match" });
-  await user.keyboard("{ArrowDown}");
-  expect(document.activeElement).toBe(match);
-  await user.keyboard("{Enter}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(screen.getByText("/threads/Global%20match")).toBeTruthy();
 });
 
 it("preserves status labels, title tooltips and independent action menus from the polished navigation", async () => {
@@ -1570,7 +1549,7 @@ it("keeps an off-page owner in Running while its worker is active without loadin
     "off-page-owner",
   );
   expect(
-    screen.getByRole("button", { name: "Restore off-page-owner" }),
+    screen.getByRole("button", { name: "Actions for off-page-owner" }),
   ).toBeTruthy();
   expect(screen.queryByRole("link", { name: /off-page-worker/ })).toBeNull();
   expect(
@@ -1834,7 +1813,7 @@ it("keeps an archived owner reachable for a visible worker outside the owner pag
     name: /archived-owner.*Coordinator.*Archived/,
   });
   expect(
-    screen.getByRole("button", { name: "Restore archived-owner" }),
+    screen.getByRole("button", { name: "Actions for archived-owner" }),
   ).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for archived-owner" }),
@@ -2783,7 +2762,7 @@ it("keeps an archived Coordinator reachable for an unselected active worker in R
   });
   await within(recent).findByRole("link", { name: /archived-owner/ });
   expect(
-    within(recent).getByRole("button", { name: "Restore archived-owner" }),
+    within(recent).getByRole("button", { name: "Actions for archived-owner" }),
   ).toBeTruthy();
   expect(
     within(recent).queryByRole("link", { name: /active-worker/ }),
@@ -2849,7 +2828,7 @@ it("does not resurrect an archived owner for an idle worker in Recent, while kee
   ).toBeNull();
   expect(
     within(recent).getByRole("button", {
-      name: "Restore selected-archived-owner",
+      name: "Actions for selected-archived-owner",
     }),
   ).toBeTruthy();
   fireEvent.click(

@@ -367,7 +367,15 @@ async def primary_source(
     return policy.template_id
 
 
-async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, source: Source) -> RunRow:
+async def start_run(
+    session: AsyncSession,
+    runtime: Runtime,
+    thread: ThreadRow,
+    source: Source,
+    *,
+    preallocated_id: str | None = None,
+    realtime_transport: str | None = None,
+) -> RunRow:
     """Create the accepted run. The caller holds the thread lock and has checked eligibility.
 
     Every check that can refuse the source, admission included, runs before any row the caller loaded changes,
@@ -376,6 +384,15 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     await require_active_workspace(session, thread.workspace_id)
     principal, revision, options = source.principal, source.revision, source.options
+    from a13n_service.providers.realtime import PROTOCOLS
+    from a13n_service.resources.models.service import resolve_model
+
+    effective = stored.require_effective(revision.config, options.overrides, revision_id=revision.definition_id)
+    model = await resolve_model(session, principal, scope, effective.model, authority=source.authority)
+    if (source.trigger == "realtime") != (model.config.model_api in PROTOCOLS):
+        raise invalid("model", "Realtime models require a realtime conversation")
+    if realtime_transport == "webrtc" and not PROTOCOLS[model.config.model_api].webrtc:
+        raise invalid("transport", "The selected model does not support WebRTC")
     if source.revision_selection not in {"inherited", "snapshot"}:
         policy = ExecutionPolicy().overlay(
             ExecutionOverride(
@@ -492,7 +509,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             authority=source.authority,
             primary=has_primary(mounts),
         )
-    run_id = new_object_id("run")
+    run_id = preallocated_id or new_object_id("run")
     if runtime.admission is not None:
         await runtime.admission.accept(
             session,
@@ -561,7 +578,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         ),
         status="accepted",
         available_at=current,
-        max_attempts=runtime.settings.worker.max_attempts,
+        max_attempts=1 if source.trigger == "realtime" else runtime.settings.worker.max_attempts,
         labels=dict(options.labels),
     )
     session.add(run)
@@ -597,7 +614,7 @@ async def _accepted(run_id: str, thread_id: str, trigger: Trigger) -> None:
 
 async def _source(
     session: AsyncSession, runtime: Runtime, thread: ThreadRow, entry: InboxEntryRow, explicit: Source | None
-) -> Source | Failure:
+) -> Source:
     if explicit is not None and entry is explicit.entry:
         return explicit
     if entry.kind == "message":
@@ -636,21 +653,18 @@ async def accept(
         # An explicit submission may start that new message; unrelated pending entries never replace it.
         entries = [explicit.entry] if explicit is not None and explicit.entry is not None else []
     else:
-        entries = await inbox.pending_entries(session, thread.id, limit=SCAN)
+        entries = await inbox.pending_entries(session, thread.id, limit=SCAN, auto_start=True)
     for entry in entries:
         try:
             source = await _source(session, runtime, thread, entry, explicit)
-            if isinstance(source, Source):
-                # A savepoint makes one entry's rejection its own; database errors still abort the transaction.
-                async with session.begin_nested():
-                    return await start_run(session, runtime, thread, source)
+            async with session.begin_nested():
+                return await start_run(session, runtime, thread, source)
         except ServiceError as error:
             if error.code == "unavailable" or (
                 explicit is not None and entry is explicit.entry and explicit.atomic_initial_acceptance
             ):
                 raise
-            source = Failure.of(error)
-        inbox.fail(entry, source, at=await now(session))
+            inbox.fail(entry, Failure.of(error), at=await now(session))
         await session.flush()
     return None
 
@@ -686,7 +700,7 @@ class ThreadAdvancer:
     async def __call__(self) -> None:
         pending = (
             select(InboxEntryRow.thread_id)
-            .where(InboxEntryRow.status == "pending", InboxEntryRow.thread_id > self.after)
+            .where(InboxEntryRow.status == "pending", InboxEntryRow.thread_id > self.after, inbox.auto_startable())
             .distinct(InboxEntryRow.thread_id)
             .order_by(InboxEntryRow.thread_id, InboxEntryRow.position)
             .subquery()

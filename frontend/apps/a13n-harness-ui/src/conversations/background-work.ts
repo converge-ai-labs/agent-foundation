@@ -11,10 +11,13 @@ import {
 
 export type BackgroundSection = "subagents" | "tools";
 export type WorkSection = "tasks" | "notes";
-export type ActivitySection = BackgroundSection | WorkSection;
+export type LinkSection = "worktrees" | "links";
+export type ActivitySection = BackgroundSection | WorkSection | LinkSection;
 export const SECTION_LABELS: Record<ActivitySection, string> = {
   tasks: "Tasks",
   notes: "Notes",
+  worktrees: "Worktrees",
+  links: "Links",
   subagents: "Subagents",
   tools: "Tool calls",
 };
@@ -46,7 +49,9 @@ export function targetSection(target: BackgroundTarget) {
   return target.kind === "subagents" ||
     target.kind === "tools" ||
     target.kind === "tasks" ||
-    target.kind === "notes"
+    target.kind === "notes" ||
+    target.kind === "worktrees" ||
+    target.kind === "links"
     ? target.kind
     : undefined;
 }

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, JsonValue
-from sqlalchemy import func, select, text, tuple_, update
+from sqlalchemy import and_, exists, func, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import matches
@@ -351,9 +351,25 @@ async def reorder(session: AsyncSession, thread: ThreadRow, entry_ids: Sequence[
     await session.flush()
 
 
-async def pending_entries(session: AsyncSession, thread_id: str, *, limit: int) -> Sequence[InboxEntryRow]:
-    """The first `limit` pending entries in position order."""
+BACKGROUND_NOTICES = frozenset({"tool_result", "child_result", "child_message"})
+
+
+def auto_startable():
+    return ~and_(
+        InboxEntryRow.kind.in_(BACKGROUND_NOTICES),
+        exists().where(RunRow.id == InboxEntryRow.origin_run_id, RunRow.trigger == "realtime"),
+    )
+
+
+async def pending_entries(
+    session: AsyncSession, thread_id: str, *, limit: int, kinds: frozenset[str] | None = None, auto_start: bool = False
+) -> Sequence[InboxEntryRow]:
+    """The first `limit` eligible pending entries in position order."""
     query = select(InboxEntryRow).where(InboxEntryRow.thread_id == thread_id, InboxEntryRow.status == "pending")
+    if auto_start:
+        query = query.where(auto_startable())
+    if kinds is not None:
+        query = query.where(InboxEntryRow.kind.in_(kinds))
     return (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit).with_for_update())).all()
 
 
@@ -409,6 +425,11 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
         return origin is not None and (origin.id == run.id or origin.sealed_at is not None)
     options = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
     accepted = stored.require(RunOptions, run.options, kind="run", id=run.id)
+    return compatible_steer(entry, options, run, accepted)
+
+
+def compatible_steer(entry: InboxEntryRow | Message, options: RunOptions, run: RunRow, accepted: RunOptions) -> bool:
+    """Use the same submitted choices to select the receiving Run at validation and assignment."""
     configuration = accepted.configuration
     requested_output = options.overrides.output_spec if options.overrides else None
     accepted_output = accepted.overrides.output_spec if accepted.overrides else None
@@ -430,13 +451,20 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
 
 
 async def assign_steers(
-    session: AsyncSession, thread: ThreadRow, run: RunRow, *, max_count: int, max_bytes: int, scan: int
+    session: AsyncSession,
+    thread: ThreadRow,
+    run: RunRow,
+    *,
+    max_count: int,
+    max_bytes: int,
+    scan: int,
+    kinds: frozenset[str] | None = None,
 ) -> list[InboxEntryRow]:
     """A bounded FIFO batch of compatible pending entries for the next model request of `run`.
 
     Incompatible entries stay pending for a later run and take no part in the batch's budget.
     """
-    candidates = await pending_entries(session, thread.id, limit=scan)
+    candidates = await pending_entries(session, thread.id, limit=scan, kinds=kinds)
     origins = await _origins(session, candidates)
     chosen: list[InboxEntryRow] = []
     size = 0
@@ -524,6 +552,17 @@ async def release_assigned(session: AsyncSession, thread: ThreadRow, run: RunRow
     Consumed entries stay consumed either way: they record committed incorporation, not successful work.
     """
     values: dict[str, object]
+    if run.trigger == "realtime" and run.status in {"failed", "cancelled"}:
+        notices = update(InboxEntryRow).where(
+            InboxEntryRow.assigned_run_id == run.id,
+            InboxEntryRow.status == "assigned",
+            InboxEntryRow.kind.in_(BACKGROUND_NOTICES),
+        )
+        await session.execute(
+            notices.values(status="pending", assigned_run_id=None)
+            if thread.archived_at is None
+            else notices.values(status="withdrawn", finished_at=at)
+        )
     if run.status in {"completed", "waiting"}:
         values = (
             {"status": "pending", "assigned_run_id": None}

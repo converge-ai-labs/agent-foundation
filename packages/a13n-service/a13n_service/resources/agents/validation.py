@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import at_field, conflict, invalid, not_found
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.providers.registry import Registry, WebOperation, web_operations
 from a13n_service.resources.agents import definition, stored, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, PluginSelection, SkillSelection, SubagentSelection
@@ -29,7 +30,13 @@ from a13n_service.resources.environment_instances.access import lock_environment
 from a13n_service.resources.environment_templates.service import resolve_template
 from a13n_service.resources.memories.service import resolve_memory
 from a13n_service.resources.memories.tables import MemorySpaceRow
-from a13n_service.resources.models.service import model_settings, resolve_media_model, resolve_model
+from a13n_service.resources.models.service import (
+    model_settings,
+    require_request_model,
+    resolve_media_model,
+    resolve_model,
+)
+from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import WebProviderRow
 from a13n_service.resources.rows import find_row
@@ -92,9 +99,12 @@ async def validate_config(
     policy = config.subagents.dynamic
     if policy.default_model is not None and policy.default_model not in {config.model, *policy.allowed_models}:
         raise invalid("subagents.dynamic.default_model", "Must be the parent model or an allowed model")
+    if policy.enabled and policy.default_model in {None, config.model}:
+        require_request_model(model, field="subagents.dynamic.default_model")
     for key in policy.allowed_models:
         with at_field("subagents.dynamic.allowed_models"):
-            await resolve_model(session, actor, scope, key, verb=verb, authority=authority)
+            allowed = await resolve_model(session, actor, scope, key, verb=verb, authority=authority)
+            require_request_model(allowed, field="subagents.dynamic.allowed_models")
     if policy.default_thinking is not None:
         target = (
             model
@@ -113,6 +123,7 @@ async def validate_config(
     if config.reviewer is not None:
         with at_field("reviewer.model"):
             reviewer = await resolve_model(session, actor, scope, config.reviewer.model, verb=verb, authority=authority)
+        require_request_model(reviewer, field="reviewer.model")
         model_settings(
             reviewer.config,
             reviewer.provider,
@@ -421,6 +432,7 @@ async def subagent_graph(
     # The inline agents at one depth, each with the root edge its path leaves through; a revision reached
     # through several paths is followed once per depth.
     level: dict[str | None, tuple[AgentConfig, str | None]] = {None: (config, None)}
+    realtime_revisions: set[str] = set()
     depth = 0
     while level:
         wanted = {
@@ -428,11 +440,18 @@ async def subagent_graph(
         } - graph.keys()
         if wanted:
             rows = await session.execute(
-                select(AgentRevisionRow, AgentRow)
+                select(AgentRevisionRow, AgentRow, ModelRow.config["model_api"].astext)
                 .join(AgentRow, AgentRow.id == AgentRevisionRow.agent_id)
+                .outerjoin(
+                    ModelRow,
+                    (ModelRow.workspace_id == AgentRevisionRow.workspace_id)
+                    & (ModelRow.key == AgentRevisionRow.config["model"].astext),
+                )
                 .where(AgentRevisionRow.workspace_id == workspace_id, AgentRevisionRow.id.in_(wanted))
             )
-            for revision, head in rows.tuples():
+            for revision, head, model_api in rows.tuples():
+                if model_api in PROTOCOLS:
+                    realtime_revisions.add(revision.id)
                 graph[revision.id] = Subagent(
                     agent_id=revision.agent_id,
                     revision_id=revision.id,
@@ -447,6 +466,8 @@ async def subagent_graph(
                 child = graph.get(edge.revision_id or "")
                 if child is None or child.agent_id != edge.agent_id:
                     raise invalid(path, "a pinned subagent revision is missing")
+                if child.revision_id in realtime_revisions:
+                    raise invalid(path, "Subagents require a non-realtime model")
                 if node.subagents.mode != "inline":
                     continue
                 if child.agent_id == agent_id:

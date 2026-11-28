@@ -1637,14 +1637,17 @@ async def test_compaction_failure_is_fail_open() -> None:
     assert "Original task" in str(result.all_messages())
 
 
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize("line_count", [100, 200, 500, 1000])
-async def test_file_context_reads_short_lines_in_one_bounded_page(tmp_path: Path, monkeypatch, line_count: int) -> None:
+async def test_file_context_reads_short_lines_in_one_bounded_page(
+    tmp_path: Path, monkeypatch, line_count: int, line_ending: str
+) -> None:
     from a13n_harness.capabilities.context import _read_file_context
     from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
     from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
 
-    content = ("x" * 79 + "\n") * line_count
-    (tmp_path / "guidance").write_text(content)
+    content = ("x" * 79 + line_ending) * line_count
+    (tmp_path / "guidance").write_text(content, encoding="utf-8", newline="")
     files = LocalFileOperator(
         root=tmp_path,
         policy=_DirectLocalFilePolicy(max_value_bytes=128 * 1024),
@@ -1827,17 +1830,18 @@ async def test_project_guidance_bounds_scanning_and_output(tmp_path: Path, count
     assert all(path.endswith("/.agents/skills") for path in payload["skill_directories"])
 
 
-async def test_project_guidance_marks_failed_probes_and_skips_symlink_children(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("linked_child", [False, True], ids=["failed-probe", "with-symlink"])
+async def test_project_guidance_marks_failed_probes_and_skips_symlink_children(
+    tmp_path: Path, monkeypatch, linked_child, symlink
+) -> None:
     from a13n_harness.environment.models import EnvironmentError
     from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 
     for name in ("allowed", "denied"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "AGENTS.md").write_text("BODY")
-    try:
-        (tmp_path / "linked").symlink_to(tmp_path / "allowed", target_is_directory=True)
-    except OSError:
-        pass  # Windows may not allow symlink creation without Developer Mode.
+    if linked_child:
+        symlink(tmp_path / "linked", tmp_path / "allowed", target_is_directory=True)
     original = LocalFileOperator.stat
 
     async def stat(self, path):

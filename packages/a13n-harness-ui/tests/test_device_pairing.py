@@ -16,7 +16,7 @@ from a13n_harness_ui.webui import create_webui
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 TOKEN = "a" * 64
 REQUEST = {"device_id": "native-paired", "name": "My workstation"}
 

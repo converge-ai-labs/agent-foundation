@@ -1,5 +1,5 @@
 import { ChoiceField, DisclosureSection } from "a13n-ui";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { FieldHelp } from "../../../shared/forms";
@@ -23,12 +23,10 @@ import styles from "./editor.module.css";
 export function ToolSearchSection({
   draft,
   readOnly,
-  mark,
   error,
 }: {
   draft: AgentDraft;
   readOnly: boolean;
-  mark?: ReactNode;
   error?: Error;
 }) {
   const { t } = useTranslation();
@@ -60,7 +58,6 @@ export function ToolSearchSection({
   const automatic = value.automatic != null;
   return (
     <>
-      {mark}
       <div data-slot="tool-discovery-fields" className={styles.searchFields}>
         <ChoiceField
           popupClassName={formStyles.compactChoicePopup}

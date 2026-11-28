@@ -124,7 +124,7 @@ Run Details leads with agent/duration/timestamps; identifiers and trace links si
 
 With multiple runs, Debug at widths ≥1000px uses a 1440px page and 240px sticky run index. Two-line entries show status, name, input excerpt and monospace cost/calls/duration columns. Sticky metric headings sort either way; Order restores chronology. The scrollbar appears on hover. Narrow layouts use a pinned previous/next/list pill. Earlier runs and Later runs are quiet full-width pagination rows with directional chevrons, also used in the narrow menu.
 
-The floating composer has a borderless editor, left attachment/options and round right Send. Cmd/Ctrl+Enter sends; Enter and Shift+Enter insert newlines. Run options use one column with primary model fields and an instruction switch above collapsed groups. Expanded groups match Agent details; the instruction editor appears only when enabled. Changed options mark the composer with a dot. Keep Restore defaults left and Cancel/Apply right, with independent body scrolling.
+The floating composer has a borderless editor, left attachment/options and round right Send. For ordinary messages Cmd/Ctrl+Enter sends; Enter and Shift+Enter insert newlines. Realtime uses the same editor and shortcuts. Its round waveform button becomes Hang up during a call. Interrupt response appears immediately to the left of Hang up when the connected model supports manual interruption. Run options use one column with primary model fields and an instruction switch above collapsed groups. Expanded groups match Agent details; the instruction editor appears only when enabled. Changed options mark the composer with a dot. Keep Restore defaults left and Cancel/Apply right, with independent body scrolling.
 
 ## Navigation and Motion
 

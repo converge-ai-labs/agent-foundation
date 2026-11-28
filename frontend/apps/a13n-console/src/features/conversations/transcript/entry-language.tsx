@@ -14,12 +14,14 @@ import {
   GitBranchIcon,
   HandPalmIcon,
   MagnifyingGlassIcon,
+  MicrophoneIcon,
   PauseIcon,
   PencilSimpleIcon,
   QuestionIcon,
   SparkleIcon,
   SquareIcon,
   TerminalWindowIcon,
+  TextTIcon,
   UsersThreeIcon,
   WarningCircleIcon,
   WrenchIcon,
@@ -60,6 +62,7 @@ export type WorkState =
   | "done"
   | "working"
   | "waiting"
+  | "expired"
   | "interrupted"
   | "failed"
   | "unknown"
@@ -73,6 +76,7 @@ const ENTRY_FAILED = ["failed", "error", "cancelled", "rejected"];
 const TURN_REMINDER = "a13n.service.reminder";
 
 export function workState(state: string, runState = "running"): WorkState {
+  if (state === "expired") return "expired";
   if (state === "completed") return "done";
   if (state === "handed_off") return "handed_off";
   if (ENTRY_FAILED.includes(state)) return "failed";
@@ -103,6 +107,11 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
       return { name: t("Reasoning"), mono: false };
     case "reply":
       return { name: t("Reply"), mono: false };
+    case "user_input":
+      return {
+        name: entry.speech ? t("Voice input") : t("Text input"),
+        mono: false,
+      };
     case "guidance":
       return {
         name:
@@ -212,6 +221,8 @@ export function entryGlyph(entry: TimelineEntry): Icon {
       return SparkleIcon;
     case "reply":
       return ArrowBendUpRightIcon;
+    case "user_input":
+      return entry.speech ? MicrophoneIcon : TextTIcon;
     case "guidance":
       return ArrowElbowDownRightIcon;
     case "hidden":
@@ -305,17 +316,19 @@ export function StateMark({
   const { t } = useTranslation();
   if (state === "unknown") return null;
   const name =
-    state === "handed_off"
-      ? t("Execution handed off")
-      : state === "working"
-        ? t("Working")
-        : state === "waiting"
-          ? t("Waiting")
-          : state === "failed"
-            ? t("Failed")
-            : state === "interrupted"
-              ? t("Interrupted")
-              : t("Completed");
+    state === "expired"
+      ? t("state.expired")
+      : state === "handed_off"
+        ? t("Execution handed off")
+        : state === "working"
+          ? t("Working")
+          : state === "waiting"
+            ? t("Waiting")
+            : state === "failed"
+              ? t("Failed")
+              : state === "interrupted"
+                ? t("Interrupted")
+                : t("Completed");
   const Glyph =
     state === "handed_off"
       ? ArrowBendUpRightIcon
@@ -325,7 +338,7 @@ export function StateMark({
           ? PauseIcon
           : state === "failed"
             ? XIcon
-            : state === "interrupted"
+            : state === "interrupted" || state === "expired"
               ? WarningCircleIcon
               : CheckIcon;
   return (

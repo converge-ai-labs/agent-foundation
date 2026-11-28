@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 
 from .test_background_compaction import _input, _summary
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def _age(database, operation_id: str) -> None:

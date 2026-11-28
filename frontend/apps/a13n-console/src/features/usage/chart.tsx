@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   Popover,
   PopoverPopup,
@@ -122,7 +122,15 @@ export function UsageChart({
               <span>{t("Select a day to inspect its usage.")}</span>
             )}
           </div>
-          <div className={styles.chart}>
+          <div
+            className={styles.chart}
+            style={
+              {
+                // Leave at least half of the plot for bars even on narrow screens.
+                "--usage-bar-gap": `min(${days.length <= 14 ? 10 : days.length <= 35 ? 4 : days.length <= 90 ? 1 : 0}px, calc(50% / ${days.length}))`,
+              } as CSSProperties
+            }
+          >
             <div className={styles.axis} aria-hidden="true">
               {ticks.map((value) => (
                 <span key={value}>{value}</span>

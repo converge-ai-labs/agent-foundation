@@ -23,8 +23,8 @@ interface Attachment {
 
 /**
  * The composer floats over the end of the transcript: a borderless text area,
- * the attachment and option affordances at the left, and one round send button
- * whose label always names the action it performs.
+ * the attachment and option affordances at the left, and send controls at the
+ * right. The round send button's label always names the action it performs.
  */
 export function Composer({
   initial,
@@ -33,23 +33,45 @@ export function Composer({
   placeholder,
   disabled = false,
   submitDisabled = false,
+  submitIcon,
+  onEmptySubmit,
   agentName,
+  textInput = true,
+  attachmentsEnabled = true,
   options,
+  primaryAction,
+  actionBeforeSubmit,
   stop,
   stopping = false,
 }: {
   /** A message to start from, such as one being submitted again. */
   initial?: Schema["MessagePayload"];
-  submit: (payload: Schema["MessagePayload"], key: string) => Promise<unknown>;
+  /** Return false when a cancelled submission should keep the draft. */
+  submit: (
+    payload: Schema["MessagePayload"],
+    key: string,
+  ) => Promise<void | false>;
   /** Names the action: Send, Add guidance, Send message. */
   label?: string;
   placeholder?: string;
   disabled?: boolean;
   /** Block sending while keeping configuration controls available for correction. */
   submitDisabled?: boolean;
+  submitIcon?: ReactNode;
+  onEmptySubmit?: () => void;
   agentName?: string;
+  textInput?: boolean;
+  attachmentsEnabled?: boolean;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
+  actionBeforeSubmit?: ReactNode;
+  /** Replaces the primary button while keyboard submission still sends a draft. */
+  primaryAction?: {
+    label: string;
+    icon: ReactNode;
+    onClick: () => void;
+    disabled?: boolean;
+  };
   /** Interrupts the active run; the empty-draft send button becomes Stop. */
   stop?: () => void;
   stopping?: boolean;
@@ -71,8 +93,8 @@ export function Composer({
     input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
     // A message that still fits has nothing to scroll, whatever the rounding.
     input.style.overflowY = input.scrollHeight > 240 ? "auto" : "hidden";
-  }, [text]);
-  const [attachments, setAttachments] = useState<Attachment[]>(
+  }, [text, textInput]);
+  const [draftAttachments, setAttachments] = useState<Attachment[]>(
     initial?.content.flatMap((part): Attachment[] =>
       part.type === "asset"
         ? [{ part, label: part.asset_id }]
@@ -81,12 +103,14 @@ export function Composer({
           : [],
     ) ?? [],
   );
-  const [structured, setStructured] = useState(() => {
+  const attachments = attachmentsEnabled ? draftAttachments : [];
+  const [structuredDraft, setStructured] = useState(() => {
     const json = initial?.content.find(
       (part): part is Schema["JsonPart"] => part.type === "json",
     );
     return json ? JSON.stringify(json.value, null, 2) : "";
   });
+  const structured = attachmentsEnabled ? structuredDraft : "";
   const [key, setKey] = useState(crypto.randomUUID()),
     [uploadFile, setUploadFile] = useState<{ file: File; key: string }>();
   const changed = () => setKey(crypto.randomUUID());
@@ -129,7 +153,7 @@ export function Composer({
         structuredContent === undefined
       )
         throw new Error(t("Write a message or attach content first."));
-      await submit(
+      return await submit(
         {
           content: [
             ...(text.trim() ? [{ type: "text" as const, text }] : []),
@@ -142,10 +166,13 @@ export function Composer({
         key,
       );
     },
-    onSuccess: () => {
+    onSuccess: (submitted) => {
+      if (submitted === false) return;
       setText("");
-      setAttachments([]);
-      setStructured("");
+      if (attachmentsEnabled) {
+        setAttachments([]);
+        setStructured("");
+      }
       changed();
     },
   });
@@ -155,7 +182,8 @@ export function Composer({
   }
   const busy = mutation.isPending || upload.isPending;
   const action = label ?? t("Send");
-  const empty = !text.trim() && !attachments.length && !structured.trim();
+  const empty =
+    (!textInput || !text.trim()) && !attachments.length && !structured.trim();
   // A run in flight and nothing to say: the one round button stops it instead.
   const stopMode = !!stop && empty;
   return (
@@ -164,46 +192,50 @@ export function Composer({
       className={styles.composer}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!disabled && !submitDisabled && !busy) mutation.mutate();
+        if (disabled || submitDisabled || busy) return;
+        if (empty && onEmptySubmit) onEmptySubmit();
+        else if (!empty || !primaryAction) mutation.mutate();
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.fields}>
-        <Textarea
-          ref={messageInput}
-          rows={1}
-          unstyled
-          className={styles.messageInput}
-          aria-label={t("Message")}
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-          placeholder={
-            placeholder ??
-            (agentName
-              ? t("Message {{agent}}…", { agent: agentName })
-              : t("Message your agent…"))
-          }
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value);
-            changed();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && stopMode) {
-              event.preventDefault();
-              stop?.();
-              return;
+        {textInput && (
+          <Textarea
+            ref={messageInput}
+            rows={1}
+            unstyled
+            className={styles.messageInput}
+            aria-label={t("Message")}
+            aria-keyshortcuts="Meta+Enter Control+Enter"
+            placeholder={
+              placeholder ??
+              (agentName
+                ? t("Message {{agent}}…", { agent: agentName })
+                : t("Message your agent…"))
             }
-            if (
-              event.key !== "Enter" ||
-              !(event.metaKey || event.ctrlKey) ||
-              event.shiftKey ||
-              event.altKey ||
-              event.nativeEvent.isComposing
-            )
-              return;
-            event.preventDefault();
-            if (!busy && !disabled) event.currentTarget.form?.requestSubmit();
-          }}
-        />
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value);
+              changed();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && stopMode) {
+                event.preventDefault();
+                stop?.();
+                return;
+              }
+              if (
+                event.key !== "Enter" ||
+                !(event.metaKey || event.ctrlKey) ||
+                event.shiftKey ||
+                event.altKey ||
+                event.nativeEvent.isComposing
+              )
+                return;
+              event.preventDefault();
+              if (!busy && !disabled) event.currentTarget.form?.requestSubmit();
+            }}
+          />
+        )}
         {!!attachments.length && (
           <div className={styles.attachments}>
             {attachments.map((attachment, index) => (
@@ -233,7 +265,7 @@ export function Composer({
         )}
         <div className={styles.tools}>
           <AttachDialog
-            disabled={disabled || busy}
+            disabled={disabled || busy || !attachmentsEnabled}
             structured={structured}
             onStructuredChange={(value) => {
               setStructured(value);
@@ -255,38 +287,58 @@ export function Composer({
           {options}
         </div>
       </fieldset>
-      <div className={styles.send}>
-        <span className={styles.hint}>
-          {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
-        </span>
-        {stopMode ? (
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="default"
-            className={styles.sendButton}
-            aria-label={t("Stop")}
-            title={t("Stop")}
-            loading={stopping}
-            onClick={stop}
-          >
-            <SquareIcon size={12} weight="fill" />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            size="icon-sm"
-            variant="default"
-            className={styles.sendButton}
-            aria-label={action}
-            title={action}
-            disabled={empty || disabled || submitDisabled || busy}
-            loading={mutation.isPending}
-          >
-            <ArrowUpIcon size={15} />
-          </Button>
-        )}
-      </div>
+      {(textInput || stopMode || submitIcon || primaryAction) && (
+        <div className={styles.send}>
+          {(textInput || stopMode) && (
+            <span className={styles.hint}>
+              {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
+            </span>
+          )}
+          {actionBeforeSubmit}
+          {stopMode ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="default"
+              className={styles.sendButton}
+              aria-label={t("Stop")}
+              title={t("Stop")}
+              loading={stopping}
+              onClick={stop}
+            >
+              <SquareIcon size={12} weight="fill" />
+            </Button>
+          ) : primaryAction ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="default"
+              className={styles.sendButton}
+              aria-label={primaryAction.label}
+              title={primaryAction.label}
+              disabled={disabled || primaryAction.disabled}
+              onClick={primaryAction.onClick}
+            >
+              {primaryAction.icon}
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              size="icon-sm"
+              variant="default"
+              className={styles.sendButton}
+              aria-label={action}
+              title={action}
+              disabled={
+                (empty && !onEmptySubmit) || disabled || submitDisabled || busy
+              }
+              loading={mutation.isPending && !submitIcon}
+            >
+              {submitIcon ?? <ArrowUpIcon size={15} />}
+            </Button>
+          )}
+        </div>
+      )}
       <ErrorNotice error={mutation.error} />
       <ErrorNotice
         error={upload.error}

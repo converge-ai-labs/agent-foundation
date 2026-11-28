@@ -57,6 +57,8 @@ Use the sidebar menu to switch between **Projects** (grouped by directory) and *
 
 ### Everyday conversation actions
 
+Right-click a sidebar conversation or open its three-dot menu to access the same actions. The archived chats list offers Restore and Delete beside each eligible chat.
+
 | Action                        | How to do it                                                                                  |
 | ----------------------------- | --------------------------------------------------------------------------------------------- |
 | Send / line break             | `Enter` sends by default; `Shift+Enter` inserts a new line                                    |
@@ -71,6 +73,10 @@ Use the sidebar menu to switch between **Projects** (grouped by directory) and *
 Editing replaces the selected message and everything after it. Keep or remove its existing attachments as you edit. If a Run is active, **Stop & send** stops it before sending the replacement. Press `Escape` to cancel the edit and leave the Run alone.
 
 To require `Ctrl+Enter` (`⌘+Enter` on Apple devices), go to **Settings → Chats → Chat input**, change **Send messages with**, and save changes. The setting is stored as `webui.send_shortcut` in the instance configuration and applies across browsers. In that mode, `Enter` and `Shift+Enter` both insert a new line. On touch-first devices, the on-screen Enter key inserts a new line in either mode.
+
+To customize workbench keys, open **Settings → Chats → Keyboard shortcuts**, choose a binding for each action, and save changes. By default, `Ctrl+F` (`⌘F` on Apple devices) opens chat search, and the terminal uses `` Ctrl+` `` to open or close and `` Ctrl+Shift+` `` to create a session. The other actions start off. Choose **Off** to disable a shortcut without hiding its control. The owner workbench reads these choices from `webui.shortcuts` in the instance configuration. If you edit the YAML directly, quote the value `"off"`.
+
+New chat offers `Ctrl+Shift+O` (`⌘⇧O`) for browser tabs. Browsers normally reserve `Ctrl+N` (`⌘N`) for a new window; choose it for an installed app window or desktop shell. Similarly, use an installed app window or desktop shell for `⌘,` on macOS, where browsers use the chord for their own settings. Editors keep local find, and the Host Browser and terminal retain their own keyboard input.
 
 Messages and Markdown previews render LaTeX math (`$inline$` and `$$display$$`). Shared drafts persist across reloads and show a pencil indicator on the sidebar row until sent or cleared.
 
@@ -113,6 +119,12 @@ With a Project attached and computer sharing enabled:
 - **Host browser:** Let the Agent browse or annotate screenshots together—see [Host browser](host-browser.md#browse-on-the-host).
 - **Interactive MCP Apps:** Opted-in [MCP Apps](mcp-apps.md) render inline beside tool results; click **Open App** and **Activate interactions** to use them.
 
+### Work in a separate Git worktree
+
+For a Git project in **Full Control** with computer sharing enabled, open the composer's **Chat options**, turn on **Worktree**, and send your task. The Agent uses the project's conventions to create and register an isolated Git worktree. You can also ask it to link a worktree, pull request, issue, or any HTTP(S) URL during an existing chat.
+
+Open **Activity** in the chat header (which displays compact worktree and link icons when references exist) to see **Worktrees** and **Links** alongside **Tasks** and **Notes**, or click **View all** to open a dedicated supporting tab. Use **Changes**, **Files**, or **Terminal** to open a worktree at its path. **Unlink** removes the bookmark and leaves the files on disk. Links follow chat forks and branches; scoped guests don't see worktrees or links.
+
 ## Voice input
 
 1. Open **Settings → Chats → Dictation**, choose **Codex subscription** (or an audio-input Model), and enable **Voice input**.
@@ -126,7 +138,9 @@ Agents post final results, milestones, and items needing your decision to **Inbo
 1. Open **Inbox** below conversation search. **Needs you** items appear first, followed by **Updates**.
 2. Click a row to read it in place, **Open in chat** to jump to the originating turn, or **Mark as done** to clear it.
 3. Use the two icons beside **Needs you** or **Updates**: **Mark all as read** clears unread marks and leaves items in **Open**; **Mark all as done** moves the entire section to **Done**. Both include items you have not loaded.
-4. To disable Inbox posting for new runs, turn off **Settings → Chats → Inbox → Let agents post to Inbox** (`inbox.enabled: false`).
+4. In a chat, use the **Sent to Inbox** card’s envelope and checkmark to change its read or Done state without leaving the conversation. On a Done card, use **Move back to Open** to reopen it.
+
+By default, viewing the latest saved output in a focused chat, sending a message, or responding to a decision marks earlier Inbox items read. Turn off **Settings → Chats → Inbox → Automatically mark Inbox items as read in chats** (`inbox.auto_mark_read: false`) to keep automatic reading off. Opening an item directly still reads that item. The separate **Let agents post to Inbox** switch controls posting for new runs (`inbox.enabled`).
 
 ## Share a Thread or Project
 

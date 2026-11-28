@@ -795,10 +795,10 @@
         }
       }
     },
-    "/api/inbox/threads/{thread_id}/unread": {
+    "/api/inbox/threads/{thread_id}": {
       "get": {
-        "summary": "Thread Inbox Unread",
-        "operationId": "thread_inbox_unread_api_inbox_threads__thread_id__unread_get",
+        "summary": "Thread Inbox Posts",
+        "operationId": "thread_inbox_posts_api_inbox_threads__thread_id__get",
         "parameters": [
           {
             "name": "thread_id",
@@ -818,9 +818,9 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/InboxUnreadPost"
+                    "$ref": "#/components/schemas/ThreadInboxPost"
                   },
-                  "title": "Response Thread Inbox Unread Api Inbox Threads  Thread Id  Unread Get"
+                  "title": "Response Thread Inbox Posts Api Inbox Threads  Thread Id  Get"
                 }
               }
             }
@@ -3886,6 +3886,85 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FileCaptureRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/links": {
+      "get": {
+        "summary": "Thread Links",
+        "operationId": "thread_links_api_threads__thread_id__links_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadLinksView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unlink Thread Resource",
+        "operationId": "unlink_thread_resource_api_threads__thread_id__links_delete",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlinkThreadResource"
               }
             }
           }
@@ -12578,10 +12657,18 @@
             "title": "Send Shortcut",
             "default": "enter"
           },
+          "shortcuts": {
+            "$ref": "#/components/schemas/WebUiShortcutsConfiguration"
+          },
           "coordinator_by_default": {
             "type": "boolean",
             "title": "Coordinator By Default",
             "default": false
+          },
+          "inbox_auto_mark_read": {
+            "type": "boolean",
+            "title": "Inbox Auto Mark Read",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -19177,6 +19264,58 @@
         ],
         "title": "GitDiscovery"
       },
+      "GitHubLinkView": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pr",
+              "issue",
+              "discussion"
+            ],
+            "title": "Kind"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "draft",
+                  "merged",
+                  "closed",
+                  "answered"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "number"
+        ],
+        "title": "GitHubLinkView"
+      },
       "GitRepository": {
         "properties": {
           "root": {
@@ -19975,36 +20114,6 @@
           "updates"
         ],
         "title": "InboxUnreadCounts"
-      },
-      "InboxUnreadPost": {
-        "properties": {
-          "item_id": {
-            "type": "string",
-            "title": "Item Id"
-          },
-          "tool_call_id": {
-            "type": "string",
-            "title": "Tool Call Id"
-          },
-          "has_transcript": {
-            "type": "boolean",
-            "title": "Has Transcript"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "item_id",
-          "tool_call_id",
-          "has_transcript",
-          "created_at"
-        ],
-        "title": "InboxUnreadPost"
       },
       "InputPredictionResponse": {
         "properties": {
@@ -27589,6 +27698,91 @@
         "title": "ThreadExecution",
         "type": "object"
       },
+      "ThreadInboxPost": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "tool_call_id": {
+            "type": "string",
+            "title": "Tool Call Id"
+          },
+          "has_transcript": {
+            "type": "boolean",
+            "title": "Has Transcript"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "tool_call_id",
+          "has_transcript",
+          "created_at",
+          "read_at",
+          "done_at"
+        ],
+        "title": "ThreadInboxPost"
+      },
+      "ThreadLinksView": {
+        "properties": {
+          "worktrees": {
+            "items": {
+              "$ref": "#/components/schemas/WorktreeLinkView"
+            },
+            "type": "array",
+            "title": "Worktrees"
+          },
+          "urls": {
+            "items": {
+              "$ref": "#/components/schemas/UrlLinkView"
+            },
+            "type": "array",
+            "title": "Urls"
+          },
+          "worktree_mode_available": {
+            "type": "boolean",
+            "title": "Worktree Mode Available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "worktrees",
+          "urls",
+          "worktree_mode_available"
+        ],
+        "title": "ThreadLinksView"
+      },
       "ThreadModelDisplay": {
         "additionalProperties": false,
         "description": "Read-only display summary of a Thread's effective Agent and Model.",
@@ -29105,6 +29299,59 @@
         "title": "UrlInputSupport",
         "description": "URL subtypes consumed natively by the selected transport."
       },
+      "UrlLinkView": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "url",
+            "title": "Kind",
+            "default": "url"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "github": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GitHubLinkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "created_at",
+          "updated_at",
+          "url"
+        ],
+        "title": "UrlLinkView"
+      },
       "UsageAnalyticsView": {
         "properties": {
           "as_of": {
@@ -30195,6 +30442,91 @@
         ],
         "title": "WebProviderType"
       },
+      "WebUiShortcutsConfiguration": {
+        "properties": {
+          "new_chat": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-shift-o",
+              "mod-n"
+            ],
+            "title": "New Chat",
+            "default": "off"
+          },
+          "search_chats": {
+            "type": "string",
+            "enum": [
+              "mod-f",
+              "mod-k",
+              "both",
+              "off"
+            ],
+            "title": "Search Chats",
+            "default": "mod-f"
+          },
+          "toggle_sidebar": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-b",
+              "mod-shift-s"
+            ],
+            "title": "Toggle Sidebar",
+            "default": "off"
+          },
+          "toggle_supporting_panel": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-j"
+            ],
+            "title": "Toggle Supporting Panel",
+            "default": "off"
+          },
+          "open_files": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-shift-e"
+            ],
+            "title": "Open Files",
+            "default": "off"
+          },
+          "open_changes": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-shift-g"
+            ],
+            "title": "Open Changes",
+            "default": "off"
+          },
+          "terminal": {
+            "type": "string",
+            "enum": [
+              "ctrl-backtick",
+              "off"
+            ],
+            "title": "Terminal",
+            "default": "ctrl-backtick"
+          },
+          "open_settings": {
+            "type": "string",
+            "enum": [
+              "off",
+              "mod-comma"
+            ],
+            "title": "Open Settings",
+            "default": "off"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "WebUiShortcutsConfiguration"
+      },
       "WorkbenchPage": {
         "additionalProperties": false,
         "properties": {
@@ -30217,6 +30549,68 @@
         },
         "title": "WorkbenchPage",
         "type": "object"
+      },
+      "WorktreeLinkView": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "implicit": {
+            "type": "boolean",
+            "title": "Implicit",
+            "default": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unavailable",
+              "ready",
+              "detached",
+              "removed"
+            ],
+            "title": "State",
+            "default": "unavailable"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "head_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Oid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "WorktreeLinkView"
       },
       "InteractiveAuthentication": {
         "additionalProperties": false,
@@ -31064,6 +31458,7 @@
               "root_operation",
               "child_execution",
               "thread_work",
+              "thread_links",
               "draft",
               "inbox"
             ],
@@ -32768,6 +33163,31 @@
           "expected_revision"
         ],
         "title": "FileCaptureRequest",
+        "type": "object"
+      },
+      "UnlinkThreadResource": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "worktree",
+              "url"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target"
+        ],
+        "title": "UnlinkThreadResource",
         "type": "object"
       },
       "GitCaptureRequest": {
@@ -34632,7 +35052,8 @@
             "default": "normal",
             "enum": [
               "normal",
-              "goal"
+              "goal",
+              "worktree"
             ],
             "title": "Mode",
             "type": "string"

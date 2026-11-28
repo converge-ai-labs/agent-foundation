@@ -48,6 +48,7 @@ export function AttachDialog({
           type="button"
           variant="ghost"
           size="icon-sm"
+          disabled={disabled}
           aria-label={t("Attach file or URL")}
         >
           <PaperclipIcon size={16} />
@@ -89,7 +90,7 @@ export function AttachDialog({
         )}
         {mode === "url" && (
           <div className={styles.attachRow}>
-            <FormField className="w-full min-w-0" label={t("File URL")}>
+            <FormField className="min-w-0 flex-1" label={t("File URL")}>
               <Input
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}

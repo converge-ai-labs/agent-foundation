@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createClient, type Client } from "../../service-client";
+import { RealtimeCallProvider } from "./realtime";
 import { ConversationsPage, NewConversation } from "./page";
 import { conversationKeys, conversationQueries } from "./api";
 import { useSession } from "./queries";
@@ -676,5 +677,69 @@ it("prefills the first message from the link, leaving sending to the user", asyn
   );
   expect(await screen.findByRole("button", { name: "Send" })).toBeTruthy();
   expect(posts).toEqual([]);
+  cache.clear();
+});
+
+it("preserves an editable draft and blocks HTTP submit while checking realtime availability", async () => {
+  allowed = ["run"];
+  const posts = vi.fn();
+  const user = userEvent.setup();
+  let finishAvailability!: () => void;
+  const availability = new Promise<void>((resolve) => {
+    finishAvailability = resolve;
+  });
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      if (request.method === "POST") posts(request.url);
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/realtime")) {
+        await availability;
+        return Response.json({
+          realtime: true,
+          can_start: true,
+          accepts_text: true,
+        });
+      }
+      return Response.json({
+        items: [{ id: "agt_voice", name: "Voice" }],
+        next_cursor: null,
+      });
+    },
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter initialEntries={["/sessions/new?agent=agt_voice"]}>
+        <RealtimeCallProvider>
+          <NewConversation />
+        </RealtimeCallProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const editor = screen.getByRole<HTMLTextAreaElement>("textbox", {
+    name: "Message",
+  });
+  await waitFor(() =>
+    expect(editor.disabled || editor.matches(":disabled")).toBe(false),
+  );
+  await user.type(editor, "Keep my draft");
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled,
+  ).toBe(true);
+  await user.keyboard("{Control>}{Enter}{/Control}");
+  expect(posts).not.toHaveBeenCalled();
+  finishAvailability();
+  expect(
+    await screen.findByRole("button", { name: "Start voice chat" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
+  expect(editor.value).toBe("Keep my draft");
+  expect(screen.getByRole("button", { name: "Run options" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /memory/i })).toBeTruthy();
   cache.clear();
 });

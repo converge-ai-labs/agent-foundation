@@ -8,6 +8,8 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import create_webui
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.mark.anyio
 async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: Path) -> None:

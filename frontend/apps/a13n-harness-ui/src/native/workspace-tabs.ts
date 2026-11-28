@@ -96,7 +96,9 @@ export function workspaceTabs(
         existing?.kind === "background" &&
         action.tab.kind === "background" &&
         (action.tab.target.kind === "tasks" ||
-          action.tab.target.kind === "notes")
+          action.tab.target.kind === "notes" ||
+          action.tab.target.kind === "worktrees" ||
+          action.tab.target.kind === "links")
       ) {
         return {
           items: state.items.map((tab) =>

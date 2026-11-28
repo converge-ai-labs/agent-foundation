@@ -64,13 +64,23 @@
   min-width: 0;
 }
 .addPath {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px 8px;
 }
-.addPath > :first-child {
-  flex: 1 1 auto;
-  min-width: 0;
+.addPath > [data-slot="field"][data-field-layout="stacked"] {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  grid-template-rows: subgrid;
+}
+.addPath > [data-slot="field"]:has(> [data-slot="field-error"]) {
+  grid-row-end: span 3;
+}
+.addPath > button {
+  grid-row: 2;
+  grid-column: 2;
 }
 .pin {
   flex: none;
@@ -94,6 +104,7 @@
 
 /* History ----------------------------------------------------------------- */
 .historyFilters {
+  composes: compact from "../../shared/controls.module.css";
   display: flex;
   align-items: center;
   flex-wrap: wrap;

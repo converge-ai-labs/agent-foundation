@@ -10,7 +10,7 @@ from a13n_harness_ui.browser import require_browser
 from a13n_harness_ui.browser_setup import BrowserExecutable
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 VNC_HELP = "TigerVNC Xvnc rfbunixpath rfbport PasswordFile SecurityTypes displayfd"
 
 

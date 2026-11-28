@@ -1,15 +1,15 @@
 """add built in connector events and subscriptions
 
-Revision ID: d5a1abe3b0a3
-Revises: 7d2a1e6a5ee1
+Revision ID: 96dbde581257
+Revises: 1a495a69a673
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "d5a1abe3b0a3"
-down_revision = "7d2a1e6a5ee1"
+revision = "96dbde581257"
+down_revision = "1a495a69a673"
 branch_labels = None
 depends_on = None
 

@@ -57,7 +57,7 @@ def test_ranges_preserve_native_positioning(backend, unit):
         AccessibilityRangeReference(node=_node(backend=backend), range_handle="range-one", unit=unit)
 
 
-@pytest.mark.parametrize("payload", ["a\0b", "😀" * 16385])
+@pytest.mark.parametrize("payload", ["a\0b", "😀" * 16385], ids=["nul", "over-utf8-limit"])
 def test_mutations_bound_utf8_bytes_and_reject_nul(payload):
     with pytest.raises(ValidationError):
         UIARequest.model_validate({"request": {"op": "value_set", "value": payload}})

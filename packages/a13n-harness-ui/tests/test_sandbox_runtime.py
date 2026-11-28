@@ -20,7 +20,7 @@ from a13n_harness_ui.errors import EnvironmentLifecycleError
 from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProfileConfiguration
 from a13n_harness_ui.sandbox import create_sandbox_runtime, validate_sandbox_runtime
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.fixture

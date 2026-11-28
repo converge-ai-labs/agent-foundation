@@ -3540,6 +3540,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/realtime": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Realtime Availability
+     * @description Report realtime input for the selected Agent and Thread.
+     */
+    get: operations["realtime_availability"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/realtime/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Realtime Session
+     * @description Issue a one-use WebSocket ticket for the selected Agent and optional Thread.
+     */
+    post: operations["create_realtime_session"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs": {
     parameters: {
       query?: never;
@@ -7197,6 +7237,8 @@ export interface components {
       characteristics: components["schemas"]["HarnessModelCharacteristics-Output"];
       /** Identity */
       identity: string;
+      /** Model Api */
+      model_api?: string | null;
       /** Name */
       name: string;
       pricing: components["schemas"]["ModelPricingEntry-Output"] | null;
@@ -13174,6 +13216,8 @@ export interface components {
       oauth_scheme?: string | null;
       /** Operations */
       operations?: components["schemas"]["WebOperation"][] | null;
+      /** Realtime Model Apis */
+      realtime_model_apis?: string[] | null;
       /** Settings Schemas */
       settings_schemas?: {
         [key: string]: {
@@ -13284,6 +13328,99 @@ export interface components {
     };
     /** @enum {string} */
     ReadView: "detailed" | "compact";
+    /** RealtimeAvailability */
+    RealtimeAvailability: {
+      /**
+       * Accepts Text
+       * @default false
+       */
+      accepts_text?: boolean;
+      /**
+       * Can Start
+       * @default false
+       */
+      can_start?: boolean;
+      /**
+       * Realtime
+       * @default false
+       */
+      realtime?: boolean;
+      /** Reason */
+      reason?: string | null;
+      /**
+       * Transports
+       * @default []
+       */
+      transports?: components["schemas"]["Transport"][];
+    };
+    /** RealtimeSessionCreate */
+    RealtimeSessionCreate: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id?: string | null;
+      /**
+       * Audio
+       * @default true
+       */
+      audio?: boolean;
+      /**
+       * Draft
+       * @default
+       */
+      draft?: string;
+      /** @default [] */
+      environments?: components["schemas"]["InitialMounts"];
+      /** Fork Run Id */
+      fork_run_id?: string | null;
+      /**
+       * Fresh Environments
+       * @default false
+       */
+      fresh_environments?: boolean;
+      max_usage?: components["schemas"]["UsageLimit"] | null;
+      /**
+       * Memories
+       * @default []
+       */
+      memories?: components["schemas"]["MemoryMount"][];
+      memory?: components["schemas"]["SessionMemorySettings"] | null;
+      options?: components["schemas"]["RunOptions-Input"];
+      /** Thread Id */
+      thread_id?: string | null;
+      /** @default websocket */
+      transport?: components["schemas"]["Transport"];
+    };
+    /** RealtimeSessionTicket */
+    RealtimeSessionTicket: {
+      /**
+       * Expires In
+       * @description Ticket lifetime in seconds.
+       */
+      expires_in: number;
+      /** Run Id */
+      run_id: string;
+      /** Session Id */
+      session_id: string;
+      /**
+       * Subprotocol
+       * @description Offer this protocol first and the ticket second.
+       * @constant
+       */
+      subprotocol: "a13n.realtime.v1";
+      /** Thread Id */
+      thread_id: string;
+      /**
+       * Ticket
+       * @description Single-use connection credential. Pass it as the second WebSocket subprotocol.
+       */
+      ticket: string;
+      /**
+       * Websocket Path
+       * @description WebSocket path relative to the Service origin.
+       */
+      websocket_path: string;
+    };
     /** RecipeOverrides */
     RecipeOverrides: {
       /** Volume Mounts */
@@ -16115,7 +16252,10 @@ export interface components {
       total: number;
     };
     /** @enum {string} */
+    Transport: "websocket" | "webrtc";
+    /** @enum {string} */
     Trigger:
+      | "realtime"
       | "input"
       | "queued"
       | "resume"
@@ -24540,6 +24680,66 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProviderTypePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  realtime_availability: {
+    parameters: {
+      query: {
+        agent_id: string;
+        agent_revision_id?: string | null;
+        thread_id?: string | null;
+        fork_run_id?: string | null;
+        model?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RealtimeAvailability"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_realtime_session: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RealtimeSessionCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RealtimeSessionTicket"];
         };
       };
       400: components["responses"]["Error"];

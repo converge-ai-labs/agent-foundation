@@ -16,6 +16,7 @@ type Run = Schema["RunView"];
 type Thread = Schema["ThreadView"];
 
 export type RunRequest =
+  | { kind: "realtime_session"; text: "" }
   | { kind: "memory_organization"; input: unknown; text: string }
   /** An ordinary message: what a person or an application sent. */
   | { kind: "message"; input: unknown; text: string }
@@ -40,7 +41,12 @@ export type RunRequest =
   /** The task a parent delegated, as the Harness builds a child Run's input. */
   | { kind: "delegated_task"; text: string; parentTask: string | null };
 
+export function isRealtimeRun(run: Run): boolean {
+  return run.trigger === "realtime";
+}
+
 export function runRequest(run: Run, thread?: Thread | null): RunRequest {
+  if (isRealtimeRun(run)) return { kind: "realtime_session", text: "" };
   if (run.trigger === "tool_result") {
     const payload = isRecord(run.input) ? run.input : {};
     const executionId = text(payload.execution_id);

@@ -127,6 +127,7 @@ export function Security() {
         )}
         {editingEmail && (
           <form
+            className={styles.emailForm}
             id={`${id}-email-form`}
             onSubmit={(event) => {
               event.preventDefault();

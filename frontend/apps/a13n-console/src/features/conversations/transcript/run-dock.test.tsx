@@ -15,6 +15,7 @@ import type { Schema } from "../../../shared/api";
 import type { Resubmission } from "../resubmit";
 import { fixtureRun, fixtureSession, fixtureThread } from "./fixture";
 import type { ComponentProps } from "react";
+import { RealtimeCallProvider } from "../realtime";
 import { RunDock, ThreadDock } from "./run-dock";
 
 let client: Client;
@@ -77,6 +78,9 @@ function Location() {
 function mount({
   status = "completed",
   historical = false,
+  realtime = false,
+  realtimePending,
+  runOverrides,
   origin = "new",
   reject = false,
   loseAcknowledgement = false,
@@ -88,6 +92,9 @@ function mount({
 }: {
   status?: Schema["RunStatus"];
   historical?: boolean;
+  realtime?: boolean;
+  realtimePending?: Promise<void>;
+  runOverrides?: Partial<Schema["RunView"]>;
   origin?: Schema["ThreadView"]["origin"];
   reject?: boolean;
   loseAcknowledgement?: boolean;
@@ -102,6 +109,7 @@ function mount({
   const active = status === "running" || status === "accepted";
   const current = fixtureRun({
     ...run,
+    ...runOverrides,
     status,
     finding_analysis_id: analysis ? "fan_analysis" : null,
     ...(status === "waiting"
@@ -196,6 +204,14 @@ function mount({
         }
         return Response.json(current);
       }
+      if (path.endsWith("/realtime")) {
+        await realtimePending;
+        return Response.json({
+          realtime,
+          can_start: realtime,
+          accepts_text: true,
+        });
+      }
       reads.push(path);
       if (path.endsWith("/environments")) return Response.json({ items: [] });
       if (
@@ -236,7 +252,9 @@ function mount({
   const tree = (selected: Schema["ThreadView"]) => (
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[`/${search}`]}>
-        <TestDock run={current} thread={selected} resubmit={resubmit} />
+        <RealtimeCallProvider>
+          <TestDock run={current} thread={selected} resubmit={resubmit} />
+        </RealtimeCallProvider>
         <Location />
       </MemoryRouter>
     </QueryClientProvider>
@@ -284,7 +302,11 @@ it("continues the completed head with a next-run message and navigates to its Ru
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Next test" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  const send = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Send message",
+  });
+  await waitFor(() => expect(send.disabled).toBe(false));
+  fireEvent.click(send);
   await waitFor(() =>
     expect(screen.getByTestId("location").textContent).toContain("/runs/next"),
   );
@@ -298,7 +320,12 @@ it("continues the completed head with a next-run message and navigates to its Ru
   });
 });
 it("steers the active Run and reports when it applied the guidance", async () => {
-  const posts = mount({ status: "running" });
+  const options = { overrides: { model: "text" } };
+  const posts = mount({
+    status: "running",
+    realtime: true,
+    runOverrides: { options },
+  });
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Use the smaller scope" },
   });
@@ -311,6 +338,7 @@ it("steers the active Run and reports when it applied the guidance", async () =>
     delivery: "steer",
     agent_id: "agent",
   });
+  expect(posts[0]?.body).not.toHaveProperty("options");
 });
 it("retains rejected guidance and never falls through to a new Run", async () => {
   const posts = mount({ status: "running", reject: true });
@@ -636,3 +664,83 @@ it.each(["waiting", "running"] as const)(
     expect(posts).toHaveLength(0);
   },
 );
+
+it.each([
+  { status: "completed", historical: true, visible: false },
+  { status: "waiting", historical: false, visible: false },
+  { status: "completed", historical: false, visible: true },
+] as const)(
+  "gates the voice composer for $status and historical=$historical",
+  async ({ status, historical, visible }) => {
+    mount({ status, historical, realtime: true });
+    if (visible)
+      await screen.findByRole("button", { name: "Start voice chat" });
+    expect(
+      Boolean(screen.queryByRole("button", { name: "Start voice chat" })),
+    ).toBe(visible);
+  },
+);
+
+it("blocks HTTP submit without disabling the Run draft during the availability check", async () => {
+  let resolve!: () => void;
+  const realtimePending = new Promise<void>((done) => {
+    resolve = done;
+  });
+  const posts = mount({ realtime: true, realtimePending });
+  const editor = screen.getByRole<HTMLTextAreaElement>("textbox", {
+    name: "Message",
+  });
+  expect(editor.disabled).toBe(false);
+  fireEvent.change(editor, { target: { value: "Continue aloud" } });
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Send message" })
+      .disabled,
+  ).toBe(true);
+  fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
+  expect(posts).toHaveLength(0);
+  resolve();
+  await screen.findByRole("button", { name: "Start voice chat" });
+  expect(editor.value).toBe("Continue aloud");
+});
+
+it("keeps the dialing call mounted when the Thread announces its successor first", async () => {
+  let resume!: () => void;
+  const contextReady = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const close = vi.fn();
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      resume = () => contextReady;
+      close = close;
+    },
+  );
+  try {
+    const dock = mount({ realtime: true });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Start voice chat" }),
+    );
+    dock.changeThread({ current_run_id: "next" });
+    const stop = screen.getByRole("button", { name: "End realtime chat" });
+    expect(close).not.toHaveBeenCalled();
+    fireEvent.click(stop);
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    resume();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("can stop a realtime Run owned by another client without offering socket input", async () => {
+  const requests = mount({
+    status: "running",
+    realtime: true,
+    runOverrides: { trigger: "realtime" },
+  });
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() =>
+    expect(requests[0]?.path).toBe("/api/v1/runs/run/interrupt"),
+  );
+});

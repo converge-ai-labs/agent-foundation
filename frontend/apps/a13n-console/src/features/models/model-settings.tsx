@@ -149,6 +149,7 @@ export function ModelSettingsFields({
       choices.push({ value: current, label: String(scope.values[key]) });
     return (
       <ChoiceField
+        data-field-layout="stacked"
         label={label}
         disabled={invalid}
         value={current}
@@ -234,7 +235,7 @@ export function ModelSettingsFields({
             ])}
         </div>
         {responses && (
-          <SettingsRow label={t("Use WebSocket")}>
+          <SettingsRow label={t("Use WebSocket")} stackOnNarrow={false}>
             <Checkbox
               aria-label={t("Use WebSocket")}
               disabled={invalid}

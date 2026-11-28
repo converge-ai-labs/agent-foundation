@@ -318,52 +318,63 @@ function DeviceEditor({
                 dismiss={readonly}
                 cancelLabel={readonly ? t("Close") : undefined}
                 onCancel={onClose}
+                leading={
+                  basis &&
+                  !readonly &&
+                  !save.isPending && (
+                    <Confirm
+                      title={t("Rotate attachment token")}
+                      subject={basis.name}
+                      description={t(
+                        "Disconnect the current carrier and invalidate its old token.",
+                      )}
+                      trigger={t("Rotate attachment token")}
+                      action={async () => {
+                        const result = await http
+                          .POST(
+                            "/api/v1/devices/{device_id}/rotate-credential",
+                            {
+                              params: { path: { device_id: basis.id } },
+                              headers: ifMatch(rowTag(basis)),
+                            },
+                          )
+                          .then(data);
+                        setBasis(result.device);
+                        setToken(result.token);
+                      }}
+                      onSuccess={() => void invalidate()}
+                    />
+                  )
+                }
+                beforeCancel={
+                  basis &&
+                  !readonly &&
+                  !save.isPending && (
+                    <Confirm
+                      title={t("Delete device")}
+                      subject={basis.name}
+                      description={t(
+                        "Disconnect this device and remove its registration.",
+                      )}
+                      trigger={t("Delete device")}
+                      triggerVariant="ghost"
+                      danger
+                      action={() =>
+                        http.DELETE("/api/v1/devices/{device_id}", {
+                          params: { path: { device_id: basis.id } },
+                          headers: ifMatch(rowTag(basis)),
+                        })
+                      }
+                      onSuccess={() => {
+                        void invalidate();
+                        onClose();
+                      }}
+                    />
+                  )
+                }
               />
             </fieldset>
           </form>
-          {basis && !readonly && !save.isPending && (
-            <div className={styles.toolbar}>
-              <Confirm
-                title={t("Rotate attachment token")}
-                subject={basis.name}
-                description={t(
-                  "Disconnect the current carrier and invalidate its old token.",
-                )}
-                trigger={t("Rotate attachment token")}
-                action={async () => {
-                  const result = await http
-                    .POST("/api/v1/devices/{device_id}/rotate-credential", {
-                      params: { path: { device_id: basis.id } },
-                      headers: ifMatch(rowTag(basis)),
-                    })
-                    .then(data);
-                  setBasis(result.device);
-                  setToken(result.token);
-                }}
-                onSuccess={() => void invalidate()}
-              />
-              <Confirm
-                title={t("Delete device")}
-                subject={basis.name}
-                description={t(
-                  "Disconnect this device and remove its registration.",
-                )}
-                trigger={t("Delete device")}
-                triggerVariant="ghost"
-                danger
-                action={() =>
-                  http.DELETE("/api/v1/devices/{device_id}", {
-                    params: { path: { device_id: basis.id } },
-                    headers: ifMatch(rowTag(basis)),
-                  })
-                }
-                onSuccess={() => {
-                  void invalidate();
-                  onClose();
-                }}
-              />
-            </div>
-          )}
         </>
       )}
     </ModalFrame>

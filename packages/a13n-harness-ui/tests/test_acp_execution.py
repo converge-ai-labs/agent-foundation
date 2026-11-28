@@ -24,7 +24,7 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import BinaryContent, TextContent
 from pydantic_ai.toolsets import FunctionToolset
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 _PEER = Path(__file__).resolve().parents[2] / "a13n-harness/tests/fixtures/acp_peer.py"
 
@@ -1307,6 +1307,7 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
 
         await app.acp_options(thread.thread_id, AcpOptionChange(id="model", value="a"))
         first_text = await echoed_prompt()
+        assert "<thread-links" in first_text
         assert '<agent-context source="a13n-harness-ui">' in first_text
         assert "Current Model: a\nUse the current Model name when attributing work to a model.\n" in first_text
 
@@ -1316,9 +1317,12 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
         assert "<agent-context" not in unchanged_text
         assert "<surface-context" not in unchanged_text
         assert "<inbox-reminder>" not in unchanged_text
+        assert "<thread-links" not in unchanged_text
 
+        assert await reply("register thread link") == "Registered ACP link"
         await app.acp_options(thread.thread_id, AcpOptionChange(id="model", value="b"))
         changed_text = await echoed_prompt()
+        assert '<url url="https://example.com/acp" label="ACP Artifact" />' in changed_text
         assert '<agent-context source="a13n-harness-ui">' in changed_text
         assert "Current Model: b\n" in changed_text
         assert "Current Model: a\n" not in changed_text
@@ -1334,6 +1338,7 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
         assert "Current Model: b\n" in refreshed_text
         assert "<surface-context" in refreshed_text
         assert "<inbox-reminder>" in refreshed_text
+        assert '<url url="https://example.com/acp" label="ACP Artifact" />' in refreshed_text
         assert "Current Environment mounts" not in refreshed_text
         assert "This input was submitted through Harness UI WebUI." not in refreshed_text
 
@@ -1505,6 +1510,73 @@ async def test_acp_skills_discovery_index_direct_slash_and_host_paths(tmp_path: 
             str((BUILTIN_COORDINATOR_SKILLS_ROOT.resolve() / "coordinate-worktree-pr" / "SKILL.md").as_posix())
             in coord_joined
         )
+
+
+async def test_acp_promote_coordinator_retires_ordinary_session_and_refreshes_tools(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.environment_paths import BUILTIN_COORDINATOR_SKILLS_ROOT
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = _ui_peer_config(tmp_path, "unique-session")
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    (projects / "main.yaml").write_text(
+        f'schema_version: "1"\nkind: project\nid: project-main\nname: Main\nroots:\n  - path: "{workspace.as_posix()}"\n'
+    )
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=config, host_mode="webui") as app:
+        thread = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"))
+        # Select a non-default ACP option and open an ordinary session on turn one.
+        changed = await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
+        assert [(item.id, item.value) for item in changed] == [("mode", "plan")]
+
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-tools")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        ordinary_payload = json.loads(await _latest_reply_text(app, thread.thread_id) or "{}")
+        assert "create_thread" in ordinary_payload["tools"]
+        assert "create_worker" not in ordinary_payload["tools"]
+
+        # Promote the existing ACP thread to Coordinator: retires ordinary session, preserves options.
+        promoted = await app.promote_coordinator(thread.thread_id)
+        assert promoted.role == "coordinator"
+        assert not app._acp_sessions.matches(
+            thread.thread_id,
+            json.loads(await app._store.threads.acp_state(thread.thread_id) or "{}")["digest"],
+            ordinary_payload["session"],
+        )
+
+        # Next turn opens a fresh Coordinator session with create_worker, Coordinator guidance/skills,
+        # preserved ACP options, and prior visible history.
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-tools")
+        assert (await app.wait_root_operation(second.receipt_id)).status is RootOperationStatus.completed
+        coordinator_payload = json.loads(await _latest_reply_text(app, thread.thread_id) or "{}")
+        assert coordinator_payload["session"] != ordinary_payload["session"]
+        assert "create_worker" in coordinator_payload["tools"]
+        assert "create_thread" not in coordinator_payload["tools"]
+
+        options = await app.acp_options(thread.thread_id)
+        assert [(item.id, item.value) for item in options] == [("mode", "plan")]
+
+        third = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-instructions")
+        assert (await app.wait_root_operation(third.receipt_id)).status is RootOperationStatus.completed
+        coord_instructions = json.loads(await _latest_reply_text(app, thread.thread_id) or "{}")
+        coord_joined = "\n".join(block["text"] for block in coord_instructions["content"])
+        assert "create_worker" in coord_joined
+        assert (
+            str((BUILTIN_COORDINATOR_SKILLS_ROOT.resolve() / "coordinate-worktree-pr" / "SKILL.md").as_posix())
+            in coord_joined
+        )
+
+        # Idempotent re-promotion leaves the live Coordinator session intact.
+        await app.promote_coordinator(thread.thread_id)
+        fourth = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-tools")
+        assert (await app.wait_root_operation(fourth.receipt_id)).status is RootOperationStatus.completed
+        repromoted_payload = json.loads(await _latest_reply_text(app, thread.thread_id) or "{}")
+        assert repromoted_payload["session"] == coordinator_payload["session"]
+        assert "create_worker" in repromoted_payload["tools"]
 
 
 async def test_acp_attachments_embedded_context_image_fallback_and_multimodal_steering(tmp_path: Path) -> None:

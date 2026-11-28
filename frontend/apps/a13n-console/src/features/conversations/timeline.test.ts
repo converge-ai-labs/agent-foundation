@@ -124,6 +124,20 @@ it("treats later user text as guidance and never the Run input", () => {
   ).toBe(false);
 });
 
+it.each([{ speech: true }, { messageId: "run-abc:speech:6" }])(
+  "displays the first spoken transcript as guidance (%o)",
+  (speech) => {
+    const { entries } = timeline(
+      message("speech", "user", { text: "Read it back.", ...speech }),
+      text("reply", "assistant", "Okay."),
+    );
+    expect(entries[0]).toMatchObject({
+      kind: "guidance",
+      text: "Read it back.",
+    });
+  },
+);
+
 it("reads guidance before the request that read it", () => {
   const { entries } = timeline(
     text("input", "user", "Which colour is the banner?"),
@@ -601,5 +615,41 @@ it("only treats a completed direct call as a candidate for older saved displays"
       asset: { assetId: "ast_report", toolCallId: "call_direct" },
       legacy: true,
     },
+  ]);
+});
+
+it("keeps typed and spoken realtime turns distinct from steering", () => {
+  const realtime = {
+    ...run,
+    trigger: "realtime" as const,
+  };
+  const items = display(
+    text("first-typed-message", "user", "Hello from the keyboard"),
+    message("speech", "user", { text: "Hello from the mic", speech: true }),
+    message("guidance", "user", {
+      text: "Steering inbox entry",
+      input_source: "steering",
+    }),
+    text("second-typed-message", "user", "Another typed turn"),
+  );
+  const { entries } = runTimeline({
+    run: realtime,
+    attempts: [],
+    items: presentItems(items),
+    execution: runExecution(realtime, items),
+    coverage: "complete",
+  });
+  expect(entries).toEqual([
+    expect.objectContaining({
+      kind: "user_input",
+      text: "Hello from the keyboard",
+    }),
+    expect.objectContaining({
+      kind: "user_input",
+      speech: true,
+      text: "Hello from the mic",
+    }),
+    expect.objectContaining({ kind: "guidance", text: "Steering inbox entry" }),
+    expect.objectContaining({ kind: "user_input", text: "Another typed turn" }),
   ]);
 });

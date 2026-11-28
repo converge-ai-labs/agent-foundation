@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
@@ -9,19 +8,16 @@ import type { AgentDraft } from "./draft";
 export function AdvancedSection({
   draft,
   readOnly,
-  mark,
   validation,
 }: {
   draft: AgentDraft;
   readOnly: boolean;
   /** Says how a read-only view's value differs, beside the title. */
-  mark?: ReactNode;
   validation?: Error;
 }) {
   const { t } = useTranslation();
   return (
     <>
-      {mark}
       <TextAreaField
         readOnly={readOnly}
         label={t("Configuration JSON")}

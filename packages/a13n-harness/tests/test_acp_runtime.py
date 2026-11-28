@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -35,6 +36,17 @@ def local(path, mode, *flags):
     return LocalStdioTransport(sys.executable, str(path), (str(_FIXTURE), mode, *flags), inherit_environment=True)
 
 
+@asynccontextmanager
+async def peer_diagnostics(path: Path):
+    try:
+        yield
+    except ConnectionError as exc:
+        log = path / "peer-error.log"
+        if log.is_file():
+            exc.add_note(log.read_text(encoding="utf-8", errors="replace"))
+        raise
+
+
 def setup(path):
     return AcpSessionSetup(str(path), instructions=("guide",))
 
@@ -45,7 +57,9 @@ def source(path):
     )
 
 
-async def test_environment_run_callbacks(tmp_path):
+async def test_environment_run_callbacks(tmp_path, monkeypatch):
+    # ACP frames must remain UTF-8 even when the peer's default text streams are not.
+    monkeypatch.setenv("PYTHONIOENCODING", "cp1252")
     callbacks = create_environment_runtime(mounts={"workspace": source(tmp_path)}, default_mount="workspace")
     reviewed = []
 
@@ -53,7 +67,7 @@ async def test_environment_run_callbacks(tmp_path):
         reviewed.append(request.command.executable)
         return request.command.executable != "denied"
 
-    async with bind(callbacks, "turn") as turn, asyncio.timeout(10):
+    async with peer_diagnostics(tmp_path), bind(callbacks, "turn") as turn, asyncio.timeout(10):
         transport = local(tmp_path, "callbacks")
         async with AcpSessionRuntime.open(transport) as acp:
             await acp.open_session(setup(tmp_path))
@@ -68,8 +82,8 @@ async def test_environment_run_callbacks(tmp_path):
             )
             assert response.stop_reason == "end_turn"
             assert [u.content.text for u in starts if isinstance(u, schema.AgentMessageChunk)] == ["done:callbacks"]
-            assert Path(reviewed[0]).resolve() == Path(sys.executable).resolve()
-            assert reviewed[1:] == ["denied"]
+            assert [Path(executable).resolve() for executable in reviewed[:-1]] == [Path(sys.executable).resolve()] * 2
+            assert reviewed[-1:] == ["denied"]
 
 
 @pytest.mark.parametrize("mode", ["load", "resume", "standard-steer"])
@@ -217,6 +231,23 @@ async def test_native_stdio_reads_past_command_observation_limit(tmp_path):
     transport = LocalStdioTransport(sys.executable, str(tmp_path), ("-c", script))
     async with asyncio.timeout(6), transport.open() as channel:
         assert await channel.receive() == {"payload": "x" * 150000}
+
+
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"], ids=["lf", "crlf"])
+async def test_native_stdio_round_trips_utf8_json(tmp_path, line_ending):
+    script = (
+        "import json, sys; "
+        "message = json.loads(sys.stdin.buffer.readline().decode('utf-8')); "
+        "encoded = json.dumps(message, ensure_ascii=False).encode('utf-8'); "
+        f"sys.stdout.buffer.write(encoded + {line_ending!r}); "
+        "sys.stdout.buffer.flush()"
+    )
+    transport = LocalStdioTransport(sys.executable, str(tmp_path), ("-c", script))
+    message = {"text": "café 界 😀"}
+    async with asyncio.timeout(6), transport.open() as channel:
+        await channel.send(message)
+        assert await channel.receive() == message
+        assert await channel.receive() is None
 
 
 async def test_terminal_release_joins_tree_cleanup_when_turn_is_revoked():

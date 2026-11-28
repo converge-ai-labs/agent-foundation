@@ -82,7 +82,7 @@ class ComposerModelOptions(RunModelOverrides):
 class ComposerOptions(SurfaceModel):
     model: ComposerModelOptions | None = None
     environment: EnvironmentSelectionPatch | None = None
-    mode: Literal["normal", "goal"] = "normal"
+    mode: Literal["normal", "goal", "worktree"] = "normal"
     prediction: CachedInputPrediction | None = None
 
 

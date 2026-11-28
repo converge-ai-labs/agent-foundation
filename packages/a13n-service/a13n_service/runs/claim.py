@@ -39,7 +39,9 @@ QUEUE_WAIT = meter.create_histogram(
 )
 
 
-async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: int, members: int = 1) -> list[Lease]:
+async def claim(
+    runtime: Runtime, *, worker_id: str, worker_build: str, limit: int, members: int = 1, realtime: bool = False
+) -> list[Lease]:
     """Lease up to `limit` due accepted runs, skipping rows other workers hold."""
     if limit < 1 or members < 1:
         raise ValueError("Claim capacity and member count must be positive")
@@ -52,6 +54,7 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
             RunRow.available_at <= current,
             checkpoints.claimable(),
             contexts.claimable(RunRow.thread_id, worker_id),
+            RunRow.trigger == "realtime" if realtime else RunRow.trigger != "realtime",
         )
         if members > 1:
             # Counts above limit * members cannot change this worker's allowance.
@@ -169,6 +172,7 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                     number=attempt.number,
                     worker_id=worker_id,
                     token=token,
+                    realtime=run.trigger == "realtime",
                 )
             )
         await session.execute(insert(AttemptRow).values(attempts))

@@ -13,8 +13,8 @@ skill content, asset publishing, the async subagent operator and the run binding
 worker for them once per agent of the inline graph.
 """
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import AsyncExitStack
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
@@ -28,6 +28,7 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessInstrumentation,
     HarnessModelCharacteristics,
+    HarnessState,
     ModelRecoveryPolicy,
     RequestContext,
     RunBindings,
@@ -46,6 +47,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.web import WebCapability
 from a13n_harness.compaction import CompactionOperator
 from a13n_harness.environment import DynamicEnvironmentCapability
+from a13n_harness.live import HarnessLiveStream, LiveWebRTC
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
@@ -65,19 +67,29 @@ from pydantic import JsonValue
 from pydantic_ai.agent.abstract import AgentRetries
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.realtime import RealtimeModelSettings
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.app_plugins import AppActivation, AppCatalog
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.model_settings import effective_settings
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents import definition, stored, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection
 from a13n_service.resources.agents.validation import connection_info, require_subagent_tool_names, subagent_graph
 from a13n_service.resources.models.media import workspace_media
+from a13n_service.resources.models.realtime import open_realtime_model
 from a13n_service.resources.models.runtime import open_model
-from a13n_service.resources.models.service import ResolvedModel, model_settings, require_understanding, resolve_model
+from a13n_service.resources.models.service import (
+    ResolvedModel,
+    model_settings,
+    require_request_model,
+    require_understanding,
+    resolve_model,
+)
 from a13n_service.runs.definitions import Definition
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tool_discovery import native_discovery
@@ -200,6 +212,7 @@ async def resolve(
         )
         reviewer = None if config.reviewer is None else await model(config.reviewer.model)
         if reviewer is not None and config.reviewer is not None:
+            require_request_model(reviewer, field="reviewer.model")
             model_settings(
                 reviewer.config,
                 reviewer.provider,
@@ -235,7 +248,7 @@ async def open_models(
     """Every model of the agent and its inline subagents, by model key, opened once and closed by `stack`."""
     opened: dict[str, Model] = {}
     for model in agent.models():
-        if model.key not in opened:
+        if model.key not in opened and model.config.model_api not in PROTOCOLS:
             opened[model.key] = await stack.enter_async_context(
                 open_model(
                     model,
@@ -248,6 +261,37 @@ async def open_models(
                 )
             )
     return opened
+
+
+@asynccontextmanager
+async def open_realtime(
+    runtime: Runtime,
+    agent: ResolvedAgent,
+    executable: ExecutableAgent[Any],
+    *,
+    bindings: RunBindings,
+    previous_state: HarnessState | None = None,
+    model_settings: RealtimeModelSettings | None = None,
+    usage_limits: UsageLimits | None = None,
+    webrtc: LiveWebRTC | None = None,
+) -> AsyncIterator[HarnessLiveStream]:
+    """Open the Agent's primary model for a caller that owns admission and continuation."""
+    async with open_realtime_model(
+        agent.model,
+        registry=runtime.registry,
+        keys=runtime.keys,
+        policy=runtime.endpoint_policy.for_run(bindings.configuration),
+        settings=runtime.settings.providers,
+    ) as model:
+        yield executable.live(
+            model=model,
+            model_settings=model_settings,
+            bindings=bindings,
+            previous_state=previous_state,
+            usage_limits=usage_limits,
+            memory_context_bytes=runtime.settings.memory.context_bytes,
+            webrtc=webrtc,
+        )
 
 
 def model_resolver(agent: ResolvedAgent, models: Mapping[str, Model]) -> RunModelResolver:

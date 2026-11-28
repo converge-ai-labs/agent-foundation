@@ -17,7 +17,7 @@ from .test_app import _settings, _write_configuration
 from .test_checkpoint_pruning import create_owner, delete_owner
 from .test_continuation_objects import checkpoint
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 async def _resolve(self, context, model_id):

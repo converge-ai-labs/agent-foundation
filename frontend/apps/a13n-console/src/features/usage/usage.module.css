@@ -1,6 +1,11 @@
 .filters {
   composes: toolbar from "../../shared/collection/collection.module.css";
-  justify-content: space-between;
+}
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
 }
 .footnote {
   color: var(--a13n-secondary);
@@ -143,7 +148,7 @@
   display: flex;
   position: absolute;
   inset: 0 0 1px;
-  gap: 10px;
+  gap: var(--usage-bar-gap);
   align-items: stretch;
 }
 .barSlot {
@@ -190,7 +195,7 @@
 .dates {
   grid-column: 2;
   display: flex;
-  gap: 10px;
+  gap: var(--usage-bar-gap);
   color: var(--a13n-tertiary);
   font-size: var(--a13n-text-2xs);
   font-variant-numeric: tabular-nums;

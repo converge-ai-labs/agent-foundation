@@ -8,6 +8,7 @@ import { ApiError } from "../../service-client";
 import { data, ifMatch, rowTag } from "../../shared/api";
 import { ConflictNotice } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
+import { FormActions } from "../../shared/forms";
 import shared from "../../shared/shared.module.css";
 import { credentialKeys, type Credential } from "./api";
 import styles from "./credentials.module.css";
@@ -95,8 +96,17 @@ function RevokeForm({
     (!(revoke.error instanceof ApiError) ||
       revoke.error.status >= 500 ||
       revoke.error.status === 412);
+  const blocked =
+    reviewRequired || reload.isPending || basis.state === "revoked";
   return (
-    <div className={shared.stack}>
+    <form
+      className={shared.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!blocked && !revoke.isPending) revoke.mutate();
+      }}
+    >
       <p className={styles.note}>
         {t(
           "Prevents new use and removes the stored token. Active Sessions remove it asynchronously. This cannot be undone.",
@@ -133,22 +143,13 @@ function RevokeForm({
         <ErrorNotice error={revoke.error} />
       )}
       <ErrorNotice error={reload.error} />
-      <div className={styles.actions}>
-        <Button type="button" variant="outline" onClick={onClose}>
-          {t("Cancel")}
-        </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          loading={revoke.isPending}
-          disabled={
-            reviewRequired || reload.isPending || basis.state === "revoked"
-          }
-          onClick={() => revoke.mutate()}
-        >
-          {t("Revoke credential")}
-        </Button>
-      </div>
-    </div>
+      <FormActions
+        pending={revoke.isPending}
+        disabled={blocked}
+        onCancel={onClose}
+        variant="destructive"
+        label={t("Revoke credential")}
+      />
+    </form>
   );
 }

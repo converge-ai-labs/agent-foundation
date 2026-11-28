@@ -1,9 +1,16 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "../i18n";
-import { useContext, useRef, useState } from "react";
+import { useContext, useId, useRef, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
+import {
+  Button,
+  Menu,
+  MenuCreateHandle,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+} from "a13n-ui";
 import {
   ChatCircle,
   EnvelopeSimple,
@@ -14,7 +21,6 @@ import {
   Archive,
   ArrowUp,
   ArrowDown,
-  ArrowCounterClockwise,
   DotsThree,
   GitFork,
   PencilSimple,
@@ -26,6 +32,7 @@ import {
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
+import { useThreadArchive } from "./use-thread-archive";
 import { refreshThreadLists } from "./queries";
 import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
@@ -78,14 +85,10 @@ type ActivityRow = Pick<Schema<"ThreadActivityView">, "thread"> &
 
 export function ThreadRow({
   row,
-  showRestore = false,
-  showProject = false,
   activeWorkerCount = 0,
   disclosure,
 }: {
   row: ActivityRow;
-  showRestore?: boolean | "compact";
-  showProject?: boolean;
   activeWorkerCount?: number;
   disclosure?: { expanded: boolean; onToggle: () => void };
 }) {
@@ -132,6 +135,8 @@ export function ThreadRow({
     activeWorkerCount > 0
       ? t("Active worker count", { count: activeWorkerCount })
       : "";
+  const [actionsMenu] = useState(() => MenuCreateHandle());
+  const actionsId = useId();
   const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
   const starLabel = row.thread.starred ? t("Unstar chat") : t("Star chat");
@@ -187,30 +192,14 @@ export function ThreadRow({
       navigate(`/threads/${encodeURIComponent(copied.thread_id)}`);
     },
   });
-  const archive = useMutation({
-    mutationFn: () =>
-      result(
-        transport.client.PATCH("/api/threads/{thread_id}/metadata", {
-          params: { path: { thread_id: row.thread.thread_id } },
-          body: {
-            expected_version: row.thread.metadata_version,
-            patch: { archived: !row.thread.archived },
-          },
-        }),
-      ),
-    onSuccess: () => {
-      if (!row.thread.archived) newDrafts.detachArchived(row.thread.thread_id);
-      if (
-        !row.thread.archived &&
-        location.pathname ===
-          `/threads/${encodeURIComponent(row.thread.thread_id)}`
-      )
-        navigate(newConversationPath(row.thread.configuration.project_id));
-    },
-    onSettled: () => {
-      refreshThread(queries, row.thread.thread_id, "metadata");
-      void refreshThreadLists(queries);
-    },
+  const archive = useThreadArchive(row.thread, (archived) => {
+    if (!archived) return;
+    newDrafts.detachArchived(row.thread.thread_id);
+    if (
+      location.pathname ===
+      `/threads/${encodeURIComponent(row.thread.thread_id)}`
+    )
+      navigate(newConversationPath(row.thread.configuration.project_id));
   });
   return (
     <div>
@@ -218,6 +207,11 @@ export function ThreadRow({
         ref={rowElement}
         key={row.thread.thread_id}
         className={styles.threadRow}
+        onContextMenu={(event) => {
+          if (!event.currentTarget.contains(event.target as Node)) return;
+          event.preventDefault();
+          actionsMenu.open(actionsId);
+        }}
         data-nav-thread={sortable ? row.thread.thread_id : undefined}
         data-nav-source={drag?.moving === row.thread.thread_id || undefined}
       >
@@ -288,14 +282,6 @@ export function ThreadRow({
               title !== t("Coordinator") && (
                 <span className={styles.srOnly}>{t("Coordinator")}</span>
               )}
-            {showProject && (
-              <small>
-                {row.project_name ??
-                  (row.thread.configuration.project_id
-                    ? t("Unavailable project")
-                    : t("Without a project"))}
-              </small>
-            )}
           </span>
           {isCoordinator && workerActivity && (
             <small
@@ -331,21 +317,6 @@ export function ThreadRow({
             />
           )}
         </NavLink>
-        {showRestore && row.thread.archived && (
-          <Button
-            className={styles.threadRestore}
-            variant="ghost"
-            size={showRestore === "compact" ? "icon-sm" : "sm"}
-            title={t("Restore {{title}}", { title })}
-            loading={archive.isPending}
-            disabled={row.thread.root_activity.state !== "inactive"}
-            onClick={() => archive.mutate()}
-            aria-label={t("Restore {{title}}", { title })}
-          >
-            <ArrowCounterClockwise />
-            {showRestore !== "compact" && t("Restore")}
-          </Button>
-        )}
         {canStar && row.thread.starred && (
           <span
             className={styles.threadStar}
@@ -356,16 +327,18 @@ export function ThreadRow({
             <Star size={12} weight="fill" aria-hidden="true" />
           </span>
         )}
-        <Menu>
+        <Menu handle={actionsMenu}>
           <MenuTrigger
+            id={actionsId}
+            handle={actionsMenu}
             render={
-              <Button ref={actionsButton} variant="ghost" size="icon-sm" />
+              <Button ref={actionsButton} variant="ghost" size="icon-xs" />
             }
             className={styles.threadActions}
             aria-busy={star.isPending || fork.isPending || markUnread.isPending}
             aria-label={t("Actions for {{name}}", { name: title })}
           >
-            <DotsThree />
+            <DotsThree className="size-3.5" />
           </MenuTrigger>
           <MenuPopup align="start" side="right">
             {row.thread.role === "coordinator" && (
@@ -483,7 +456,7 @@ export function ThreadRow({
                   archive.isPending ||
                   row.thread.root_activity.state !== "inactive"
                 }
-                onClick={() => archive.mutate()}
+                onClick={() => archive.mutate(!row.thread.archived)}
               >
                 <Archive />
                 {row.thread.archived ? t("Restore chat") : t("Archive chat")}

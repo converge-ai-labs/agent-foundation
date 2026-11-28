@@ -19,10 +19,13 @@ from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.http import IdempotencyKey
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.resources.connections.service import validate_caller_headers
+from a13n_service.resources.memories.schemas import MemoryMounts
+from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import checkpoints, definitions
 from a13n_service.runs.accept import (
     Source,
@@ -36,7 +39,7 @@ from a13n_service.runs.accept import (
 from a13n_service.runs.attachments import asset_fields, require_readable
 from a13n_service.runs.environments.mounts import PRIMARY, mount_environments, shared_mounts, thread_has_primary
 from a13n_service.runs.environments.schemas import MountCreate
-from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
+from a13n_service.runs.inbox import Request, append_message, check_replay, compatible_steer, find_request
 from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
 from a13n_service.runs.memories.session_memory import configure
 from a13n_service.runs.runs import run_view
@@ -84,6 +87,8 @@ async def validate_message(
     then.
     """
     options = message.options
+    revision_id = message.agent_revision_id
+    receiving_options = None
     if thread.agent_snapshot is not None:
         options = await snapshot_options(session, thread, options)
     elif message.delivery == "steer" and thread.current_run_id is not None:
@@ -95,6 +100,9 @@ async def validate_message(
             raise conflict("run", current.id, "run_configuration_immutable")
         if not matches(accepted.execution, options.execution):
             raise conflict("run", current.id, "execution_policy_immutable")
+        if compatible_steer(message, options, current, accepted):
+            revision_id = current.agent_revision_id
+            receiving_options = accepted
     if thread.agent_snapshot is not None:
         revision = await definitions.resolve(
             session, thread, message.agent_id, message.agent_revision_id, message.options.overrides, accepting=True
@@ -107,10 +115,16 @@ async def validate_message(
             principal,
             scope,
             message.agent_id,
-            message.agent_revision_id,
+            revision_id,
             message.options.overrides,
             authority=authority,
         )
+    if receiving_options is not None:
+        overrides = receiving_options.overrides
+    effective = stored.require_effective(revision.config, overrides, revision_id=revision.definition_id)
+    selected = await resolve_model(session, principal, scope, effective.model, authority=authority)
+    if selected.config.model_api in PROTOCOLS:
+        raise invalid("model", "This model requires a realtime conversation")
     if initial_environments:
         # Acceptance can share-lock another existing primary. Lock it together with the initial mounts
         # so another Thread taking exclusive locks in ID order (desktop handback) cannot deadlock.
@@ -154,7 +168,14 @@ async def prepare_message(
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
     await require_message_source(session, thread, message.agent_id)
     revision, overrides, options = await validate_message(
-        session, runtime, actor, scope, thread, message, authority=authority, initial_environments=initial_environments
+        session,
+        runtime,
+        actor,
+        scope,
+        thread,
+        message,
+        authority=authority,
+        initial_environments=initial_environments,
     )
     entry = await append_message(
         session,
@@ -280,7 +301,13 @@ async def _create_message(
 
 
 async def submit_message(
-    runtime: Runtime, actor: Principal, workspace_id: str, thread_id: str, message: Message, *, request_key: str
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    thread_id: str,
+    message: Message,
+    *,
+    request_key: str,
 ) -> tuple[Submitted, bool]:
     """Submit using the authenticated request principal; receipt is not execution completion."""
     _message_key(request_key)
@@ -498,16 +525,75 @@ async def create_thread_in_transaction(
 
 
 async def create_thread(
-    runtime: Runtime, actor: Principal, workspace_id: str, body: NewThread, *, request_key: str
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    body: NewThread,
+    *,
+    request_key: str,
 ) -> tuple[Submitted, bool]:
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
         return await prepare_thread(
-            session, runtime, actor, scope, body, request=request, authority=execution_authority(actor, scope)
+            session,
+            runtime,
+            actor,
+            scope,
+            body,
+            request=request,
+            authority=execution_authority(actor, scope),
         )
 
     return await _submit(
         runtime, actor, workspace_id, lambda scope: Request.of(request_key, "thread", scope.workspace_id, body), create
     )
+
+
+async def fork_thread(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    origin: RunRow,
+    agent_id: str,
+    revision_id: str | None,
+    *,
+    fresh_environments: bool,
+    environments: InitialMounts = (),
+    memories: MemoryMounts = (),
+    thread_id: str | None = None,
+) -> ThreadRow:
+    origin_thread = await get_thread(session, scope.workspace_id, origin.thread_id, lock="acceptance")
+    # A fork continues a sealed run's last checkpoint, whatever its outcome.
+    if origin.sealed_at is None:
+        raise conflict("run", origin.id, f"run_{origin.status}")
+    checkpoints.require_compatible(origin)
+    owner = await session.get(SessionRow, origin.session_id)
+    assert owner is not None
+    require_conversation(owner)
+    thread = new_thread(
+        owner,
+        mcp_headers=origin_thread.mcp_headers,
+        origin="fork",
+        origin_thread_id=origin_thread.id,
+        origin_run_id=origin.id,
+    )
+    retained = origin_thread.agent_snapshot is not None and agent_id == origin.agent_id and revision_id is None
+    if retained and fresh_environments:
+        raise invalid(
+            "fresh_environments",
+            "Snapshot forks retain shared environments; select a published revision for fresh environments",
+        )
+    if retained:
+        thread.agent_snapshot = origin_thread.agent_snapshot
+    if thread_id is not None:
+        thread.id = thread_id
+    session.add(thread)
+    await session.flush()
+    shared = [] if fresh_environments else await shared_mounts(session, origin_thread)
+    await mount_environments(session, thread, [*shared, *environments], principal=actor)
+    memory_mounts = [*await shared_memory_mounts(session, origin_thread), *memories]
+    await mount_memories(session, thread, memory_mounts, limit=runtime.settings.memory.mounts_per_thread)
+    return thread
 
 
 async def fork(
@@ -517,39 +603,18 @@ async def fork(
 
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
         origin = await get_run(session, scope.workspace_id, run_id)
-        origin_thread = await get_thread(session, scope.workspace_id, origin.thread_id, lock="acceptance")
-        # A fork continues a sealed run's last checkpoint, whatever its outcome.
-        if origin.sealed_at is None:
-            raise conflict("run", origin.id, f"run_{origin.status}")
-        checkpoints.require_compatible(origin)
-        owner = await session.get(SessionRow, origin.session_id)
-        assert owner is not None
-        require_conversation(owner)
-        thread = new_thread(
-            owner,
-            mcp_headers=origin_thread.mcp_headers,
-            origin="fork",
-            origin_thread_id=origin_thread.id,
-            origin_run_id=origin.id,
+        thread = await fork_thread(
+            session,
+            runtime,
+            actor,
+            scope,
+            origin,
+            body.agent_id,
+            body.agent_revision_id,
+            fresh_environments=body.fresh_environments,
+            environments=body.environments,
+            memories=body.memories,
         )
-        retained = (
-            origin_thread.agent_snapshot is not None
-            and body.agent_id == origin.agent_id
-            and body.agent_revision_id is None
-        )
-        if retained and body.fresh_environments:
-            raise invalid(
-                "fresh_environments",
-                "Snapshot forks retain shared environments; select a published revision for fresh environments",
-            )
-        if retained:
-            thread.agent_snapshot = origin_thread.agent_snapshot
-        session.add(thread)
-        await session.flush()
-        shared = [] if body.fresh_environments else await shared_mounts(session, origin_thread)
-        await mount_environments(session, thread, [*shared, *body.environments], principal=actor)
-        memories = [*await shared_memory_mounts(session, origin_thread), *body.memories]
-        await mount_memories(session, thread, memories, limit=runtime.settings.memory.mounts_per_thread)
         return thread, await prepare_message(
             session, runtime, actor, scope, thread, body, request, authority=execution_authority(actor, scope)
         )

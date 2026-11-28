@@ -180,6 +180,34 @@ it("edits the instance send shortcut without changing other WebUI settings", asy
   ).toBe("enter");
 });
 
+it("writes only non-default workbench shortcuts and removes an empty shortcuts map", async () => {
+  renderFields(
+    'schema_version: "1"\nwebui: {send_shortcut: mod-enter}\n',
+    "chats",
+  );
+  const user = userEvent.setup();
+  const source = () => parse(screen.getByTestId("source").textContent!);
+  const search = screen.getByRole("combobox", { name: "Search chats" });
+  const terminal = screen.getByRole("combobox", { name: "Terminal" });
+  expect(search.textContent).toContain("Ctrl+F");
+  expect(terminal.textContent).toContain("Ctrl+`");
+  const choose = async (control: HTMLElement, name: string) => {
+    await user.click(control);
+    await user.click(await screen.findByRole("option", { name }));
+  };
+  await choose(search, "Ctrl+F / Ctrl+K");
+  await choose(terminal, "Off");
+  expect(screen.getByTestId("source").textContent).toContain('terminal: "off"');
+  expect(source().webui).toEqual({
+    send_shortcut: "mod-enter",
+    shortcuts: { search_chats: "both", terminal: "off" },
+  });
+  await choose(search, "Ctrl+F");
+  expect(source().webui.shortcuts).toEqual({ terminal: "off" });
+  await choose(terminal, "Ctrl+` / Ctrl+Shift+`");
+  expect(source().webui).toEqual({ send_shortcut: "mod-enter" });
+});
+
 it("edits the Coordinator default without changing other WebUI settings", async () => {
   renderFields('schema_version: "1"\nwebui: {send_shortcut: mod-enter}\n');
   const toggle = screen.getByRole("switch", {
@@ -914,6 +942,19 @@ it("keeps Inbox posting enabled by default and writes the opt-out", () => {
     inbox: { enabled: false },
   });
   expect(inbox.getAttribute("aria-checked")).toBe("false");
+});
+
+it("toggles automatic Inbox reads independently of agent posting", () => {
+  renderFields('schema_version: "1"\ninbox: {enabled: false}\n');
+  const automatic = screen.getByRole("switch", {
+    name: "Automatically mark Inbox items as read in chats",
+  });
+  expect(automatic.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(automatic);
+  expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
+    inbox: { enabled: false, auto_mark_read: false },
+  });
+  expect(automatic.getAttribute("aria-checked")).toBe("false");
 });
 
 it("auto-fills ACP preset defaults and toggles Antigravity unattended permissions without manual command edits", async () => {

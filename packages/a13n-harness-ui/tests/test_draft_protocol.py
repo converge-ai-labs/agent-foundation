@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 import pytest
+import yaml
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.shared_drafts import composer_document, composer_values
 from anyio import Event, fail_after, sleep
@@ -103,11 +104,11 @@ async def test_bot_shared_composer_capture_steer_rejection_and_peer_edits(tmp_pa
                     "update_base64": captured["update_base64"],
                 },
             }
-            unread = "/api/inbox/threads/thread_bot/unread"
+            inbox_posts = "/api/inbox/threads/thread_bot"
             await app.inbox().post_from_mcp(thread_id="thread_bot", kind="result", title="Earlier", message="Ready")
             response = await api.post("/api/bot/inputs", json=command)
             assert response.status_code == 200, response.text
-            assert (await api.get(unread)).json() == []
+            assert all(post["read_at"] for post in (await api.get(inbox_posts)).json())
             receipt = response.json()["receipt_id"]
             with fail_after(5):
                 await started.wait()
@@ -119,7 +120,9 @@ async def test_bot_shared_composer_capture_steer_rejection_and_peer_edits(tmp_pa
                 thread_id="thread_bot", kind="result", title="Later", message="New update"
             )
             assert (await api.post("/api/bot/inputs", json=command)).status_code == 200
-            assert [post["item_id"] for post in (await api.get(unread)).json()] == [later.item_id]
+            assert [post["item_id"] for post in (await api.get(inbox_posts)).json() if post["read_at"] is None] == [
+                later.item_id
+            ]
             steered = await api.post(
                 "/api/bot/inputs",
                 json={
@@ -130,7 +133,7 @@ async def test_bot_shared_composer_capture_steer_rejection_and_peer_edits(tmp_pa
             )
             assert steered.status_code == 200, steered.text
             assert steered.json()["receipt_id"] == receipt
-            assert (await api.get(unread)).json() == []
+            assert all(post["read_at"] for post in (await api.get(inbox_posts)).json())
             empty = await frame_until(second, lambda f: f.get("kind") == "draft" and not str(document(f)["text"]))
             rejected_doc = document(empty)
             rejected_doc.get("text", type=Text).insert(0, "Retain rejected input")
@@ -184,10 +187,14 @@ async def test_corrupt_saved_composer_reports_a_sanitized_protocol_error(tmp_pat
         assert await app._store.drafts.get(thread.thread_id) == broken
 
 
+@pytest.mark.parametrize("auto_mark_read", [True, False])
 async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, auto_mark_read: bool
 ) -> None:
     root = _write_configuration(tmp_path)
+    config = yaml.safe_load(root.read_text())
+    config["inbox"] = {"auto_mark_read": auto_mark_read}
+    root.write_text(yaml.safe_dump(config))
     started, release = Event(), Event()
     inputs = []
 
@@ -279,13 +286,11 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 next_input.get("text", type=Text).insert(0, "NEXT")
                 await send(second, draft_id, next_input)
                 await containing(first, "NEXT")
-                pending = await app.inbox().post_from_mcp(
-                    thread_id=thread_id, kind="result", title="Earlier", message="Waiting"
-                )
-                inbox_unread = f"/api/inbox/threads/{thread_id}/unread"
+                await app.inbox().post_from_mcp(thread_id=thread_id, kind="result", title="Earlier", message="Waiting")
+                inbox_posts = f"/api/inbox/threads/{thread_id}"
                 rejected = await api.post(prefix + "/submit", json={"parts": ["busy"]})
                 assert rejected.status_code == 409, rejected.text
-                assert [post["item_id"] for post in (await api.get(inbox_unread)).json()] == [pending.item_id]
+                assert (await api.get(inbox_posts)).json()[0]["read_at"] is None
                 # Steering translates captured context, not current Host bytes.
                 steer = await api.post(
                     f"/api/operations/{receipt}/steer",
@@ -293,7 +298,7 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 )
                 assert steer.status_code == 200, steer.text
                 assert steer.json()["accepted"]
-                assert (await api.get(inbox_unread)).json() == []
+                assert ((await api.get(inbox_posts)).json()[0]["read_at"] is not None) is auto_mark_read
                 upload = (
                     await api.post(prefix + "/attachments", params={"name": "binary.bin"}, content=b"\x00\xff")
                 ).json()

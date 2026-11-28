@@ -1539,42 +1539,6 @@ it("edits project defaults directly while preserving unknown project fields", as
   expect(saved).toContain("/test");
 });
 
-it("persists generated and edited collaboration names across visits and rejects empty replacements", async () => {
-  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
-  let component = render(<BrowserApp />);
-  await screen.findByRole("button", {
-    name: "Workspace menu",
-  });
-  const generated = localStorage.getItem("a13n-harness-ui.display-name");
-  expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
-  component.unmount();
-  component = render(<BrowserApp />);
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Workspace menu",
-    }),
-  );
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Settings" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("link", { name: "People & profile" }),
-  );
-  const input = await screen.findByLabelText("Your display name");
-  fireEvent.change(input, { target: { value: "   " } });
-  expect(
-    screen.getByRole("button", { name: "Save name" }).hasAttribute("disabled"),
-  ).toBe(true);
-  expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe(generated);
-  fireEvent.change(input, { target: { value: "  Alex  " } });
-  fireEvent.click(screen.getByRole("button", { name: "Save name" }));
-  await screen.findByRole("button", { name: "Workspace menu" });
-  expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe("Alex");
-  component.unmount();
-  render(<BrowserApp />);
-  await screen.findByRole("button", { name: "Workspace menu" });
-});
-
 it("shows Live entries only after enabling and saving, and hides them again without a reload", async () => {
   window.history.replaceState(null, "", "/settings/chats");
   const rootSource = {
@@ -1738,54 +1702,14 @@ it("configures shared creation models in Agents without changing chat defaults o
   expect(submissions).toBe(0);
 });
 
-it("persists the initial collaboration color and restores explicit changes", async () => {
+it("creates a collaboration profile and restores defaults and edits across visits", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "test-key");
   const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+  const user = userEvent.setup();
   try {
-    const component = render(<BrowserApp />);
-    const user = userEvent.setup();
+    const first = render(<BrowserApp />);
     await user.click(
-      await screen.findByRole("button", {
-        name: "Workspace menu",
-      }),
-    );
-    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
-    await user.click(
-      await screen.findByRole("link", { name: "People & profile" }),
-    );
-    const color = await screen.findByRole("combobox", { name: "Color" });
-    expect(color.textContent).toBe("Purple");
-    expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#7c3aed");
-    component.unmount();
-
-    random.mockReturnValue(0.99);
-    const reopened = render(<BrowserApp />);
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Workspace menu",
-      }),
-    );
-    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
-    await user.click(
-      await screen.findByRole("link", { name: "People & profile" }),
-    );
-    const remembered = await screen.findByRole("combobox", {
-      name: "Color",
-    });
-    expect(remembered.textContent).toBe("Purple");
-    await user.click(remembered);
-    await user.click(await screen.findByRole("option", { name: "Green" }));
-    expect(remembered.textContent).toBe("Green");
-    await waitFor(() =>
-      expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#059669"),
-    );
-    reopened.unmount();
-
-    render(<BrowserApp />);
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Workspace menu",
-      }),
+      await screen.findByRole("button", { name: "Workspace menu" }),
     );
     await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
     await user.click(
@@ -1793,7 +1717,47 @@ it("persists the initial collaboration color and restores explicit changes", asy
     );
     expect(
       (await screen.findByRole("combobox", { name: "Color" })).textContent,
+    ).toBe("Purple");
+    const generated = localStorage.getItem("a13n-harness-ui.display-name");
+    expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
+    expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#7c3aed");
+    first.unmount();
+
+    random.mockReturnValue(0.99);
+    window.history.replaceState(null, "", "/settings/people");
+    const reopened = render(<BrowserApp />);
+    const color = await screen.findByRole("combobox", { name: "Color" });
+    const name =
+      await screen.findByLabelText<HTMLInputElement>("Your display name");
+    expect(color.textContent).toBe("Purple");
+    expect(name.value).toBe(generated);
+    fireEvent.change(name, { target: { value: "   " } });
+    expect(
+      screen
+        .getByRole("button", { name: "Save name" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe(
+      generated,
+    );
+    fireEvent.change(name, { target: { value: "  Alex  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    await user.click(color);
+    await user.click(await screen.findByRole("option", { name: "Green" }));
+    await waitFor(() => {
+      expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe("Alex");
+      expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#059669");
+    });
+    reopened.unmount();
+
+    render(<BrowserApp />);
+    expect(
+      (await screen.findByRole("combobox", { name: "Color" })).textContent,
     ).toBe("Green");
+    expect(
+      (await screen.findByLabelText<HTMLInputElement>("Your display name"))
+        .value,
+    ).toBe("Alex");
   } finally {
     random.mockRestore();
   }

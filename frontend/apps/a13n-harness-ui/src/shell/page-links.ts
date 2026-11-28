@@ -98,7 +98,9 @@ export function nativeLink(search: string): {
       pane === "subagents" ||
       pane === "tools" ||
       pane === "tasks" ||
-      pane === "notes"
+      pane === "notes" ||
+      pane === "worktrees" ||
+      pane === "links"
         ? pane
         : null,
   };

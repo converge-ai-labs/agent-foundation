@@ -95,12 +95,11 @@ export function SourceSetup({
       />
     );
   return (
-    <>
-      <ConnectionSetup
-        connector={selected.connector}
-        provider={selected.provider}
-        onStarted={onStarted}
-      />
+    <ConnectionSetup
+      connector={selected.connector}
+      provider={selected.provider}
+      onStarted={onStarted}
+    >
       {selected.provider.type === "composio" && (
         <div className={styles.composioHelp}>
           {selected.connector.authentication_methods.includes("OAUTH2") && (
@@ -137,7 +136,7 @@ export function SourceSetup({
         connector={selected.connector}
         providerId={selected.provider.id}
       />
-    </>
+    </ConnectionSetup>
   );
 }
 

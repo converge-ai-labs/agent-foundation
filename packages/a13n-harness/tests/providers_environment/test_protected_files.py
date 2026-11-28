@@ -93,13 +93,13 @@ def test_unavailable_inode_is_not_an_alias(tmp_path: Path, monkeypatch) -> None:
     ["text", "bytes", "stream", "search", "patch", "append", "copy"],
 )
 async def test_direct_file_reads_denied_before_open(
-    tmp_path: Path, prevent_protected_open, alias_kind, operation
+    tmp_path: Path, prevent_protected_open, alias_kind, operation, symlink
 ) -> None:
     protected = tmp_path / "metadata.sqlite3"
     protected.write_text("private storage\n")
     alias = tmp_path / "alias.txt"
     if alias_kind == "symlink":
-        alias.symlink_to(protected)
+        symlink(alias, protected)
     elif alias_kind == "hardlink":
         os.link(protected, alias)
     else:

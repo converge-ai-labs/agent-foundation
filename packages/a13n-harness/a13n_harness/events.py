@@ -104,14 +104,20 @@ def enqueued_input_events(event: EnqueuedMessagesEvent) -> list[InputEvent]:
     for message in event.messages:
         if not isinstance(message, ModelRequest):
             continue
-        notification = (message.metadata or {}).get("a13n.steering-source")
-        source: InputSource = (
-            notification
-            if notification
-            in {"async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"}
-            else "steering"
-        )
-        observed.extend(input_events(request_input_content(message), source=source, input_id=event.enqueue_id))
+        for part in request_input_content(message):
+            # Realtime joins multiple inputs into one native request and retains only their part metadata.
+            notification = (message.metadata or {}).get(
+                "a13n.steering-source", (part.metadata.model_extra or {}).get("a13n.steering-source")
+            )
+            if notification == "user" and not part.metadata.display:
+                continue
+            source: InputSource = (
+                notification
+                if notification
+                in {"async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"}
+                else "steering"
+            )
+            observed.extend(input_events([part], source=source, input_id=event.enqueue_id))
     return observed
 
 

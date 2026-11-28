@@ -72,17 +72,17 @@ export function MemberSettings({ scope }: { scope: MembershipScope }) {
     canManage && (scope.kind === "organization" || !workspace?.archived_at);
   const [tab, setTab] = useTabParam(["members", "invitations"]);
   // Both tabs offer the same actions, so the header holds still between them.
-  const actions = (
+  const invite =
+    canAdd && passwords ? <InvitationEditor scope={scope} /> : undefined;
+  const actions = canAdd ? (
     <>
-      {canAdd && (
-        <AddMember
-          scope={scope}
-          organizationId={organizationAdmin ? organization.id : undefined}
-        />
-      )}
-      {canAdd && passwords && <InvitationEditor scope={scope} />}
+      <AddMember
+        scope={scope}
+        organizationId={organizationAdmin ? organization.id : undefined}
+      />
+      {invite}
     </>
-  );
+  ) : undefined;
   return (
     <div className={styles.stack}>
       <PageActions>{actions}</PageActions>
@@ -96,7 +96,7 @@ export function MemberSettings({ scope }: { scope: MembershipScope }) {
         <Invitations
           key={`${scope.kind}:${scope.id}`}
           scope={scope}
-          actions={actions}
+          emptyAction={invite}
           canResend={canAdd && passwords}
         />
       ) : (
@@ -452,6 +452,7 @@ function ChangeRole({
       open={open}
     >
       <form
+        className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
           if (!noChange) change.mutate();
@@ -607,11 +608,12 @@ function MemberPasswordReset({
               wrap
             />
           )}
-          <footer className={styles.formActions}>
-            <Button type="button" onClick={close}>
-              {t("Done")}
-            </Button>
-          </footer>
+          <FormActions
+            pending={false}
+            dismiss
+            cancelLabel={t("Done")}
+            onCancel={close}
+          />
         </div>
       ) : (
         <form

@@ -16,6 +16,7 @@ import {
   PopoverTrigger,
 } from "a13n-ui";
 import {
+  GitBranch,
   SlidersHorizontal,
   Target,
   TreeStructure,
@@ -38,6 +39,7 @@ export function useTaskOptionsDialog(open: boolean) {
 export function TaskOptions({
   triggerRef,
   goal,
+  worktree,
   coordinator,
   coordinatorEnabled = false,
   environment,
@@ -45,6 +47,7 @@ export function TaskOptions({
 }: {
   triggerRef?: Ref<HTMLButtonElement>;
   goal: ReactNode;
+  worktree?: ReactNode;
   coordinator?: ReactNode;
   coordinatorEnabled?: boolean;
   environment?: ReactNode;
@@ -89,6 +92,17 @@ export function TaskOptions({
           <p className={styles.optionHint}>
             {t("Agent coordination stays on after sending.")}
           </p>
+        )}
+        {worktree && (
+          <label
+            className={styles.optionRow}
+            aria-label={t("Worktree")}
+            title={t("Work in an isolated Git worktree for this task.")}
+          >
+            <GitBranch aria-hidden />
+            <span>{t("Worktree")}</span>
+            {worktree}
+          </label>
         )}
         {(environment || context) && (
           <div className={styles.optionActions}>

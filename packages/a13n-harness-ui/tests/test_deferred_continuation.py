@@ -17,7 +17,7 @@ from pydantic_ai.toolsets.external import ExternalToolset
 
 from .test_app import _reconstructed, _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.mark.parametrize(("submission", "fail_after_handoff"), [("prompt", False), ("partial", True)])

@@ -14,6 +14,8 @@ from a13n_harness_ui.interactive.onboarding import SetupBack, SetupCancelled, ru
 from a13n_harness_ui.interactive.setup import SetupWizard
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.fixture(autouse=True)
 def isolate_acp_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,25 +173,30 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("cancel_at", ["provider", "model", "fast", "tools", "environment"])
-async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cancel_at: str) -> None:
+async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path) -> None:
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     original = account.read_bytes()
-
-    async def ask(question, selection):
-        if question.key == cancel_at:
-            raise SetupCancelled()
-        return question.default
 
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
         configuration_path=path,
     ) as app:
-        assert not await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
-    assert not path.exists()
-    assert not (path.parent / "models").exists()
-    assert account.read_bytes() == original
+        for step in ("provider", "model", "fast", "tools", "environment"):
+            cancelled = False
+
+            async def ask(question, selection, *, cancel_at=step):
+                nonlocal cancelled
+                if question.key == cancel_at:
+                    cancelled = True
+                    raise SetupCancelled()
+                return question.default
+
+            assert not await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
+            assert cancelled, step
+            assert not path.exists(), step
+            assert not (path.parent / "models").exists(), step
+            assert account.read_bytes() == original, step
 
 
 @pytest.mark.anyio

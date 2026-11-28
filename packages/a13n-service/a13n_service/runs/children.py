@@ -42,7 +42,8 @@ def child_results(runtime: Runtime) -> Handler:
             # Settled first: a claim that lost its lease must not insert the entry its successor delivers.
             if not await settle(session, claimed, "delivered"):
                 return
-            await inbox.append_child_result(session, parent, child, origin, result)
+            entry = await inbox.append_child_result(session, parent, child, origin, result)
+            runtime.mailbox.notify(session, entry)
             parent_id = parent.id
         await advance(runtime, parent_id)
 

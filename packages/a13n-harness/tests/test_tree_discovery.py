@@ -18,16 +18,16 @@ from .test_skills import _runtime_mount
 pytestmark = pytest.mark.anyio
 
 
-def seed(root):
+def seed(root, symlink):
     for directory in ("a", "z", ".hidden"):
         (root / directory).mkdir()
         (root / directory / "child").write_text("never read")
     (root / "a.txt").write_text("never read")
-    (root / "link").symlink_to("a", target_is_directory=True)
+    symlink(root / "link", "a", target_is_directory=True)
 
 
-async def test_local_tree_bfs_depth_hidden_and_metadata_only(tmp_path, monkeypatch):
-    seed(tmp_path)
+async def test_local_tree_bfs_depth_hidden_and_metadata_only(tmp_path, monkeypatch, symlink):
+    seed(tmp_path, symlink)
     files = _files(tmp_path)
     monkeypatch.setattr(files, "read_text", AsyncMock(side_effect=AssertionError("content read")))
     result = await files.list_tree(FileTreeRequest(root="/"))
@@ -39,8 +39,8 @@ async def test_local_tree_bfs_depth_hidden_and_metadata_only(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("budget", ["bytes", "entries", "calls"])
-async def test_tree_stops_before_another_directory_call(tmp_path, monkeypatch, budget):
-    seed(tmp_path)
+async def test_tree_stops_before_another_directory_call(tmp_path, monkeypatch, budget, symlink):
+    seed(tmp_path, symlink)
     files = _files(tmp_path)
     original = files.list
     calls = []
@@ -63,8 +63,8 @@ async def test_tree_stops_before_another_directory_call(tmp_path, monkeypatch, b
     assert len(result.entries) == (0 if budget == "bytes" else 1 if budget == "entries" else 4)
 
 
-async def test_tree_continuation_finishes_parent_before_children(tmp_path, monkeypatch):
-    seed(tmp_path)
+async def test_tree_continuation_finishes_parent_before_children(tmp_path, monkeypatch, symlink):
+    seed(tmp_path, symlink)
     files = _files(tmp_path)
     original = files.list
 
@@ -77,8 +77,8 @@ async def test_tree_continuation_finishes_parent_before_children(tmp_path, monke
     assert result.directory_calls == 6 and not result.truncated
 
 
-async def test_virtual_tree_accounts_escaped_logical_prefix_before_descent(tmp_path):
-    seed(tmp_path)
+async def test_virtual_tree_accounts_escaped_logical_prefix_before_descent(tmp_path, symlink):
+    seed(tmp_path, symlink)
     logical = '/long-中-"-root'
     runtime = create_environment_runtime(mounts={"root": replace(_runtime_mount(tmp_path), mount_path=logical)})
     async with runtime.bind(thread_id="thread", run_id="run", instance=_instance(), host_refs={}) as env:
@@ -93,8 +93,9 @@ async def test_virtual_tree_accounts_escaped_logical_prefix_before_descent(tmp_p
         assert len(content.encode()) <= 512 and "long-中" in content
 
 
-@pytest.mark.parametrize("name", ["long-" + "x" * 200, "t"])
-async def test_virtual_tree_accounts_canonical_selected_link_root(tmp_path, name):
+# The canonical path alone exceeds the byte budget; the host path need not be unusually long.
+@pytest.mark.parametrize("name", ["long-" + "x" * 88, "t"], ids=["over-budget", "within-budget"])
+async def test_virtual_tree_accounts_canonical_selected_link_root(tmp_path, name, symlink):
     from a13n_harness._json import dump_json_bytes
     from a13n_harness.environment.trees import tree_entry_value
 
@@ -103,7 +104,7 @@ async def test_virtual_tree_accounts_canonical_selected_link_root(tmp_path, name
     for index in range(10):
         (target / f"file-{index}").touch()
     link = "selected-link"
-    (tmp_path / link).symlink_to(target, target_is_directory=True)
+    symlink(tmp_path / link, target, target_is_directory=True)
     runtime = create_environment_runtime(mounts={"root": replace(_runtime_mount(tmp_path), mount_path="/repo")})
     async with runtime.bind(thread_id="thread", run_id="run", instance=_instance(), host_refs={}) as env:
         root = f"/repo/{link}"
@@ -115,8 +116,10 @@ async def test_virtual_tree_accounts_canonical_selected_link_root(tmp_path, name
         assert f"/repo/{name}/file-0" in content
 
 
-async def test_unadvertised_tree_uses_explicit_compatibility_but_native_failure_does_not(tmp_path, monkeypatch):
-    seed(tmp_path)
+async def test_unadvertised_tree_uses_explicit_compatibility_but_native_failure_does_not(
+    tmp_path, monkeypatch, symlink
+):
+    seed(tmp_path, symlink)
     local = _files(tmp_path)
     session = SimpleNamespace(descriptor=SimpleNamespace(working_directory="/", available_methods=()))
     files = EIPFileOperator(session=session, environment_id="test", execution_id="test", generation="1")

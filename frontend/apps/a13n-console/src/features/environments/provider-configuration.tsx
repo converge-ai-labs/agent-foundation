@@ -377,6 +377,7 @@ export function ProviderConfiguration({
       <>
         {variant === "sprites" && (
           <SettingsRow
+            className="py-0"
             label={t("Desktop environment")}
             controlId={desktopId}
             stackOnNarrow={false}
@@ -405,6 +406,7 @@ export function ProviderConfiguration({
         )}
         {variant === "modal" && (
           <SettingsRow
+            className="py-0"
             label={t("Desktop environment")}
             controlId={desktopId}
             stackOnNarrow={false}
@@ -436,6 +438,7 @@ export function ProviderConfiguration({
         )}
         {variant === "daytona" && (
           <SettingsRow
+            className="py-0"
             label={t("Desktop environment")}
             controlId={desktopId}
             stackOnNarrow={false}
@@ -464,6 +467,7 @@ export function ProviderConfiguration({
         )}
         {variant === "vercel" && (
           <SettingsRow
+            className="py-0"
             label={t("Desktop environment")}
             controlId={desktopId}
             stackOnNarrow={false}
@@ -504,6 +508,7 @@ export function ProviderConfiguration({
         )}
         {!builtIn && variant === "docker" && desktop && (
           <SettingsRow
+            className="py-0"
             label={t("Desktop capability")}
             description={t(
               "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately.",
@@ -537,6 +542,7 @@ export function ProviderConfiguration({
         )}
         {variant === "e2b" && desktop && (
           <SettingsRow
+            className="py-0"
             label={t("Desktop environment")}
             description={t(
               "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.",

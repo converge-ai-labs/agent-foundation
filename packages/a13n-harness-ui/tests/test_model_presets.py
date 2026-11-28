@@ -16,6 +16,8 @@ from a13n_harness_ui.model_presets import API_PROVIDERS, settings_presets
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("provider", API_PROVIDERS, ids=lambda provider: provider.route)

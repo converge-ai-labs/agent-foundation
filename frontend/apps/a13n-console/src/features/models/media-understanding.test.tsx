@@ -58,6 +58,13 @@ const model = (
 });
 const models = [
   model("model-vision", "Vision", ["image_understanding"]),
+  model("model-voice", "Voice", [], {
+    config: {
+      model_name: "voice",
+      model_api: "test.speech",
+      characteristics: { capabilities: ["image_understanding"] },
+    },
+  }),
   model("model-text", "Text", []),
   model("model-disabled", "Disabled", ["image_understanding"], {
     enabled: false,
@@ -99,6 +106,8 @@ beforeEach(() => {
   saved = initial;
   HTMLElement.prototype.scrollIntoView = () => {};
   state.http.GET.mockImplementation(async (path: string) => {
+    if (path === "/api/v1/provider-types/{kind}")
+      return response({ items: [{ realtime_model_apis: ["test.speech"] }] });
     if (path === defaultsPath)
       return response(saved, `"ws_test:${saved.version}"`);
     if (path.endsWith("/model-providers"))
@@ -125,6 +134,7 @@ it("offers only compatible enabled models and saves the whole selection on chang
   expect(screen.queryByRole("option", { name: /Text/ })).toBeNull();
   expect(screen.queryByRole("option", { name: /Disabled/ })).toBeNull();
   expect(screen.queryByRole("option", { name: /Offline/ })).toBeNull();
+  expect(screen.queryByRole("option", { name: /Voice/ })).toBeNull();
   await user.click(vision);
   await waitFor(() =>
     expect(state.http.PUT).toHaveBeenCalledWith(defaultsPath, {
@@ -183,7 +193,7 @@ it("warns on the row whose saved model is no longer eligible", async () => {
   const image = await imageSelect();
   expect(image.textContent).toContain("Disabled");
   await screen.findByText(
-    /Saved model model-disabled is disabled or no longer declares image understanding\./,
+    /Saved model model-disabled is unavailable for image understanding\./,
   );
 });
 
@@ -191,7 +201,7 @@ it("explains a kind that no enabled model declares", async () => {
   setup();
   await imageSelect();
   expect(
-    screen.getByText(/No enabled model declares video understanding\./),
+    screen.getByText(/No model is available for video understanding\./),
   ).toBeTruthy();
   expect(
     screen
@@ -199,7 +209,7 @@ it("explains a kind that no enabled model declares", async () => {
       .getAttribute("href"),
   ).toBe("/workspace/ws_test/models");
   expect(
-    screen.queryByText(/No enabled model declares image understanding\./),
+    screen.queryByText(/No model is available for image understanding\./),
   ).toBeNull();
 });
 
