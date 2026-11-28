@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from functools import partial
@@ -13,6 +13,7 @@ from secrets import token_urlsafe
 from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import urlsplit
 
+from a13n_stream_protocol.realtime import SpeechTranscript
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
@@ -24,6 +25,7 @@ from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.ids import Key, ObjectId, new_object_id
+from a13n_service.infra.telemetry import meter
 from a13n_service.infra.websocket import secure
 from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents import stored
@@ -32,7 +34,16 @@ from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemoryS
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs.admission import requires_model_reservation
 from a13n_service.runs.attempts import Lease, prove
-from a13n_service.runs.realtime_transport import HEARTBEAT_SECONDS, Offer, Pipe, unavailable
+from a13n_service.runs.realtime_transport import (
+    CONTROL_OVERFLOWS,
+    HEARTBEAT_SECONDS,
+    PCM_DISCONTINUITIES,
+    AttachTimeout,
+    Offer,
+    Pipe,
+    TransportError,
+    unavailable,
+)
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     InitialMounts,
@@ -58,6 +69,44 @@ TICKET_SECONDS = 30
 CONNECT_PATH = "/api/v1/workspaces/{workspace_id}/realtime"
 type Frame = bytes | dict[str, str | int | bool]
 type Transport = Literal["websocket", "webrtc"]
+type HandshakeResult = Literal["ready", "timeout", "failed", "abandoned"]
+type CallEnd = Literal["completed", "client_disconnected", "draining", "transport_error", "failed"]
+
+ACTIVE_CONNECTIONS = meter.create_up_down_counter(
+    "a13n.realtime.connections.active", unit="{connection}", description="Open realtime signaling WebSockets"
+)
+HANDSHAKES = meter.create_histogram(
+    "a13n.realtime.handshakes.duration",
+    unit="s",
+    description="Realtime WebSocket accept to ready or aborted handshake",
+    explicit_bucket_boundaries_advisory=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30),
+)
+CALLS_ENDED = meter.create_counter("a13n.realtime.calls.ended", unit="{call}", description="Ended realtime WebSockets")
+
+
+@dataclass(slots=True)
+class _ConnectionObservation:
+    transport: Transport
+    started: float = field(default_factory=lambda: asyncio.get_running_loop().time())
+    handshake_recorded: bool = False
+    reason: CallEnd = "failed"
+    terminal_reason: CallEnd | None = None
+
+    def handshake(self, result: HandshakeResult) -> None:
+        if not self.handshake_recorded:
+            duration = asyncio.get_running_loop().time() - self.started
+            HANDSHAKES.record(duration, {"transport": self.transport, "result": result})
+            self.handshake_recorded = True
+
+
+def _transcript_frame(update: SpeechTranscript) -> dict[str, str | int | bool]:
+    return {
+        "type": "transcript",
+        "message_id": update["message_id"],
+        "role": update["role"],
+        "text": update["text"],
+        "final": update["final"],
+    }
 
 
 @dataclass(slots=True)
@@ -65,7 +114,7 @@ class Channel:
     principal_id: str
     workspace_id: str
     incoming: asyncio.Queue[bytes | str | Media] = field(default_factory=lambda: asyncio.Queue(64))
-    outgoing: asyncio.Queue[dict[str, str | int | bool]] = field(default_factory=lambda: asyncio.Queue(128))
+    outgoing: asyncio.Queue[dict[str, str | int | bool]] = field(default_factory=lambda: asyncio.Queue(512))
     pcm: asyncio.Queue[tuple[int, bytes]] = field(default_factory=lambda: asyncio.Queue(32))
     decisions: dict[str, bool | None] = field(default_factory=dict)
     dispatched: set[str] = field(default_factory=set)
@@ -80,6 +129,9 @@ class Channel:
     verify_dispatch: Callable[[str], Awaitable[bool]] | None = None
     approvals: dict[str, asyncio.Future[bool]] = field(default_factory=dict)
     webrtc_offer: str | None = None
+    transcript_window: float = 0
+    _transcripts: dict[tuple[str, str], SpeechTranscript] = field(default_factory=dict, init=False)
+    _transcript_timer: asyncio.TimerHandle | None = field(default=None, init=False)
 
     async def answer_webrtc(self, sdp: str) -> None:
         if self.closed.is_set():
@@ -87,22 +139,56 @@ class Channel:
         self.emit({"type": "answer", "sdp": sdp})
 
     def emit(self, frame: Frame) -> None:
+        if isinstance(frame, bytes):
+            if self.pcm.full():
+                self.pcm.get_nowait()
+            self.pcm.put_nowait((self.playback_epoch, self.playback_offset.to_bytes(8) + frame))
+            self.playback_offset += len(frame)
+        else:
+            self.flush_transcripts()
+            self._enqueue(frame)
+
+    def transcript(self, update: SpeechTranscript) -> None:
+        if update["final"] or not self.transcript_window:
+            self.emit(_transcript_frame(update))
+            return
+        key = (update["message_id"], update["role"])
+        # Flush retained snapshots in order of their latest update.
+        self._transcripts.pop(key, None)
+        self._transcripts[key] = update
+        if self._transcript_timer is None:
+            self._transcript_timer = asyncio.get_running_loop().call_later(self.transcript_window, self._flush_on_timer)
+
+    def flush_transcripts(self) -> None:
+        if self._transcript_timer is None:
+            return
+        self._transcript_timer.cancel()
+        self._transcript_timer = None
+        pending, self._transcripts = self._transcripts, {}
+        for update in pending.values():
+            self._enqueue(_transcript_frame(update))
+
+    def _flush_on_timer(self) -> None:
+        with suppress(TransportError):
+            self.flush_transcripts()  # Queue overflow has already closed the channel.
+
+    def _enqueue(self, frame: dict[str, str | int | bool]) -> None:
         try:
-            if isinstance(frame, bytes):
-                if self.pcm.full():
-                    self.pcm.get_nowait()
-                self.pcm.put_nowait((self.playback_epoch, self.playback_offset.to_bytes(8) + frame))
-                self.playback_offset += len(frame)
-            else:
-                self.outgoing.put_nowait(frame)
+            self.outgoing.put_nowait(frame)
         except asyncio.QueueFull:
-            self.failed = True
-            self.closed.set()
-            raise ServiceError("unavailable", "The realtime client is not keeping up") from None
+            self._overflow()
+            raise TransportError("The realtime client is not keeping up") from None
+
+    def _overflow(self) -> None:
+        if not self.failed:
+            CONTROL_OVERFLOWS.add(1, {"side": "worker"})
+        self.failed = True
+        self.closed.set()
 
     def finish(self, run_id: str, status: str) -> None:
+        self.flush_transcripts()
         if status == "failed" and self.outgoing.qsize() + 2 <= self.outgoing.maxsize:
-            self.outgoing.put_nowait({"type": "error", "message": "The realtime run failed"})
+            self._enqueue({"type": "error", "message": "The realtime run failed"})
         self.emit({"type": "sealed", "run_id": run_id, "status": status})
         self.finished.set()
 
@@ -581,10 +667,13 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
     run_id = None
     finished = False
     stack = AsyncExitStack()
+    observation = None
+    start = ticket.start
     try:
         await socket.accept(subprotocol=SUBPROTOCOL)
+        observation = _ConnectionObservation(start.transport)
+        ACTIVE_CONNECTIONS.add(1, {"transport": start.transport})
         async with asyncio.timeout(10):
-            start = ticket.start
             if start.transport == "webrtc":
                 offer = WebRTCOffer.model_validate_json(await socket.receive_text())
                 lines = [line.strip() for line in offer.sdp.splitlines()]
@@ -623,13 +712,22 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
             authorize_attachment=partial(_authorize_attachment, runtime, workspace_id, run_id),
             reauthorize=reauthorize,
             interval=runtime.settings.worker.authority_seconds,
+            observation=observation,
         )
         finished = not disconnected
-        if not disconnected:
+        if finished:
             await socket.close()
-    except (WebSocketDisconnect, OSError):
-        pass
-    except (RedisError, ServiceError, ValidationError, TimeoutError) as error:
+    except TimeoutError:
+        if observation is not None and not finished:
+            observation.reason = "transport_error"
+            if observation.terminal_reason is None:
+                observation.handshake("timeout")
+    except (RedisError, ServiceError, ValidationError) as error:
+        if observation is not None and not finished:
+            if isinstance(error, (RedisError, TransportError)):
+                observation.reason = "transport_error"
+            if isinstance(error, AttachTimeout) and observation.terminal_reason is None:
+                observation.handshake("timeout")
         message = error.message if isinstance(error, ServiceError) else "The realtime request could not be accepted."
         if socket.client_state == socket.application_state == WebSocketState.CONNECTED:
             try:
@@ -637,7 +735,22 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
                 await socket.close(code=1008)
             except (WebSocketDisconnect, OSError):
                 pass
+    except (WebSocketDisconnect, OSError) as error:
+        if observation is not None and not finished:
+            observation.reason = (
+                "draining" if isinstance(error, WebSocketDisconnect) and error.code == 1012 else "client_disconnected"
+            )
+    except asyncio.CancelledError:
+        if observation is not None and not finished:
+            observation.reason = "draining"
+        raise
     finally:
+        if observation is not None:
+            reason = observation.terminal_reason or observation.reason
+            result = "abandoned" if reason in {"client_disconnected", "draining"} else "failed"
+            observation.handshake(result)
+            CALLS_ENDED.add(1, {"transport": start.transport, "reason": reason})
+            ACTIVE_CONNECTIONS.add(-1, {"transport": start.transport})
         try:
             await stack.aclose()
             if run_id is not None:
@@ -694,6 +807,7 @@ async def relay(
     authorize_attachment: Callable[[str], Awaitable[None]],
     reauthorize: Callable[[], Awaitable[Principal]],
     interval: float,
+    observation: _ConnectionObservation,
 ) -> bool:
     """Return whether the client disconnected. A normal stop waits for the Worker to seal."""
     attached = asyncio.Event()
@@ -708,11 +822,11 @@ async def relay(
             await asyncio.sleep(HEARTBEAT_SECONDS)
             await pipe.send(b"ping")
 
-    async def receive() -> bool:
+    async def receive() -> CallEnd | None:
         while True:
             event = await socket.receive()
             if event["type"] == "websocket.disconnect":
-                return True
+                return "draining" if event.get("code") == 1012 else "client_disconnected"
             if (audio := event.get("bytes")) is not None:
                 if not ready.is_set():
                     raise invalid("audio", "Wait for realtime ready")
@@ -724,7 +838,7 @@ async def relay(
             else:
                 command = _COMMAND.validate_json(event.get("text") or "")
                 if isinstance(command, Input) and command.type == "stop":
-                    return False
+                    return None
                 if not ready.is_set():
                     raise invalid("type", "Wait for realtime ready")
                 if isinstance(command, Media):
@@ -757,6 +871,7 @@ async def relay(
             nonlocal next_offset
             offset = int.from_bytes(raw[1:9])
             if offset != next_offset:
+                PCM_DISCONTINUITIES.add(1, {"direction": "egress"})
                 await socket.send_json({"type": "playback_position", "offset": offset})
             await socket.send_bytes(raw[9:])
             next_offset = offset + len(raw) - 9
@@ -781,6 +896,17 @@ async def relay(
                     if kind == "ready":
                         ready.set()
                     await socket.send_json(event)
+                    if kind == "ready":
+                        observation.handshake("ready")
+                    if kind == "draining":
+                        observation.terminal_reason = "draining"
+                    if kind == "sealed":
+                        # The seal follows the commit. Its delivery can race the bridge's separate finish marker.
+                        if observation.terminal_reason == "draining":
+                            observation.handshake("abandoned")
+                        else:
+                            observation.terminal_reason = "failed" if event.get("status") == "failed" else "completed"
+                            observation.handshake("failed")
                     if kind == "interrupted":
                         acknowledged_epoch += 1
                     if ready.is_set() and kind in {"ready", "interrupted"}:
@@ -797,11 +923,13 @@ async def relay(
     tasks = (reader, writer, asyncio.create_task(pulse()), asyncio.create_task(verify()))
     try:
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        if reader in done and not reader.cancelled() and reader.exception() is None and reader.result():
+        if reader in done and not reader.cancelled() and reader.exception() is None and (reason := reader.result()):
+            observation.reason = reason
             return True
         if writer in done:
             # A terminal frame follows the committed outcome. The Worker can unsubscribe before our next ping.
             writer.result()
+            observation.reason = "completed"
             return False
         for task in done:
             task.result()
@@ -814,7 +942,9 @@ async def relay(
                 else:
                     raise ServiceError("conflict", "The realtime Worker has not attached")
                 await writer
-        return reader.result()
+        writer.result()
+        observation.reason = "completed"
+        return False
     finally:
         for task in tasks:
             task.cancel()
@@ -838,7 +968,11 @@ async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channe
         if not start.startswith(b"o"):
             raise unavailable()
         channel = Channel(
-            offer.principal_id, offer.workspace_id, audio=offer.audio, webrtc_offer=start[1:].decode() or None
+            offer.principal_id,
+            offer.workspace_id,
+            audio=offer.audio,
+            webrtc_offer=start[1:].decode() or None,
+            transcript_window=runtime.settings.worker.stream_coalesce_seconds,
         )
 
         async def verify_dispatch(call_id: str) -> bool:
@@ -903,7 +1037,9 @@ async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
                     channel.incoming.put_nowait(command)
                 elif command.text.strip():
                     channel.incoming.put_nowait(command.text)
-        except (ServiceError, ValidationError, asyncio.QueueFull):
+        except asyncio.QueueFull:
+            channel._overflow()
+        except (ServiceError, ValidationError):
             channel.failed = True
         finally:
             channel.closed.set()

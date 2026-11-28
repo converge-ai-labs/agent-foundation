@@ -32,6 +32,15 @@ groups:
     annotations:
       summary: Worker slots are full while due Runs wait
       description: Consider worker replicas/slots; first inspect Attempt duration, retained tools and external dependencies.
+  - alert: A13nRealtimeSlotsSaturated
+    expr: (sum by (job,deployment) (a13n_worker_realtime_slots{job="a13n-service",state="free"}) == 0) and on (job,deployment)
+      (sum by (job,deployment) (a13n_worker_realtime_slots{job="a13n-service",state="busy"}) > 0)
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: All realtime Worker slots are busy
+      description: Check call duration and handshake outcomes before changing realtime capacity.
   - alert: A13nWorkersMissing
     expr: (max by (job,deployment) (a13n_backlog_oldest_age_seconds{job="a13n-service",queue="runs"} and on (job,deployment,instance,queue)
       (time() - a13n_backlog_updated_seconds{job="a13n-service"} < 60)) > 60) unless on (job,deployment) (sum by

@@ -17,6 +17,7 @@ from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.telemetry import meter
 
 if TYPE_CHECKING:
     from a13n_service.runs.attempts import Lease
@@ -24,13 +25,32 @@ if TYPE_CHECKING:
 ATTACH_SECONDS = 20
 HEARTBEAT_SECONDS = 1
 _PEER_TIMEOUT = 6
-_STREAM_LIMIT = 128
+_STREAM_LIMIT = 512
 _COMMIT_WAIT = 0.15
 _PCM_HEADER = struct.Struct("!QQ")
 
 
-def unavailable() -> ServiceError:
-    return ServiceError("unavailable", "The realtime transport is unavailable")
+PCM_DISCONTINUITIES = meter.create_counter(
+    "a13n.realtime.pcm.discontinuities", unit="{event}", description="Detected realtime PCM discontinuities"
+)
+CONTROL_OVERFLOWS = meter.create_counter(
+    "a13n.realtime.control.overflows",
+    unit="{event}",
+    description="Realtime bridges closed on a control gap or overflow",
+)
+
+
+class TransportError(ServiceError):
+    def __init__(self, message: str = "The realtime transport is unavailable") -> None:
+        super().__init__("unavailable", message)
+
+
+class AttachTimeout(TransportError):
+    pass
+
+
+def unavailable() -> TransportError:
+    return TransportError()
 
 
 class Offer(BaseModel):
@@ -136,7 +156,7 @@ class Pipe:
             async with asyncio.timeout_at(self.attach_deadline):
                 yield
         except TimeoutError:
-            raise unavailable() from None
+            raise AttachTimeout() from None
         self.check_heartbeat_after = asyncio.get_running_loop().time() + _PEER_TIMEOUT
 
     async def publish_offer(self, offer: Offer) -> None:
@@ -247,9 +267,9 @@ class Pipe:
                             if fence != self.fence:
                                 continue
                             self.control_received += 1
-                            if int(fields[b"seq"]) != self.control_received:
-                                raise unavailable()
-                            if len(self.pending) >= _STREAM_LIMIT:
+                            if int(fields[b"seq"]) != self.control_received or len(self.pending) >= _STREAM_LIMIT:
+                                self.failed = True
+                                CONTROL_OVERFLOWS.add(1, {"side": self.side})
                                 raise unavailable()
                             self.pending.append((frame, clock))
                 commit_deadline = None
@@ -274,7 +294,10 @@ class Pipe:
                                 # Continuous input may have resumed after the reset before its first commit arrived.
                                 return b"reset"
                             continue
-                        return b"gap" if gap else b"commit"
+                        if gap:
+                            PCM_DISCONTINUITIES.add(1, {"direction": "ingress"})
+                            return b"gap"
+                        return b"commit"
                 if self.audio:
                     packet = self.audio[0]
                     seq, generation = _PCM_HEADER.unpack_from(packet)
@@ -295,6 +318,7 @@ class Pipe:
                             # Auto-VAD has no commit: resume live PCM after the provider reset.
                             self.segment_gap = True
                             self.resumed_after_gap = False
+                            PCM_DISCONTINUITIES.add(1, {"direction": "ingress"})
                             return b"gap"
                         elif self.segment_gap:
                             self.resumed_after_gap = True

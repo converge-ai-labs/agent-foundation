@@ -705,6 +705,8 @@ async def test_provider_call_defers_only_cleanup_errors(monkeypatch):
 
 
 async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs_kit, monkeypatch):
+    outcomes = Mock()
+    monkeypatch.setattr(realtime_cleanup, "ORPHAN_HANGUPS", outcomes)
     service = executing
     await runs_kit.pause_sweeps(service)
     provider = ScriptedWebRTCProvider()
@@ -785,12 +787,16 @@ async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs
             assert call.provider_session and call.hangup_retry_at
             call.hangup_retry_at = None
 
+    outcomes.add.assert_not_called()  # Cancelling the sweep leaves the cleanup outcome unknown.
     await retry_now()
     hangup.side_effect = OSError("Provider temporarily unavailable")
     await realtime_cleanup.reconcile(service.runtime)
+    outcomes.add.assert_called_once_with(1, {"result": "failed"})
     await retry_now()
     hangup.side_effect = None
     await realtime_cleanup.reconcile(service.runtime)
+    outcomes.add.assert_called_with(1, {"result": "succeeded"})
+    assert outcomes.add.call_count == 2
     assert hangup.await_count == 3
     assert all(args.args[0].session_id == provider.session.session_id for args in hangup.await_args_list)
     async with short_session(service.runtime.storage) as db:

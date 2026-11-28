@@ -37,6 +37,14 @@ a13n-service --config service.toml migrate
 a13n-service --config service.toml migrate --check
 ```
 
+### Roll out realtime in split deployments
+
+1. Run `a13n-service --config service.toml migrate` with the target image and wait for the migration job to succeed.
+2. Roll all `worker` replicas to the target image. Verify readiness and confirm that every old Worker has stopped claiming Runs before continuing.
+3. Roll the `control` replicas, then open a test call and verify that it reaches `ready` and ends normally.
+
+This order prevents new Control replicas from admitting realtime Runs that old Workers cannot execute. A call can end when its Worker drains; clients can reconnect to its thread after the previous run seals. See [realtime capacity and metrics](monitoring.md#realtime-capacity-and-health).
+
 ## Outbox retention and capacity
 
 Webhooks, emails, and async cleanups deliver at-least-once through the durable outbox. Tune retention and worker parallelism per kind in `service.toml`:

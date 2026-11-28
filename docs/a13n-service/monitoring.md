@@ -39,6 +39,31 @@ metrics_port = 9464
 
 Installed App plugins can also emit custom OpenTelemetry metrics on the same listener ([report custom metrics](app-plugins.md#report-custom-metrics)).
 
+### Realtime capacity and health
+
+Set `worker.realtime_slots` for each Worker replica (default 8). This pool is independent of batch slots. Keep enough free slots for expected call starts during rolling updates. The same `[worker]` configuration supplies admission limits for each workspace:
+
+| Limit                     | Default | Counts                                                                    |
+| ------------------------- | ------: | ------------------------------------------------------------------------- |
+| `realtime_call_limit`     |      32 | Accepted and running realtime calls across WebSocket and WebRTC           |
+| `realtime_pcm_limit`      |       8 | Accepted and running WebSocket calls, which can relay PCM through Service |
+| `realtime_accepted_limit` |      16 | Accepted realtime runs waiting for a Worker                               |
+| `realtime_ticket_limit`   |     128 | Outstanding, unexpired connection tickets                                 |
+
+Budget Redis for a separate realtime client pool of up to 32 connections per Service process, including two shared Pub/Sub subscriptions once realtime starts. Add the ordinary Redis clients and all replicas to your connection budget. Each call uses up to two Redis control Streams with 512 entries each. Estimate memory using peak calls, typical and peak control-frame sizes, and calls closed within the last 40 seconds while their Streams expire. PCM crosses Pub/Sub and uses bounded process-local buffers; WebRTC audio goes directly to the provider. Load test both the Redis connection count and memory at your expected concurrency.
+
+| Prometheus metric                           | Use                                                                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `a13n_worker_realtime_slots`                | Free and busy realtime slots (`state`); sum across Workers                                                           |
+| `a13n_realtime_connections_active`          | Open signaling WebSockets by `transport`, including WebRTC signaling                                                 |
+| `a13n_realtime_handshakes_duration_seconds` | Accept-to-`ready` latency and handshake outcomes (`transport`, `result`); use `_count` for failure and timeout rates |
+| `a13n_realtime_calls_ended_total`           | Signaling connection endings by `transport` and `reason`                                                             |
+| `a13n_realtime_pcm_discontinuities_total`   | Detected PCM gaps by `direction` (`ingress` or `egress`)                                                             |
+| `a13n_realtime_control_overflows_total`     | Ordered control gaps and queue overflows by `side` (`control` or `worker`)                                           |
+| `a13n_realtime_orphan_hangups_total`        | WebRTC orphan cleanup attempts by `result`                                                                           |
+
+Start with the Operations dashboard and the optional realtime alerts in the capacity and execution presets. When handshake failures rise, compare free slots, handshake timeouts, and control overflows before increasing capacity. Track `abandoned` separately: it includes clients that close the socket when their own startup deadline expires. Sustained orphan hangup failures point to provider connectivity or credentials used for cleanup.
+
 ## Usage
 
 Inspect token totals, cache rates, and USD spend in Console under **Insights → Usage** (with per-member filtering for workspace admins), or query the API over a half-open `[start, end)` RFC 3339 window (up to 366 days):

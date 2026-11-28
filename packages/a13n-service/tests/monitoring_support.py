@@ -78,7 +78,10 @@ from a13n_service.runs.accept import RUNS_ACCEPTED
 from a13n_service.runs.backlog import BACKLOG_OLDEST_AGE, BACKLOG_SIZE, BACKLOG_UPDATED, BACKLOG_LIMIT, OUTBOX_DEAD, OUTBOX_ALERT, OUTBOX_UPDATED
 from a13n_service.runs.claim import QUEUE_WAIT, ATTEMPTS_STARTED
 from a13n_service.runs.seal import ATTEMPT_DURATION, RUNS_SEALED, ATTEMPTS_ENDED, RUN_DURATION
-from a13n_service.runs.worker import SLOTS, CLAIMS
+from a13n_service.runs.worker import SLOTS, REALTIME_SLOTS, CLAIMS
+from a13n_service.runs.realtime import ACTIVE_CONNECTIONS, CALLS_ENDED, HANDSHAKES
+from a13n_service.runs.realtime_transport import CONTROL_OVERFLOWS, PCM_DISCONTINUITIES
+from a13n_service.runs.realtime_cleanup import ORPHAN_HANGUPS
 from a13n_service.runs.inbox import WAIT
 from a13n_service.runs.checkpoints import OBJECT_BYTES, CHECKPOINT_DURATION
 from a13n_service.runs.environments.lifecycle import OPERATION_DURATION
@@ -113,6 +116,15 @@ def observe():
     RUN_DURATION.record(50, {"status": "failed"})
     SLOTS.set(3, {"state": "free"})
     SLOTS.set(1, {"state": "busy"})
+    REALTIME_SLOTS.set(6, {"state": "free"})
+    REALTIME_SLOTS.set(2, {"state": "busy"})
+    ACTIVE_CONNECTIONS.add(2 if not live else 0, {"transport": "webrtc"})
+    ACTIVE_CONNECTIONS.add(-2 if not live else 0, {"transport": "webrtc"})
+    HANDSHAKES.record(0.2 * wave, {"transport": "webrtc", "result": "ready"})
+    CALLS_ENDED.add(1, {"transport": "webrtc", "reason": "completed"})
+    CONTROL_OVERFLOWS.add(1, {"side": "worker"})
+    PCM_DISCONTINUITIES.add(1, {"direction": "egress"})
+    ORPHAN_HANGUPS.add(1, {"result": "succeeded"})
     CLAIMS.record(0.01, {"result": "claimed"})
     WAIT.record(2 * wave)
     OBJECT_BYTES.record(1024, {"kind": "checkpoint"})

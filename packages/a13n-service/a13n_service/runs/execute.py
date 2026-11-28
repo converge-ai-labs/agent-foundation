@@ -15,7 +15,7 @@ run persistence, and no database session survives an external call.
 import asyncio
 import time
 from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Literal, cast
@@ -124,6 +124,7 @@ from a13n_service.runs.notices import StaleNotice, require_notices
 from a13n_service.runs.realtime import BUDGET_RESTRICTION, INBOX_METADATA, Channel, Media, worker_channel
 from a13n_service.runs.realtime_cleanup import provider_call
 from a13n_service.runs.realtime_transcript import LiveTranscripts
+from a13n_service.runs.realtime_transport import TransportError
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
@@ -1017,18 +1018,12 @@ class _Attempt:
                                 for call_id in interrupted_approvals:
                                     channel.emit({"type": "approval_expired", "call_id": call_id})
                             interrupted_approvals.clear()
+                        if isinstance(item.event, RealtimeTurnCompleteEvent):
+                            channel.flush_transcripts()
                         if isinstance(item.event, (RealtimeTurnCompleteEvent, EnqueuedMessagesEvent)):
                             await self.boundaries.stage_live(stream.export_state)
                         if not channel.closed.is_set() and (transcript := transcripts.observe(item)) is not None:
-                            channel.emit(
-                                {
-                                    "type": "transcript",
-                                    "message_id": transcript["message_id"],
-                                    "role": transcript["role"],
-                                    "text": transcript["text"],
-                                    "final": transcript["final"],
-                                }
-                            )
+                            channel.transcript(transcript)
             finally:
                 if receive is not None:
                     receive.cancel()
@@ -1036,6 +1031,9 @@ class _Attempt:
                 notices.cancel()
                 if audio is not None and channel.closed.is_set():
                     audio.cancel()
+                # Overflow already marks the channel failed. Keep any cancellation or lease loss in flight.
+                with suppress(TransportError):
+                    channel.flush_transcripts()
         if channel.failed or stream.result is None:
             raise ServiceError("unavailable", "The realtime run ended before it completed")
         return stream.result

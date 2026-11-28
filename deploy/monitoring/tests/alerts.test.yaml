@@ -171,3 +171,63 @@ tests:
     exp_samples:
     - labels: '{}'
       value: 1
+- interval: 1m
+  input_series:
+  - series: a13n_worker_realtime_slots{job="a13n-service",deployment="local-beta",instance="worker-a",state="free"}
+    values: 0+0x20
+  - series: a13n_worker_realtime_slots{job="a13n-service",deployment="local-beta",instance="worker-a",state="busy"}
+    values: 8+0x20
+  - series: a13n_worker_realtime_slots{job="a13n-service",deployment="disabled",instance="worker-b",state="free"}
+    values: 0+0x20
+  - series: a13n_worker_realtime_slots{job="a13n-service",deployment="disabled",instance="worker-b",state="busy"}
+    values: 0+0x20
+  - series: a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",deployment="local-beta",transport="websocket",result="ready"}
+    values: 0+2x20
+  - series: a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",deployment="local-beta",transport="websocket",result="failed"}
+    values: 0+1x20
+  - series: a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",deployment="local-beta",transport="websocket",result="timeout"}
+    values: 0+1x20
+  - series: a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",deployment="local-beta",transport="websocket",result="abandoned"}
+    values: 0+100x20
+  - series: a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",deployment="local-beta",transport="webrtc",result="timeout"}
+    values: 0+0.2x20
+  - series: a13n_realtime_orphan_hangups_total{job="a13n-service",deployment="local-beta",result="failed"}
+    values: 0+1x20
+  - series: a13n_realtime_orphan_hangups_total{job="a13n-service",deployment="healthy",result="succeeded"}
+    values: 0+1x20
+  alert_rule_test:
+  - eval_time: 4m
+    alertname: A13nRealtimeSlotsSaturated
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: A13nRealtimeSlotsSaturated
+    exp_alerts:
+    - exp_labels:
+        job: a13n-service
+        deployment: local-beta
+        severity: warning
+      exp_annotations:
+        summary: All realtime Worker slots are busy
+        description: Check call duration and handshake outcomes before changing realtime capacity.
+  - eval_time: 20m
+    alertname: A13nRealtimeHandshakeFailures
+    exp_alerts:
+    - exp_labels:
+        job: a13n-service
+        deployment: local-beta
+        transport: websocket
+        severity: warning
+      exp_annotations:
+        summary: Realtime handshake failures or timeouts are elevated
+        description: 'websocket had at least five failed or timed-out handshakes in 10m and a failure share above 20%.
+          Check worker availability, Redis and provider connectivity.'
+  - eval_time: 20m
+    alertname: A13nRealtimeOrphanHangupsFailing
+    exp_alerts:
+    - exp_labels:
+        job: a13n-service
+        deployment: local-beta
+        severity: warning
+      exp_annotations:
+        summary: Realtime orphan hangups keep failing
+        description: At least three WebRTC cleanup attempts failed in 10m. Check provider connectivity and cleanup credentials.
