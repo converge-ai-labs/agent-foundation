@@ -121,3 +121,37 @@ it("offers HTML preview only for settled agent replies and copies the original h
   await user.click(screen.getByRole("button", { name: "Copy code" }));
   expect(await navigator.clipboard.readText()).toBe(html + "\n");
 });
+
+it("renders source links, unreadable locators and unresolved markers without exposing tokens", async () => {
+  const user = userEvent.setup();
+  const marker = "\uE200cite\uE202no-source\uE201";
+  const view = render(
+    <MarkdownContent
+      agentReply
+      text={`🙂 Claim[1] ${marker}`}
+      citations={[
+        {
+          anchor: { kind: "marker", start: 7, end: 10 },
+          sources: [
+            { kind: "web", url: "https://example.com/report", title: "Report" },
+          ],
+        },
+        {
+          sources: [
+            { kind: "web", url: "javascript:alert(1)", title: "Unsafe" },
+          ],
+        },
+      ]}
+    />,
+  );
+  const mark = screen.getByRole("link", { name: "Source 1: Report" });
+  expect(mark.getAttribute("href")).toBe("https://example.com/report");
+  expect(mark.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(mark.getAttribute("target")).toBe("_blank");
+  expect(screen.getByLabelText("Source unavailable")).toBeTruthy();
+  expect(view.container.textContent).not.toContain(marker);
+  await user.click(screen.getByText("Sources (2)"));
+  expect(screen.getByRole("link", { name: "Report" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Unsafe" })).toBeNull();
+  expect(screen.getByText("Unsafe")).toBeTruthy();
+});

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.surfaces import TranscriptFailure
 
+from .citations import cited_text
 from .input_display import composer_history
 from .panels import tool_arguments, tool_preview, tool_result
 from .rendering import Status, StreamRenderer, skill_ranges, terminal_text
@@ -54,6 +55,8 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
                 )
             )
         )
+        if not isinstance(part, TranscriptFailure) and part.kind == "assistant":
+            text = cited_text(text, part.citations)
         safe = terminal_text(text)
         bounded = bounded_text(safe, min(_PART_BYTES, _HISTORY_BYTES - size))
         omitted |= bounded != safe or (not isinstance(part, TranscriptFailure) and part.value_omitted)

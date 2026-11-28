@@ -280,9 +280,10 @@ def test_citation_only_delta_preserves_payload_without_opening_text(ended: bool,
             [event.model_dump(mode="json", by_alias=True) for event in observer.observe(_event(sequence, source))]
         )
     if restore:
-        observer = HarnessAguiObserver.restore(observer.export())
+        saved = observer.export()
+        observer = HarnessAguiObserver.restore(type(saved).model_validate_json(saved.model_dump_json()))
         fold = DisplayFold.restore(fold.export())
-    before = dict(fold.items)
+    (before,) = fold.items.values()
     delta = TextPartDelta(
         "",
         provider_name="google",
@@ -296,23 +297,38 @@ def test_citation_only_delta_preserves_payload_without_opening_text(ended: bool,
     )
     source = PartDeltaEvent(index=0, delta=delta)
 
-    (event,) = observer.observe(_event(2, source))
-
+    event, *supplements = observer.observe(_event(2, source))
     assert isinstance(event, CustomEvent)
     assert event.name == "a13n.pydantic_ai.part_delta"
     assert event.value["event"] == TypeAdapter(PartDeltaEvent).dump_python(source, mode="json")
-    assert event.value["event"]["delta"]["citations_delta"][0]["sources"][0]["url"] == "https://example.com/source"
     fold.fold([event.model_dump(mode="json", by_alias=True)])
-    assert {key: item for key, item in fold.items.items() if item.kind == "text_message"} == before
+    assert fold.items[before.id] == before
     (observation,) = [item for item in fold.items.values() if item.kind == "observation"]
     assert observation.state == "completed"
     assert observation.content == {"name": event.name, "value": event.value}
-    assert len(fold.items) == 2
     if not ended:
-        (following,) = observer.observe(_event(3, PartDeltaEvent(index=0, delta=TextPartDelta(" more"))))
+        assert not supplements
+        [following] = observer.observe(_event(3, PartDeltaEvent(index=0, delta=TextPartDelta(" more"))))
         assert isinstance(following, TextMessageContentEvent)
         assert following.message_id == part.id
         assert following.delta == " more"
+        return
+    [supplement] = supplements
+    assert isinstance(supplement, CustomEvent) and supplement.name == "a13n.text_citations"
+    [delta] = fold.fold([supplement.model_dump(mode="json", by_alias=True)])
+    assert delta.item is not None and delta.item.id == before.id
+    assert delta.item.citations[0].sources[0].url == "https://example.com/source"
+    after = fold.items[before.id]
+    assert after.content == {**before.content, "citations": [c.model_dump(mode="json") for c in delta.item.citations]}
+    assert (after.state, after.ordinal, after.started_at, after.ended_at) == (
+        before.state,
+        before.ordinal,
+        before.started_at,
+        before.ended_at,
+    )
+    cleared = PartDeltaEvent(index=0, delta=TextPartDelta("", citations_delta=[]))
+    deltas = fold.fold([e.model_dump(mode="json", by_alias=True) for e in observer.observe(_event(4, cleared))])
+    assert deltas[-1].item.citations == () and fold.items[before.id].content["citations"] == []
 
 
 def test_capability_event_uses_nested_field_serializer() -> None:
@@ -1523,3 +1539,28 @@ def test_complete_skill_catalog_is_not_a_display_custom_event() -> None:
     observer = HarnessAguiObserver()
     source = SkillCatalogResolvedEvent(catalog=BoundSkillCatalog(items=()))
     assert observer.observe(_event(0, source)) == ()
+
+
+def test_observer_resumes_older_cursor_without_closing_its_open_text_early() -> None:
+    observer = HarnessAguiObserver()
+    observer.observe(
+        _event(
+            0,
+            HarnessExtensionEvent(
+                kind="lifecycle",
+                payload={"type": "model_request_started", "request_index": 3},
+            ),
+        )
+    )
+    part = TextPart("Older text", id="old-part")
+    observer.observe(_event(1, PartStartEvent(index=0, part=part)))
+    saved = observer.export()
+    previous_version = saved.model_dump(mode="json")
+    previous_version["state"].pop("parts_request_index")
+    previous_version["state"].pop("text_message_ids")
+    previous_version["state"]["parts"]["0"].pop("citations")
+    resumed = HarnessAguiObserver.restore(type(saved).model_validate(previous_version))
+    opening = resumed.observe(_event(2, PartStartEvent(index=1, part=TextPart("Next part"))))
+    assert all(not isinstance(event, TextMessageEndEvent) for event in opening)
+    [ending] = resumed.observe(_event(3, PartEndEvent(index=0, part=part)))
+    assert isinstance(ending, TextMessageEndEvent) and ending.message_id == "old-part"

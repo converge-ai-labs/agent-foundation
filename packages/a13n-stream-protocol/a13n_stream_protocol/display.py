@@ -27,6 +27,7 @@ from pydantic_ai.messages import (
 )
 
 from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
+from a13n_stream_protocol.citations import TEXT_CITATIONS_EVENT, Citation, project_citations
 from a13n_stream_protocol.fragments import CustomEventAssembler, FragmentState
 from a13n_stream_protocol.memory import MemorySource, memory_sources
 from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT, AguiEventProcessor, ObserverContinuation
@@ -122,6 +123,7 @@ class ItemRef(BaseModel):
     failure: dict[str, JsonValue] | None = None
     # Sent at message END, not repeated for every text delta.
     memory_sources: tuple[MemorySource, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
+    citations: tuple[Citation, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class Observed(BaseModel):
@@ -201,6 +203,7 @@ class DisplayContinuation(BaseModel):
     next_ordinal: int = Field(ge=1)
     full_content: bool = False
     response_groups: dict[str, str] = Field(default_factory=dict)
+    open_request_items: dict[str, list[str]] = Field(default_factory=dict, exclude_if=lambda value: not value)
     memory_sources: dict[str, tuple[MemorySource, ...]] = Field(
         default_factory=dict, exclude_if=lambda value: not value
     )
@@ -309,6 +312,7 @@ class DisplayFold:
         # Unlike full_content, this does not suppress native observations for an interactive Host.
         self.retain_content = retain_content
         self.response_groups: dict[str, str] = {}
+        self.open_request_items: dict[str, list[str]] = {}
         self.memory_sources: dict[str, tuple[MemorySource, ...]] = {}
 
         def process(source: HarnessStreamEvent[Any], event: Event) -> Event | None:
@@ -325,6 +329,7 @@ class DisplayFold:
             self.next, self.sequence = state.next_ordinal, state.position.sequence
             self.response_groups, self.arguments = state.response_groups, state.arguments
             self.memory_sources = state.memory_sources
+            self.open_request_items = state.open_request_items
             self.assembler = CustomEventAssembler.restore(state.fragments)
             self.observer = HarnessAguiStreamObserver.restore(state.observer, processor=process)
 
@@ -366,6 +371,7 @@ class DisplayFold:
             next_ordinal=self.next,
             full_content=self.full_content,
             response_groups=self.response_groups,
+            open_request_items=self.open_request_items,
             memory_sources=self.memory_sources,
             arguments=self.arguments,
             fragments=self.assembler.export(),
@@ -435,6 +441,10 @@ class DisplayFold:
             return self._observation(payload)
         if event_type in {"RUN_FINISHED", "RUN_ERROR", "SUBAGENT_FINISHED", "SUBAGENT_ERROR"}:
             scope = payload.get("subagentRunId")
+            if scope is None:
+                self.open_request_items.clear()
+            else:
+                self.open_request_items.pop(scope, None)
             for key in tuple(self._progress):
                 item = self.items.get(key)
                 if item is None or scope is None or item.content.get("subagentRunId") == scope:
@@ -467,6 +477,13 @@ class DisplayFold:
         if group is not None and "responseGroup" not in content:
             content["responseGroup"] = group
         scope = str(content.get("subagentRunId") or "root")
+        if (
+            event_type == "TEXT_MESSAGE_START"
+            and content.get("role") == "assistant"
+            and (open_items := self.open_request_items.get(scope)) is not None
+            and key not in open_items
+        ):
+            open_items.append(key)
         if event_type == "TEXT_MESSAGE_END" and content.get("role") == "assistant":
             sources = self.memory_sources.get(scope)
             if sources is not None:
@@ -536,14 +553,18 @@ class DisplayFold:
             self._bounded(content, "text", text)
             state = "completed" if input_event["final"] else "in_progress"
             return self._put(key, "text_message", state, content, at=_occurred(assembled))
+        if assembled.get("name") == TEXT_CITATIONS_EVENT and isinstance(input_event, dict):
+            return self._citations(assembled, input_event)
         lifecycle = input_event.get("payload") if isinstance(input_event, dict) else None
-        if (
-            assembled.get("name") == "a13n.harness.lifecycle"
-            and isinstance(lifecycle, dict)
-            and lifecycle.get("type") == "model_request_started"
-        ):
+        if assembled.get("name") == "a13n.harness.lifecycle" and isinstance(lifecycle, dict):
             scope = str(assembled.get("subagentRunId") or "root")
-            self.response_groups[scope] = f"{self.run_id}:{self.attempt}:{self.sequence}"
+            lifecycle_type = lifecycle.get("type")
+            # A new request can be announced before the previous native stream drains.
+            if lifecycle_type in {"model_request_completed", "model_request_failed"}:
+                self.open_request_items.pop(scope, None)
+            if lifecycle_type == "model_request_started":
+                self.open_request_items.setdefault(scope, [])
+                self.response_groups[scope] = f"{self.run_id}:{self.attempt}:{self.sequence}"
         if assembled.get("name") == "a13n.harness.context" and isinstance(lifecycle, dict):
             sources = memory_sources(lifecycle)
             if sources is not None:
@@ -612,6 +633,38 @@ class DisplayFold:
         if "subagentRunId" in assembled:
             content["subagentRunId"] = cast(JsonValue, assembled["subagentRunId"])
         return self._put(key, "observation", "completed", content, at=_occurred(payload))
+
+    def _citations(self, event: Mapping[str, object], value: dict[str, JsonValue]) -> ItemRef | None:
+        message_id, additions = value.get("message_id"), value.get("citations")
+        if not isinstance(message_id, str) or not isinstance(additions, list):
+            return None
+        scope = event.get("subagentRunId")
+        key = item_id(self.run_id, "text_message", f"{scope}:{message_id}" if scope else message_id)
+        previous = self.items.get(key)
+        if previous is None or previous.content.get("role") != "assistant":
+            return None
+        content = previous.content
+        text, existing = content.get("text"), content.get("citations")
+        existing = existing if isinstance(existing, list) else []
+        supplied = additions if value.get("replace") is True else [*existing, *additions]
+        citations = project_citations(supplied, text_length=len(text) if isinstance(text, str) else 0)
+        stored = [citation.model_dump(mode="json") for citation in citations]
+        if stored == existing:
+            return None
+        self.items[key] = previous.model_copy(
+            update={"last_stream_id": str(self.position), "content": {**content, "citations": stored}}
+        )
+        self.changed.add(key)
+        self._checkpoint_changed.add(key)
+        group = content.get("responseGroup")
+        return ItemRef(
+            id=key,
+            kind=previous.kind,
+            state=previous.state,
+            ordinal=previous.ordinal,
+            response_group=group if isinstance(group, str) else None,
+            citations=citations,
+        )
 
     def clear_progress(self, key: str) -> None:
         if self._progress.pop(key, None) is not None and key in self.items:

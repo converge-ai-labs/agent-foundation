@@ -188,6 +188,7 @@ class DisplayFold(SemanticDisplayFold):
     def interrupt(self, open_calls: Collection[str] = ()) -> None:
         """Host terminal/retry policy, separate from pure checkpoint capture."""
         self.revisable_speech = None
+        self.open_request_items.clear()
         kept = {item_id(self.run_id, "tool_call", call) for call in open_calls}
         for key, item in self.items.items():
             if item.state == "in_progress" and key not in kept:
@@ -203,14 +204,19 @@ class DisplayFold(SemanticDisplayFold):
         frozen = self.export()
         items = frozen.items
         pages: list[Page] = []
+        open_items = {key for keys in self.open_request_items.values() for key in keys}
         start, size = 0, 0
         for end, item in enumerate(items, 1):
             if self.revisable_speech is not None and item.ordinal >= self.revisable_speech:
                 break
-            if item.state == "in_progress" or (
-                self.arguments is not None
-                and item.id == self.arguments.key
-                and self.arguments.sequence == self.sequence
+            if (
+                item.state == "in_progress"
+                or item.id in open_items
+                or (
+                    self.arguments is not None
+                    and item.id == self.arguments.key
+                    and self.arguments.sequence == self.sequence
+                )
             ):
                 break
             size += self.sizes[item.id]

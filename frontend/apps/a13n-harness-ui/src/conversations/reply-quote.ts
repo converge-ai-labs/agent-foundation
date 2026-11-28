@@ -29,6 +29,13 @@ export function withReplyAnnotations(
 
 const elementOf = (node: Node) =>
   node instanceof Element ? node : node.parentElement;
+const decoration = "[data-reply-decoration]";
+
+function proseText(range: Range) {
+  const fragment = range.cloneContents();
+  for (const node of fragment.querySelectorAll(decoration)) node.remove();
+  return fragment.textContent ?? "";
+}
 
 export function selectedQuote(
   reader: HTMLElement,
@@ -41,12 +48,18 @@ export function selectedQuote(
   );
   if (!source || !reader.contains(source)) return;
   if (
-    elementOf(range.startContainer)?.closest("button, textarea, input") ||
-    elementOf(range.endContainer)?.closest("button, textarea, input")
+    elementOf(range.startContainer)?.closest(
+      `button, textarea, input, ${decoration}`,
+    ) ||
+    elementOf(range.endContainer)?.closest(
+      `button, textarea, input, ${decoration}`,
+    )
   )
     return;
-  const raw = range.toString();
-  const text = selection.toString().trim();
+  const raw = proseText(range);
+  const text = range.cloneContents().querySelector(decoration)
+    ? raw.trim()
+    : selection.toString().trim();
   if (!raw.trim() || !text) return;
   const before = document.createRange();
   before.selectNodeContents(source);
@@ -54,7 +67,7 @@ export function selectedQuote(
   return {
     quote: {
       source: source.dataset.replySource!,
-      start: before.toString().length,
+      start: proseText(before).length,
       raw,
       text,
     },
@@ -67,7 +80,12 @@ export function quoteRange(
   root: HTMLElement,
   quote: ReplyQuote,
 ): Range | undefined {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      elementOf(node)?.closest(decoration)
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
   let offset = 0;
   let range: Range | undefined;
   for (
@@ -83,7 +101,7 @@ export function quoteRange(
     const end = quote.start + quote.raw.length;
     if (range && end <= next) {
       range.setEnd(node, end - offset);
-      return range.toString() === quote.raw ? range : undefined;
+      return proseText(range) === quote.raw ? range : undefined;
     }
     offset = next;
   }

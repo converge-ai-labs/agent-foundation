@@ -8,9 +8,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, cast
 
+from a13n_stream_protocol.citations import project_citations
 from a13n_stream_protocol.display import Item
 
-from a13n_harness_ui.conversation import excerpt_text
+from a13n_harness_ui.conversation import (
+    TRANSCRIPT_PREFIX_LIMIT,
+    TRANSCRIPT_TEXT_LIMIT,
+    TRANSCRIPT_TRUNCATION,
+    excerpt_text,
+)
 from a13n_harness_ui.display_history import DisplayHistory, ordinary_input
 from a13n_harness_ui.storage import Thread
 from a13n_harness_ui.surfaces import TranscriptEntry, TranscriptFailure, TranscriptPart, TranscriptTurn
@@ -31,6 +37,8 @@ def _parts(item: Item) -> list[dict[str, Any]]:
     duration = max(0, round((item.ended_at - item.started_at).total_seconds() * 1000)) if item.ended_at else None
     if item.kind in {"text_message", "reasoning_message"}:
         media = content.get("input_media")
+        text = str(content.get("text", ""))
+        citations = content.get("citations")
         return [
             {
                 "kind": "media"
@@ -40,7 +48,8 @@ def _parts(item: Item) -> list[dict[str, Any]]:
                 else "user"
                 if content.get("role") == "user"
                 else "assistant",
-                "text": json.dumps(media, ensure_ascii=False) if media is not None else str(content.get("text", "")),
+                "text": json.dumps(media, ensure_ascii=False) if media is not None else text,
+                "citations": project_citations(citations, text_length=len(text)) if isinstance(citations, list) else (),
                 "metadata": metadata,
                 "display_id": item.id,
                 "duration_ms": duration,
@@ -217,8 +226,10 @@ def display_entries(display: DisplayHistory, thread: Thread | None = None) -> tu
             data.pop("comment_target", None)  # Retired field in imported historical display rows.
             metadata = data.get("metadata") or {}
             text = data.get("text")
-            if isinstance(text, str) and len(text) > 65536 and not metadata.get("a13n.context"):
-                data.update(text=text[:65513] + "\n...[content truncated]", text_truncated=True)
+            if isinstance(text, str) and len(text) > TRANSCRIPT_TEXT_LIMIT and not metadata.get("a13n.context"):
+                data.update(text=text[:TRANSCRIPT_PREFIX_LIMIT] + TRANSCRIPT_TRUNCATION, text_truncated=True)
+                if data.get("citations"):
+                    data["citations"] = project_citations(data["citations"], text_length=TRANSCRIPT_PREFIX_LIMIT)
             parts.append(TranscriptPart.model_validate(data, strict=False))
         entries.append(
             TranscriptEntry(

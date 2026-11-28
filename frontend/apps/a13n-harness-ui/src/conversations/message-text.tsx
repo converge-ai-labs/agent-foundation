@@ -1,11 +1,22 @@
 import { useTranslation } from "../i18n";
-import { memo, useContext, type ComponentPropsWithoutRef } from "react";
+import {
+  memo,
+  useContext,
+  useMemo,
+  type ComponentPropsWithoutRef,
+} from "react";
 import { useGuestAccess } from "../transport/context";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
 import remarkMath from "remark-math";
-import { remarkClosedDiagram, remarkLatex } from "a13n-ui/markdown-extensions";
+import {
+  remarkCitations,
+  remarkClosedDiagram,
+  remarkLatex,
+} from "a13n-ui/markdown-extensions";
+import { prepareCitations, type Citation } from "a13n-ui/citations";
+import { CitationMark, CitationMarkdown } from "a13n-ui/citation-markdown";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { HtmlPreviewEnabled } from "a13n-ui/html-code-preview";
@@ -85,7 +96,8 @@ function MarkdownSpan({
 }
 
 // Stable component types preserve controls and diagrams while later tokens arrive.
-const components: Components = {
+const components: Components & { "a13n-citation": typeof CitationMark } = {
+  "a13n-citation": CitationMark,
   a: ({ node: _node, ...props }) => <MarkdownLink {...props} />,
   img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
   pre: MarkdownPre,
@@ -104,36 +116,59 @@ const components: Components = {
 export const MessageText = memo(function MessageText({
   text,
   previewHtml = false,
+  citations,
 }: {
   text: string;
   previewHtml?: boolean;
+  citations?: readonly Citation[];
 }) {
   const guest = useGuestAccess();
+  const { t } = useTranslation();
+  const prepared = useMemo(
+    () => prepareCitations({ text, citations }),
+    [text, citations],
+  );
   return (
     <div className={styles.markdown}>
-      <HtmlPreviewEnabled value={previewHtml}>
-        <Markdown
-          remarkPlugins={[
-            remarkGfm,
-            remarkCjkFriendly,
-            remarkMath,
-            remarkLatex,
-            remarkClosedDiagram,
-          ]}
-          rehypePlugins={
-            guest
-              ? [rehypeKatex]
-              : [
-                  rehypeKatex,
-                  [linkedMediaPreviews, { currentHref: window.location.href }],
-                ]
-          }
-          skipHtml
-          components={components}
-        >
-          {text}
-        </Markdown>
-      </HtmlPreviewEnabled>
+      <CitationMarkdown
+        sources={prepared.sources}
+        allowLink={(url) => !guest || url.origin !== window.location.origin}
+        labels={{
+          unavailable: t("Source unavailable"),
+          document: t("Cited document"),
+          source: (number, name) =>
+            t("Source {{number}}: {{name}}", { number, name }),
+          sources: (count) => t("Sources ({{count}})", { count }),
+        }}
+      >
+        <HtmlPreviewEnabled value={previewHtml}>
+          <Markdown
+            remarkPlugins={[
+              remarkGfm,
+              remarkCjkFriendly,
+              remarkMath,
+              remarkLatex,
+              remarkClosedDiagram,
+              [remarkCitations, prepared],
+            ]}
+            rehypePlugins={
+              guest
+                ? [rehypeKatex]
+                : [
+                    rehypeKatex,
+                    [
+                      linkedMediaPreviews,
+                      { currentHref: window.location.href },
+                    ],
+                  ]
+            }
+            skipHtml
+            components={components}
+          >
+            {prepared.markdown}
+          </Markdown>
+        </HtmlPreviewEnabled>
+      </CitationMarkdown>
     </div>
   );
 });

@@ -21,6 +21,12 @@ import {
   type ReactNode,
 } from "react";
 import { ScrollArea } from "a13n-ui";
+import {
+  formatCitedCopyText,
+  mergeCitedSegments,
+  readCitations,
+  type Citation,
+} from "a13n-ui/citations";
 import { useTurnHistory } from "./queries";
 import {
   captureReadingAnchor,
@@ -217,6 +223,8 @@ type Row = {
   | {
       kind: "assistant";
       text: string;
+      citations?: readonly Citation[];
+      responseGroup?: string;
       truncated?: boolean;
       live?: boolean;
       streaming?: boolean;
@@ -250,6 +258,55 @@ type Row = {
       childState?: ChildState;
     }
 );
+
+type AssistantRow = Extract<Row, { kind: "assistant" }>;
+
+function mergeAssistantRows(rows: Row[]): Row[] {
+  const result: Row[] = [];
+  for (let index = 0; index < rows.length;) {
+    const first = rows[index++]!;
+    if (first.kind !== "assistant") {
+      result.push(first);
+      continue;
+    }
+    const group = [first];
+    while (index < rows.length) {
+      const next = rows[index];
+      if (
+        next?.kind !== "assistant" ||
+        first.subagentRunId !== next.subagentRunId ||
+        !(first.position != null
+          ? first.position === next.position
+          : first.responseGroup != null &&
+            first.responseGroup === next.responseGroup)
+      )
+        break;
+      group.push(next);
+      index++;
+    }
+    if (group.length === 1 || !group.some((row) => row.citations?.length)) {
+      result.push(...group);
+      continue;
+    }
+    result.push({
+      ...first,
+      ...mergeCitedSegments(group),
+      streaming: group.some((row) => row.streaming),
+      truncated: group.some((row) => row.truncated),
+    });
+  }
+  return result;
+}
+
+function replyCopy(rows: readonly AssistantRow[], unavailable: string) {
+  return formatCitedCopyText(
+    mergeCitedSegments(
+      rows.filter((row) => row.text),
+      "\n\n",
+    ),
+    unavailable,
+  );
+}
 
 function timestampMilliseconds(value: DisplayBlock["timestamp"]) {
   return typeof value === "string" ? Date.parse(value) : value;
@@ -365,6 +422,7 @@ function savedRows(
           kind: "assistant",
           displayId: part.display_id ?? undefined,
           text: part.text ?? "",
+          citations: readCitations(part.citations),
           truncated: part.text_truncated,
         });
       } else if (part.kind === "thinking") {
@@ -414,7 +472,7 @@ function savedRows(
     if (rows.length > start && continuation)
       rows[start].anchor = `entry:${continuation}:${entry.position}`;
   }
-  return rows;
+  return mergeAssistantRows(rows);
 }
 
 function liveRows(
@@ -522,6 +580,8 @@ function liveRows(
         kind: "assistant",
         displayId: block.id,
         text: block.text,
+        citations: block.citations,
+        responseGroup: block.responseGroup,
         live: true,
         streaming: running && !block.done,
       });
@@ -545,7 +605,7 @@ function liveRows(
       rows[index].timestamp = timestampMilliseconds(block.timestamp);
     }
   }
-  return rows;
+  return mergeAssistantRows(rows);
 }
 
 function questionKey(tool: ToolView) {
@@ -849,10 +909,7 @@ function Rows({
       : turn?.turn_id;
   const point = key && actions?.points?.[key];
   const notificationTitle = useNoticeLabel();
-  const copyText = output
-    .map((row) => row.text)
-    .filter(Boolean)
-    .join("\n\n");
+  const copyText = replyCopy(output, `[${t("Source unavailable")}]`);
   return groupRows(rows).map((row, index, all) => (
     <div
       key={row.id}
@@ -918,6 +975,7 @@ function Rows({
           >
             <MessageText
               text={row.text}
+              citations={row.citations}
               previewHtml={!row.streaming && !row.truncated}
             />
           </AnnotatedReply>
@@ -1771,7 +1829,7 @@ function TurnSegments({
           {stopped?.notice}
           <CopyMessage
             timestamp={stoppedAt}
-            text={output.map((row) => row.text).join("\n\n")}
+            text={replyCopy(output, `[${t("Source unavailable")}]`)}
             truncated={output.some((row) => row.truncated)}
             action={
               actions?.points?.[turn.turn_id]?.branch && (

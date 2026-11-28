@@ -23,7 +23,7 @@ from a13n_harness_ui.configuration import (
     LoadedHarnessUiConfiguration,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore, InstalledContentPlugin
-from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
+from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
 from a13n_harness_ui.model_accounts import (
     GrokLoginRequest,
 )
@@ -31,6 +31,7 @@ from a13n_harness_ui.settings_loader import ensure_default_directories, load_har
 from a13n_harness_ui.surfaces import (
     RootOperationStatus,
     RootOperationView,
+    TranscriptPart,
 )
 
 
@@ -457,16 +458,36 @@ async def _run_one_shot(
     if request.output_format is OutputFormat.json:
         click.echo(operation.model_dump_json())
     else:
-        _print_text_result(operation)
+        parts: tuple[TranscriptPart, ...] = ()
+        outcome = operation.outcome
+        if (
+            operation.status is RootOperationStatus.completed
+            and outcome is not None
+            and isinstance(outcome.execution.output, str)
+            and (continuation := outcome.continuation.continuation_id) is not None
+        ):
+            try:
+                page = await app.get_thread_transcript(
+                    thread_id=thread_id, expected_continuation_id=continuation, limit=1
+                )
+            except ThreadError as exc:
+                if exc.code != "thread_history_continuation_changed":
+                    raise
+            else:
+                if page.entries and page.entries[-1].message_kind == "response":
+                    parts = page.entries[-1].parts
+        _print_text_result(operation, parts=parts)
     return 0 if operation.status is RootOperationStatus.completed else 1
 
 
-def _print_text_result(operation: RootOperationView) -> None:
+def _print_text_result(operation: RootOperationView, *, parts: tuple[TranscriptPart, ...] = ()) -> None:
     outcome = operation.outcome
     if operation.status is RootOperationStatus.completed and outcome is not None:
         output = outcome.execution.output
         if isinstance(output, str):
-            click.echo(output)
+            from a13n_harness_ui.interactive.citations import cited_reply_text
+
+            click.echo(cited_reply_text(output, parts))
         else:
             click.echo(_render_text(_jsonable(output)))
         cleanup_count = len(outcome.environment.cleanup_failures)

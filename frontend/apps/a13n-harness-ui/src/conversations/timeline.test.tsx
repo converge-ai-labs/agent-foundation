@@ -10,11 +10,14 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Schema, Transport } from "../transport/client";
-import { TransportContext } from "../transport/context";
+import { GuestAccessContext, TransportContext } from "../transport/context";
+import "../i18n";
 import {
   ConversationTranscript,
   LiveOutput,
+  MessageText,
   RecoveryNotice,
+  SavedEntry,
 } from "./transcript";
 import {
   conversationTitle,
@@ -1018,4 +1021,89 @@ it("deduplicates the current failure in loaded turn history and restores it for 
   expect(screen.queryByRole("alert")).toBeNull();
   view.rerender(content());
   expect(screen.getByText("Saved root failure")).toBeTruthy();
+});
+
+it("merges cited sibling parts of the same saved or live reply into a single source disclosure", () => {
+  const citations = [
+    {
+      anchor: { kind: "content" as const, start: 1, end: 6 },
+      sources: [
+        {
+          kind: "web" as const,
+          title: "Report",
+          url: "https://example.com/report",
+        },
+      ],
+    },
+  ];
+  const view = render(
+    <SavedEntry
+      entry={{
+        position: 1,
+        message_kind: "response",
+        parts: [
+          { kind: "assistant", text: "🙂 Intro" },
+          { kind: "assistant", text: " claim", citations },
+        ],
+      }}
+    />,
+  );
+  expect(
+    screen.getByRole("link", { name: "Source 1: Report" }).parentElement
+      ?.textContent,
+  ).toContain("🙂 Intro claim");
+  expect(screen.getAllByText("Sources (1)")).toHaveLength(1);
+  view.rerender(
+    <LiveOutput
+      gap={false}
+      blocks={[
+        {
+          id: "1",
+          kind: "assistant",
+          responseGroup: "one",
+          text: "🙂 Intro",
+          done: true,
+        },
+        {
+          id: "2",
+          kind: "assistant",
+          responseGroup: "one",
+          text: " claim",
+          citations,
+          done: true,
+        },
+      ]}
+    />,
+  );
+  expect(
+    screen.getByRole("link", { name: "Source 1: Report" }).parentElement
+      ?.textContent,
+  ).toContain("🙂 Intro claim");
+  expect(screen.getAllByText("Sources (1)")).toHaveLength(1);
+});
+
+it("keeps same-origin citation URLs readable but unlinked for guests", () => {
+  render(
+    <GuestAccessContext value={{} as Schema<"ShareAccess">}>
+      <MessageText
+        text="Claim"
+        citations={[
+          {
+            anchor: { kind: "content", start: 0, end: 5 },
+            sources: [
+              {
+                kind: "web",
+                url: `${window.location.origin}/restricted`,
+                title: "Private",
+              },
+            ],
+          },
+        ]}
+      />
+    </GuestAccessContext>,
+  );
+  expect(screen.getByRole("note", { name: "Source 1: Private" })).toBeTruthy();
+  fireEvent.click(screen.getByText("Sources (1)"));
+  expect(screen.queryByRole("link")).toBeNull();
+  expect(screen.getByText("Private")).toBeTruthy();
 });

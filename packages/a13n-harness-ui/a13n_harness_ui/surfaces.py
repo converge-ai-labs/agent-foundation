@@ -9,6 +9,7 @@ from typing import Annotated, Literal, Self
 from a13n_harness.context_breakdown import ContextBreakdown
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from a13n_stream_protocol import ContentMetadata
+from a13n_stream_protocol.citations import Citation
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from a13n_harness_ui.configuration.models import DictationConfiguration, ProjectDefaults
@@ -283,6 +284,7 @@ class TranscriptPart(SurfaceModel):
     display_id: str | None = Field(default=None, description="Native display item identity, when available.")
     duration_ms: int | None = Field(default=None, ge=0, description="Recorded elapsed time for this display item.")
     text_truncated: bool = False
+    citations: tuple[Citation, ...] = ()
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
 
     kind: Literal[

@@ -21,6 +21,7 @@ from a13n_harness.state import encode_messages
 from a13n_harness.tools._output import tool_execution_value
 from a13n_logging import get_logger
 from a13n_stream_protocol import tool_result_content
+from a13n_stream_protocol.citations import project_citations
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
@@ -46,7 +47,13 @@ from a13n_harness_ui.acp_sessions import AcpSessionState
 from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedAcpNode, ResolvedRunComposition
-from a13n_harness_ui.conversation import excerpt_text, input_excerpt
+from a13n_harness_ui.conversation import (
+    TRANSCRIPT_PREFIX_LIMIT,
+    TRANSCRIPT_TEXT_LIMIT,
+    TRANSCRIPT_TRUNCATION,
+    excerpt_text,
+    input_excerpt,
+)
 from a13n_harness_ui.display_history import DisplayHistory
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
 from a13n_harness_ui.mcp_apps.models import AppReference
@@ -89,7 +96,6 @@ from a13n_harness_ui.tool_evidence import applied_edit
 from a13n_harness_ui.tool_images import tool_image_unavailable, tool_images
 
 _MAX_CURSOR_BYTES = 3072
-_MAX_TEXT = 64 * 1024
 _MAX_JSON_BYTES = 64 * 1024
 _JSON_ADAPTER = TypeAdapter(JsonValue)
 _ROOT_INACTIVE = RootActivityView(state=RootActivityState.inactive)
@@ -1228,7 +1234,15 @@ def _message_entry(position: int, message: ModelMessage, *, thread: Thread | Non
                 parts=tuple(
                     _response_part(part).model_copy(
                         update={
-                            **({"text": part.content, "text_truncated": False} if isinstance(part, TextPart) else {}),
+                            **(
+                                {
+                                    "text": part.content,
+                                    "text_truncated": False,
+                                    "citations": project_citations(part.citations, text_length=len(part.content)),
+                                }
+                                if isinstance(part, TextPart)
+                                else {}
+                            ),
                             "metadata": ContentMetadata.from_native(
                                 {
                                     "a13n.context": "compaction",
@@ -1285,7 +1299,7 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
             TranscriptPart(
                 kind="retry" if retry_text is not None else "tool_result",
                 text=_bounded_text(retry_text) if retry_text is not None else None,
-                text_truncated=retry_text is not None and len(retry_text) > _MAX_TEXT,
+                text_truncated=retry_text is not None and len(retry_text) > TRANSCRIPT_TEXT_LIMIT,
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
                 outcome=part.outcome,
@@ -1300,14 +1314,16 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
         )
     if isinstance(part, RetryFeedbackPart):
         text = part.content if isinstance(part.content, str) else "Model output validation failed."
-        return (TranscriptPart(kind="retry", text=_bounded_text(text), text_truncated=len(text) > _MAX_TEXT),)
+        return (
+            TranscriptPart(kind="retry", text=_bounded_text(text), text_truncated=len(text) > TRANSCRIPT_TEXT_LIMIT),
+        )
     if isinstance(part, RetryPromptPart):
         text = part.content if isinstance(part.content, str) else "Tool input validation failed."
         return (
             TranscriptPart(
                 kind="retry",
                 text=_bounded_text(text),
-                text_truncated=len(text) > _MAX_TEXT,
+                text_truncated=len(text) > TRANSCRIPT_TEXT_LIMIT,
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
             ),
@@ -1317,8 +1333,14 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
 
 def _response_part(part: object) -> TranscriptPart:
     if isinstance(part, TextPart):
+        truncated = len(part.content) > TRANSCRIPT_TEXT_LIMIT
         return TranscriptPart(
-            kind="assistant", text=_bounded_text(part.content), text_truncated=len(part.content) > _MAX_TEXT
+            kind="assistant",
+            text=_bounded_text(part.content),
+            text_truncated=truncated,
+            citations=project_citations(
+                part.citations, text_length=TRANSCRIPT_PREFIX_LIMIT if truncated else len(part.content)
+            ),
         )
     if isinstance(part, ThinkingPart):
         return TranscriptPart(kind="thinking", text=_bounded_text(part.content))
@@ -1347,9 +1369,9 @@ def _response_part(part: object) -> TranscriptPart:
 
 
 def _bounded_text(value: str) -> str:
-    if len(value) <= _MAX_TEXT:
+    if len(value) <= TRANSCRIPT_TEXT_LIMIT:
         return value
-    return value[: _MAX_TEXT - 23] + "\n...[content truncated]"
+    return value[:TRANSCRIPT_PREFIX_LIMIT] + TRANSCRIPT_TRUNCATION
 
 
 def _bounded_json(value: object) -> tuple[JsonValue | None, bool]:

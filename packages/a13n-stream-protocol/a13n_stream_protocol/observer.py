@@ -70,6 +70,7 @@ from pydantic_ai.messages import (
     UnknownCapabilityEvent,
 )
 
+from a13n_stream_protocol.citations import TEXT_CITATIONS_EVENT, Citation, project_citations
 from a13n_stream_protocol.content import public_tool_value, tool_result_content
 from a13n_stream_protocol.fragments import fragment_custom_event
 from a13n_stream_protocol.realtime import speech_transcript, transcript_event
@@ -105,12 +106,15 @@ class _PartCursor:
     tool_name: str | None = None
     emitted_content: bool = False
     emitted_signature: bool = False
+    citations: tuple[Citation, ...] = ()
 
 
 @dataclass(slots=True)
 class _ObserverState:
     request_index: int = 0
+    parts_request_index: int | None = None
     parts: dict[int, _PartCursor] = field(default_factory=dict)
+    text_message_ids: dict[int, str] = field(default_factory=dict)
     children: dict[str, _ObserverState] = field(default_factory=dict)
     threads: dict[str, str] = field(default_factory=dict)
 
@@ -529,15 +533,20 @@ def _attribute(events: list[Event], run_id: str) -> list[Event]:
     ]
 
 
-def _close_parts(item: HarnessStreamEvent[Any], state: _ObserverState) -> list[Event]:
+def _close_parts(item: HarnessStreamEvent[Any], state: _ObserverState, *, text_only: bool = False) -> list[Event]:
     """Settle presentation parts only at an authoritative execution boundary."""
     events: list[Event] = []
-    for cursor in state.parts.values():
+    for index, cursor in tuple(state.parts.items()):
         if cursor.kind == "text":
+            del state.parts[index]
             events.append(TextMessageEndEvent(timestamp=_timestamp_ms(item), message_id=cursor.part_id))
-        elif cursor.kind == "reasoning":
+            if cursor.citations:
+                events.append(_text_citations(item, cursor.part_id, cursor.citations))
+        elif not text_only and cursor.kind == "reasoning":
             events.append(ReasoningMessageEndEvent(timestamp=_timestamp_ms(item), message_id=cursor.part_id))
-    state.parts.clear()
+    if not text_only:
+        state.parts.clear()
+    state.text_message_ids.clear()
     return events
 
 
@@ -562,13 +571,36 @@ def _convert_input(item: HarnessEvent, source: InputTextEvent | InputMediaEvent)
     )
 
 
+def _text_part_id(item: HarnessEvent, state: _ObserverState, index: int, provider_id: str | None) -> str:
+    # Responses can reuse the provider's message ID across several text parts.
+    if provider_id and not any(key != index and value == provider_id for key, value in state.text_message_ids.items()):
+        return provider_id
+    return _part_id(item.run_id, state.request_index, index, "text")
+
+
 def _convert_part_start(item: HarnessEvent, event: PartStartEvent, state: _ObserverState) -> list[Event]:
+    previous: list[Event] = []
+    if state.parts_request_index is not None and state.parts_request_index != state.request_index:
+        # A retry may reuse indices after a provider failed before sending PartEnd.
+        previous = _close_parts(item, state, text_only=True)
+    state.parts_request_index = state.request_index
+    started = _start_part(item, event, state)
+    return [*previous, *(started or [_custom_pydantic_event(item, event)])]
+
+
+def _start_part(item: HarnessEvent, event: PartStartEvent, state: _ObserverState) -> list[Event]:
     timestamp = _timestamp_ms(item)
     part = event.part
     if isinstance(part, TextPart):
-        message_id = part.id or _part_id(item.run_id, state.request_index, event.index, "text")
-        cursor = _PartCursor(kind="text", part_id=message_id, emitted_content=bool(part.content))
+        message_id = _text_part_id(item, state, event.index, part.id)
+        cursor = _PartCursor(
+            kind="text",
+            part_id=message_id,
+            emitted_content=bool(part.content),
+            citations=project_citations(part.citations),
+        )
         state.parts[event.index] = cursor
+        state.text_message_ids[event.index] = message_id
         events: list[Event] = [TextMessageStartEvent(timestamp=timestamp, message_id=message_id, role="assistant")]
         if part.content:
             events.append(TextMessageContentEvent(timestamp=timestamp, message_id=message_id, delta=part.content))
@@ -612,9 +644,18 @@ def _convert_part_delta(item: HarnessEvent, event: PartDeltaEvent, state: _Obser
     timestamp = _timestamp_ms(item)
     delta = event.delta
     if isinstance(delta, TextPartDelta):
+        citations = project_citations(delta.citations_delta) if delta.citations_delta is not None else None
         if not delta.content_delta:
+            if (cursor := state.parts.get(event.index)) is not None and cursor.kind == "text":
+                if citations is not None:
+                    cursor.citations = citations
+            elif citations is not None and (message_id := state.text_message_ids.get(event.index)) is not None:
+                return [_custom_pydantic_event(item, event), _text_citations(item, message_id, citations, replace=True)]
             return []
         cursor, opened = _ensure_part_cursor(item, state, event.index, "text")
+        state.text_message_ids[event.index] = cursor.part_id
+        if citations is not None:
+            cursor.citations = citations
         events: list[Event] = []
         if opened:
             events.append(TextMessageStartEvent(timestamp=timestamp, message_id=cursor.part_id, role="assistant"))
@@ -661,15 +702,20 @@ def _convert_part_end(item: HarnessEvent, event: PartEndEvent, state: _ObserverS
     part = event.part
     existing = state.parts.pop(event.index, None)
     if isinstance(part, TextPart):
-        message_id = part.id or (existing.part_id if existing is not None else None)
-        message_id = message_id or _part_id(item.run_id, state.request_index, event.index, "text")
+        message_id = existing.part_id if existing is not None else _text_part_id(item, state, event.index, part.id)
         cursor, opened = _ending_cursor(existing, "text", message_id)
+        state.text_message_ids[event.index] = message_id
         events: list[Event] = []
         if opened:
             events.append(TextMessageStartEvent(timestamp=timestamp, message_id=message_id, role="assistant"))
         if part.content and not cursor.emitted_content:
             events.append(TextMessageContentEvent(timestamp=timestamp, message_id=message_id, delta=part.content))
         events.append(TextMessageEndEvent(timestamp=timestamp, message_id=message_id))
+        citations = project_citations(
+            part.citations if part.citations is not None else cursor.citations, text_length=len(part.content)
+        )
+        if citations:
+            events.append(_text_citations(item, message_id, citations))
         return events
     if isinstance(part, ThinkingPart):
         message_id = (
@@ -759,9 +805,9 @@ def _observe_request_lifecycle(event: HarnessExtensionEvent, state: _ObserverSta
         return
     request_index = payload.get("request_index")
     if isinstance(request_index, int) and request_index >= 0:
+        # Steering can announce the next request before the previous stream drains.
+        # Text indices reset at the next native PartStart, not at its announcement.
         state.request_index = request_index
-        # Steering can announce the next request before the previous stream emits PartEnd.
-        # Open parts retain their original identity until their own end or replacement start.
 
 
 def _custom_harness_event(item: HarnessEvent, event: HarnessExtensionEvent) -> CustomEvent:
@@ -793,6 +839,19 @@ def _custom_pydantic_event(item: HarnessEvent, event: AgentStreamEventProtocol) 
         timestamp=_timestamp_ms(item),
         name=f"a13n.pydantic_ai.{event.event_kind}",
         value=_source_value(item, source),
+    )
+
+
+def _text_citations(
+    item: HarnessStreamEvent[Any], message_id: str, citations: tuple[Citation, ...], *, replace: bool = False
+) -> CustomEvent:
+    payload: dict[str, object] = {"message_id": message_id, "citations": [c.model_dump(mode="json") for c in citations]}
+    if replace:
+        payload["replace"] = True
+    return CustomEvent(
+        timestamp=_timestamp_ms(item),
+        name=TEXT_CITATIONS_EVENT,
+        value=_source_value(item, payload),
     )
 
 

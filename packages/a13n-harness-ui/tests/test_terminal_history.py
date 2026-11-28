@@ -224,3 +224,34 @@ def test_live_background_inputs_render_as_activity(source):
     assert "Activity · live background" in _source(renderer)
     assert [block.kind for block in renderer.transcript.blocks.values()] == ["tool"]
     renderer.transcript.close()
+
+
+def test_restored_history_and_one_shot_label_unresolved_markers_without_guessing():
+    from a13n_harness_ui.interactive.citations import cited_reply_text
+    from a13n_stream_protocol.citations import Citation, CitationAnchor, WebCitationSource
+
+    missing = "\ue200filecite\ue202file1\ue201"
+    first = TranscriptPart(kind="assistant", text="🙂 Claim")
+    second = TranscriptPart(
+        kind="assistant",
+        text="[2] and " + missing,
+        citations=(
+            Citation(
+                sources=(WebCitationSource(url="https://example.com", title="Evidence"),),
+                anchor=CitationAnchor(kind="marker", start=0, end=3),
+            ),
+        ),
+    )
+    renderer = StreamRenderer(Status())
+    try:
+        restore_transcript(renderer, _page(first, second))
+        output = _source(renderer)
+        assert "[1] and [source unavailable]" in output
+        assert "[1] Evidence — https://example.com" in output
+        assert missing not in output
+    finally:
+        renderer.transcript.close()
+    assert cited_reply_text(first.text + second.text, [first, second]).startswith(
+        "🙂 Claim[1] and [source unavailable]"
+    )
+    assert cited_reply_text("Different reply " + missing, [first, second]) == "Different reply [source unavailable]"

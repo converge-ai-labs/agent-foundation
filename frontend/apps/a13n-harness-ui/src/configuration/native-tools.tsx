@@ -14,6 +14,7 @@ export function nativeToolKind(value: unknown): string | undefined {
     capability?: string;
     configuration?: { kind?: string };
   };
+  if (item.capability === "Citations") return "citations";
   return item.capability === "native_image_generation"
     ? "image_generation"
     : item.capability === "NativeTool"
@@ -157,6 +158,10 @@ export function AgentNativeTools({
       t(
         "Requires an advisor model ID; additional model usage is billed by the provider.",
       ),
+    Citations: t("Citations"),
+    "Ask the provider for reply citations.": t(
+      "Ask the provider for reply citations.",
+    ),
   };
   return (
     <>

@@ -775,3 +775,25 @@ def test_progress_flood_does_not_reset_the_sequenced_display_suffix() -> None:
     tool = next(item for item in publication.items if item.kind == "tool_call")
     assert tool.content["progress"]["progress"] == 599
     assert all("progress" not in item.content for item in collector.capture().items)
+
+
+def test_compact_display_projection_drops_anchor_into_truncation_suffix():
+    from a13n_harness_ui.conversation import TRANSCRIPT_PREFIX_LIMIT, TRANSCRIPT_TEXT_LIMIT
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, WebCitationSource
+
+    end = TRANSCRIPT_PREFIX_LIMIT + 1
+    part = TextPart(
+        "🙂" * (TRANSCRIPT_TEXT_LIMIT + 1),
+        citations=[
+            Citation([WebCitationSource("https://example.com/inside")], anchor=ContentCitationAnchor(start=0, end=1)),
+            Citation(
+                [WebCitationSource("https://example.com/outside")], anchor=ContentCitationAnchor(start=end - 1, end=end)
+            ),
+        ],
+    )
+    [entry] = display_entries(import_display_history([ModelResponse(parts=[part])]))
+    [reply] = entry.parts
+    assert reply.kind == "assistant" and reply.text_truncated
+    assert reply.citations[0].anchor.end == 1
+    assert reply.citations[1].anchor is None
+    assert reply.citations[1].sources[0].url == "https://example.com/outside"

@@ -15308,6 +15308,84 @@
         ],
         "title": "ChildToolCallView"
       },
+      "Citation": {
+        "additionalProperties": false,
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/CitationSource"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Sources",
+            "type": "array"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CitationAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "title": "Citation",
+        "type": "object"
+      },
+      "CitationAnchor": {
+        "additionalProperties": false,
+        "description": "Half-open Unicode code-point range in the item's text.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "content",
+              "marker"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "exclusiveMinimum": 0,
+            "title": "End",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "start",
+          "end"
+        ],
+        "title": "CitationAnchor",
+        "type": "object"
+      },
+      "CitationSource": {
+        "discriminator": {
+          "mapping": {
+            "document": "#/components/schemas/DocumentCitationSource",
+            "web": "#/components/schemas/WebCitationSource"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/WebCitationSource"
+          },
+          {
+            "$ref": "#/components/schemas/DocumentCitationSource"
+          }
+        ]
+      },
       "CodexDictationConfiguration": {
         "properties": {
           "group": {
@@ -17409,6 +17487,55 @@
           "truncated"
         ],
         "title": "DiskMetrics"
+      },
+      "DocumentCitationSource": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "document",
+            "default": "document",
+            "title": "Kind",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Document Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "excerpts": {
+            "default": [],
+            "items": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "maxItems": 2,
+            "title": "Excerpts",
+            "type": "array"
+          }
+        },
+        "title": "DocumentCitationSource",
+        "type": "object"
       },
       "DraftSummary": {
         "properties": {
@@ -29064,6 +29191,14 @@
             "title": "Text Truncated",
             "default": false
           },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "type": "array",
+            "title": "Citations",
+            "default": []
+          },
           "metadata": {
             "$ref": "#/components/schemas/ContentMetadata"
           },
@@ -30412,6 +30547,51 @@
         ],
         "title": "Wait"
       },
+      "WebCitationSource": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "web",
+            "default": "web",
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "excerpts": {
+            "default": [],
+            "items": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "maxItems": 2,
+            "title": "Excerpts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "WebCitationSource",
+        "type": "object"
+      },
       "WebProviderCatalogView": {
         "properties": {
           "types": {
@@ -31094,6 +31274,21 @@
             ],
             "default": null,
             "title": "Memory Sources"
+          },
+          "citations": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Citation"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Citations"
           }
         },
         "required": [

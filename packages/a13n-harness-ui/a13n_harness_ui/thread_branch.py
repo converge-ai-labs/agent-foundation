@@ -6,8 +6,8 @@ from a13n_harness import HarnessState
 from a13n_harness.content import ContentItem, project_input_content, request_input_content
 from pydantic_ai.messages import ModelMessage, ModelRequest
 
-from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
-from a13n_harness_ui.thread_projection import _MAX_TEXT, _transcript_turns
+from a13n_harness_ui.conversation import TRANSCRIPT_TEXT_LIMIT, ConversationExcerpt, checkpoint_excerpt
+from a13n_harness_ui.thread_projection import _transcript_turns
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,12 @@ def editable_input(content: list[ContentItem]) -> EditableInput | None:
             ):
                 return None
             attachments.add(attachment["attachment_id"])
-        elif ui.keys() - {"composer", "skills"} or not isinstance(text, str) or metadata.media or len(text) > _MAX_TEXT:
+        elif (
+            ui.keys() - {"composer", "skills"}
+            or not isinstance(text, str)
+            or metadata.media
+            or len(text) > TRANSCRIPT_TEXT_LIMIT
+        ):
             return None
     if len(sources) != 1:
         return None

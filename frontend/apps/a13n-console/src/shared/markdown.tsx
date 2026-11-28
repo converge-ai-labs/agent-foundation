@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
-import { memo, type ComponentPropsWithoutRef } from "react";
+import { memo, useMemo, type ComponentPropsWithoutRef } from "react";
+import { prepareCitations, type Citation } from "a13n-ui/citations";
+import { CitationMark, CitationMarkdown } from "a13n-ui/citation-markdown";
 import {
   ArrowUpRightIcon,
   CaretRightIcon,
@@ -17,6 +19,7 @@ import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
 import remarkMath from "remark-math";
 import {
   markdownCodeText,
+  remarkCitations,
   remarkClosedDiagram,
   remarkLatex,
 } from "a13n-ui/markdown-extensions";
@@ -168,8 +171,9 @@ const ReplyPre: NonNullable<Components["pre"]> = ({ node, children }) => {
   return <CodeBlock>{children}</CodeBlock>;
 };
 
-const replyComponents: Components = {
+const replyComponents: Components & { "a13n-citation": typeof CitationMark } = {
   ...components,
+  "a13n-citation": CitationMark,
   pre: ReplyPre,
   span: ({ node: _node, ...props }) =>
     props.className === "katex-display" ? (
@@ -187,6 +191,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   compactLinks = false,
   agentReply = false,
   previewHtml = true,
+  citations,
 }: {
   text: string;
   literalHtml?: boolean;
@@ -194,45 +199,70 @@ export const MarkdownContent = memo(function MarkdownContent({
   compactLinks?: boolean;
   agentReply?: boolean;
   previewHtml?: boolean;
+  citations?: readonly Citation[];
 }) {
+  const { t } = useTranslation();
+  const prepared = useMemo(
+    () => (agentReply ? prepareCitations({ text, citations }) : undefined),
+    [agentReply, text, citations],
+  );
+  const markdown = (
+    <HtmlPreviewEnabled value={agentReply && previewHtml}>
+      <Markdown
+        skipHtml={agentReply || !literalHtml}
+        remarkPlugins={
+          prepared
+            ? [
+                remarkGfm,
+                remarkCjkFriendly,
+                remarkMath,
+                remarkLatex,
+                remarkClosedDiagram,
+                [remarkCitations, prepared],
+              ]
+            : [remarkGfm]
+        }
+        rehypePlugins={[
+          ...(agentReply ? [rehypeKatex] : []),
+          ...(highlight && text.length <= 100_000
+            ? [
+                [rehypeHighlight, { detect: false }] as [
+                  typeof rehypeHighlight,
+                  { detect: boolean },
+                ],
+              ]
+            : []),
+        ]}
+        components={
+          agentReply
+            ? replyComponents
+            : compactLinks
+              ? compactComponents
+              : components
+        }
+      >
+        {prepared?.markdown ?? text}
+      </Markdown>
+    </HtmlPreviewEnabled>
+  );
   return (
     <div className={styles.markdown}>
-      <HtmlPreviewEnabled value={agentReply && previewHtml}>
-        <Markdown
-          skipHtml={!literalHtml}
-          remarkPlugins={
-            agentReply
-              ? [
-                  remarkGfm,
-                  remarkCjkFriendly,
-                  remarkMath,
-                  remarkLatex,
-                  remarkClosedDiagram,
-                ]
-              : [remarkGfm]
-          }
-          rehypePlugins={[
-            ...(agentReply ? [rehypeKatex] : []),
-            ...(highlight && text.length <= 100_000
-              ? [
-                  [rehypeHighlight, { detect: false }] as [
-                    typeof rehypeHighlight,
-                    { detect: boolean },
-                  ],
-                ]
-              : []),
-          ]}
-          components={
-            agentReply
-              ? replyComponents
-              : compactLinks
-                ? compactComponents
-                : components
-          }
+      {prepared ? (
+        <CitationMarkdown
+          sources={prepared.sources}
+          labels={{
+            unavailable: t("Source unavailable"),
+            document: t("Cited document"),
+            source: (number, name) =>
+              t("Source {{number}}: {{name}}", { number, name }),
+            sources: (count) => t("Sources ({{count}})", { count }),
+          }}
         >
-          {text}
-        </Markdown>
-      </HtmlPreviewEnabled>
+          {markdown}
+        </CitationMarkdown>
+      ) : (
+        markdown
+      )}
     </div>
   );
 });

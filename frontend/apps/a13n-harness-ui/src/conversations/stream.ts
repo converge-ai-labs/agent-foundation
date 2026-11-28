@@ -2,6 +2,11 @@ import type { ContentPart } from "@ag-ui/core";
 import { EventSchema } from "@ag-ui/core/schemas";
 import { readContentParts } from "a13n-ui";
 import {
+  mergeCitations,
+  readCitations,
+  type Citation,
+} from "a13n-ui/citations";
+import {
   DisplayNormalizer,
   isDisplayItem,
   readToolProgress,
@@ -33,6 +38,8 @@ export type ExecutionOutcome = "cancelled" | "interrupt" | "failed";
 export type ChildState = "running" | "suspended" | "completed";
 
 export type DisplayBlock = {
+  citations?: readonly Citation[];
+  responseGroup?: string;
   timestamp?: string | number;
   durationMs?: number;
   id: string;
@@ -798,6 +805,8 @@ export class FocusDisplay {
         item.kind === "tool_call" ? content.arguments : content.text,
       ),
       metadata,
+      citations: readCitations(content.citations),
+      responseGroup: string(content.responseGroup) || undefined,
       inputSource:
         content.role === "user"
           ? string(content.input_source) || "user"
@@ -921,6 +930,20 @@ export class FocusDisplay {
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
+    if (name === "a13n.text_citations") {
+      const key = `${scope}:${string(source.message_id)}`;
+      const block = this.blocks.get(key);
+      const citations = readCitations(source.citations);
+      if (block?.kind === "assistant" && citations)
+        this.blocks.set(key, {
+          ...block,
+          citations: mergeCitations(
+            [...(block.citations ?? []), ...citations],
+            block.text,
+          ),
+        });
+      return;
+    }
     if (name === "a13n.acp.tool") {
       const id = string(value.toolCallId);
       const key = `${scope}:${id}`;

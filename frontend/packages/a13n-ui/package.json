@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./vite": "./vite.ts",
     "./display": "./src/display.ts",
+    "./citations": "./src/citations.ts",
+    "./citation-markdown": "./src/citation-markdown.tsx",
     "./code-theme": "./src/code-theme.ts",
     "./styles.css": "./src/styles/index.css",
     "./theme.css": "./src/styles/theme.css",

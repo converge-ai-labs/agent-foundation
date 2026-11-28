@@ -61,11 +61,13 @@ export function StoredContent({
   field,
   value,
   renderValue,
+  copyText,
 }: {
   itemId: string;
   field: string;
   value?: unknown;
   renderValue?: StoredValueRenderer;
+  copyText?: (text: string) => string;
 }) {
   const context = useContext(Context);
   const item = context?.items.get(itemId);
@@ -83,6 +85,7 @@ export function StoredContent({
       field={field}
       reference={reference}
       renderValue={renderValue}
+      copyText={copyText}
     />
   );
 }
@@ -92,11 +95,13 @@ function LoadContent({
   field,
   reference,
   renderValue,
+  copyText,
 }: {
   runId: string;
   field: string;
   reference: ContentRef;
   renderValue?: StoredValueRenderer;
+  copyText?: (text: string) => string;
 }) {
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -171,7 +176,7 @@ function LoadContent({
       )}
       {loaded && field === "text" && typeof loaded.value === "string" && (
         <CopyButton
-          value={loaded.value}
+          value={copyText?.(loaded.value) ?? loaded.value}
           iconOnly
           copyLabel={t("Copy message")}
         />
