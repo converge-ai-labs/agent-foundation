@@ -5,6 +5,10 @@ description: Version-specific migration instructions, breaking contract cutovers
 
 Use this page when upgrading an existing Service deployment (fresh installations already start on the latest schema and contracts). Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.
 
+## Realtime rollout
+
+In split deployments, run the target build's migration job, roll **all** `worker` replicas, then roll the `control` replicas. Confirm that no old Worker can still claim Runs before bringing up new Control replicas. This release adds no realtime schema migration. See [the rollout procedure](operations.md#roll-out-realtime-in-split-deployments) for readiness and smoke checks.
+
 ## Composable memory guidance rollout
 
 Default and preset-following file guidance omit the optional `modules` key in stored configuration, and frozen memory mounts retain their previous shape. Existing memory-mounted Runs remain readable during a rolling upgrade. Upgrade every control and worker replica before saving an explicit module selection or launching the new organization workflows. Older processes cannot interpret explicit module configuration or execute newly introduced tools.

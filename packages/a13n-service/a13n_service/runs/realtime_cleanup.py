@@ -12,6 +12,7 @@ from sqlalchemy import JSON, delete, func, or_, select
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.telemetry import meter
 from a13n_service.resources.models.realtime import open_realtime_model
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.service import ResolvedModel
@@ -23,6 +24,9 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RealtimeCallRow, RealtimeTicketRow, RunRow
 
 logger = get_logger(__name__)
+ORPHAN_HANGUPS = meter.create_counter(
+    "a13n.realtime.orphan_hangups", unit="{call}", description="Orphaned WebRTC provider call cleanup attempts"
+)
 
 
 class ProviderCall(BaseModel):
@@ -145,6 +149,7 @@ async def reconcile(runtime: Runtime) -> None:
                 ) as adapter:
                     await adapter.hang_up(WebRTCSession(provider_name=adapter.system, session_id=value.call_id))
         except Exception as error:
+            ORPHAN_HANGUPS.add(1, {"result": "failed"})
             logger.warning(
                 "Could not close orphaned provider call", extra={"run_id": run_id, "error_type": type(error).__name__}
             )
@@ -152,3 +157,4 @@ async def reconcile(runtime: Runtime) -> None:
             # A repeated hangup of an already ended provider call is idempotent.
             async with transaction(runtime.storage) as session:
                 await session.execute(delete(RealtimeCallRow).where(RealtimeCallRow.run_id == run_id))
+            ORPHAN_HANGUPS.add(1, {"result": "succeeded"})

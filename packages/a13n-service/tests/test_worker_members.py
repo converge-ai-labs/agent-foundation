@@ -2,10 +2,13 @@
 
 import asyncio
 from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import Mock, call
 from uuid import uuid4
 
 import pytest
 from a13n_service.infra.db import now, transaction
+from a13n_service.runs import worker
 from a13n_service.runs.claim import claim
 from a13n_service.runs.members import Members
 from a13n_service.runs.tables import RunRow
@@ -13,6 +16,26 @@ from redis.asyncio import Redis
 from sqlalchemy import update
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_worker_reports_realtime_slots_separately(monkeypatch, enabled):
+    ordinary, realtime = Mock(), Mock()
+    monkeypatch.setattr(worker, "SLOTS", ordinary)
+    monkeypatch.setattr(worker, "REALTIME_SLOTS", realtime)
+    runtime = SimpleNamespace(
+        settings=SimpleNamespace(worker=SimpleNamespace(slots=4, realtime_slots=8)),
+        realtime_bridge=object() if enabled else None,
+    )
+    instance = worker.Worker(runtime, Mock())
+    instance.free -= 1
+    instance.realtime_free -= int(enabled)
+    instance._report_slots()
+    assert ordinary.set.call_args_list == [call(3, {"state": "free"}), call(1, {"state": "busy"})]
+    assert realtime.set.call_args_list == [
+        call(7 if enabled else 0, {"state": "free"}),
+        call(int(enabled), {"state": "busy"}),
+    ]
 
 
 async def test_join_leave_restart_and_scope_isolation(redis_url):

@@ -424,6 +424,16 @@ def test_the_executable_serves_metrics_in_the_prometheus_format() -> None:
     # A gauge keeps its value until it is replaced, however often it is scraped.
     assert 'a13n_backlog_size{queue="runs"} 3.0' in first
     assert 'a13n_backlog_size{queue="runs"} 3.0' in second
+    assert 'a13n_worker_realtime_slots{state="free"} 6.0' in first
+    assert 'a13n_worker_realtime_slots{state="busy"} 2.0' in second
+    assert 'a13n_realtime_connections_active{transport="webrtc"} 0.0' in second
+    handshake = 'a13n_realtime_handshakes_duration_seconds_bucket{le="%s",result="ready",transport="webrtc"} %s'
+    assert handshake % ("0.1", "0.0") in first
+    assert handshake % ("0.25", "1.0") in first
+    assert 'a13n_realtime_calls_ended_total{reason="completed",transport="webrtc"} 1.0' in first
+    assert 'a13n_realtime_control_overflows_total{side="worker"} 1.0' in first
+    assert 'a13n_realtime_pcm_discontinuities_total{direction="egress"} 1.0' in first
+    assert 'a13n_realtime_orphan_hangups_total{result="succeeded"} 1.0' in first
     # A custom App meter shares the host exporter. An instrument created during App import
     # before provider initialization and another created afterward both retain their own names/labels.
     assert 'acme_reports_previews_total{result="completed"} 2.0' in first

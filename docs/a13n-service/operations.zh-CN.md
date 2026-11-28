@@ -37,6 +37,14 @@ a13n-service --config service.toml migrate
 a13n-service --config service.toml migrate --check
 ```
 
+### 分离部署的实时会话升级顺序
+
+1. 使用目标镜像执行 `a13n-service --config service.toml migrate`，等待迁移任务成功。
+2. 滚动更新所有 `worker` 副本。确认新版副本已就绪、旧版 Worker 已全部停止领取运行，再继续。
+3. 滚动更新 `control` 副本。发起一次测试通话，确认收到 `ready` 且通话正常结束。
+
+按此顺序升级，可避免新版 Control 接收旧版 Worker 无法执行的实时运行。Worker 排空时，当前通话可能结束。上一轮运行封存后，客户端可以重新连接原线程。参见[实时会话的容量和指标](monitoring.md#realtime-capacity-and-health)。
+
 ## 发件箱（Outbox）保留期与吞吐容量
 
 Webhook、邮件与异步清理通过持久化 Outbox 提供至少一次投递。可在 `service.toml` 中按类型调整保留时长与并发度：

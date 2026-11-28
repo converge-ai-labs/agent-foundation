@@ -36,6 +36,7 @@ CLAIMS = meter.create_histogram(
     explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 15, 30),
 )
 SLOTS = Gauge("a13n.worker.slots", unit="{slot}", description="This worker's attempt slots by state")
+REALTIME_SLOTS = Gauge("a13n.worker.realtime_slots", unit="{slot}", description="This worker's realtime slots by state")
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +243,9 @@ class Worker:
         slots = self.runtime.settings.worker.slots
         SLOTS.set(self.free, {"state": "free"})
         SLOTS.set(slots - self.free, {"state": "busy"})
+        realtime_slots = self.runtime.settings.worker.realtime_slots if self.runtime.realtime_bridge is not None else 0
+        REALTIME_SLOTS.set(self.realtime_free, {"state": "free"})
+        REALTIME_SLOTS.set(realtime_slots - self.realtime_free, {"state": "busy"})
 
     async def _recover_shells(self) -> None:
         while not self.stopping:

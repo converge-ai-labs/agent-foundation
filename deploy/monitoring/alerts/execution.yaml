@@ -83,3 +83,23 @@ groups:
       summary: Live output is being dropped
       description: Durable checkpoint output may still be intact. Inspect Redis and writer buffers. Deliberate
         oversized-frame refusals are excluded; gap counts are per reader.
+  - alert: A13nRealtimeHandshakeFailures
+    expr: (sum by (job,deployment,transport) (increase(a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",result=~"failed|timeout"}[10m]))
+      / sum by (job,deployment,transport) (increase(a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",result=~"ready|failed|timeout"}[10m])) > 0.2)
+      and on (job,deployment,transport) (sum by (job,deployment,transport)
+      (increase(a13n_realtime_handshakes_duration_seconds_count{job="a13n-service",result=~"failed|timeout"}[10m])) >= 5)
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: Realtime handshake failures or timeouts are elevated
+      description: '{{ $labels.transport }} had at least five failed or timed-out handshakes in 10m and a failure share above 20%.
+        Check worker availability, Redis and provider connectivity.'
+  - alert: A13nRealtimeOrphanHangupsFailing
+    expr: sum by (job,deployment) (increase(a13n_realtime_orphan_hangups_total{job="a13n-service",result="failed"}[10m])) >= 3
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: Realtime orphan hangups keep failing
+      description: At least three WebRTC cleanup attempts failed in 10m. Check provider connectivity and cleanup credentials.
