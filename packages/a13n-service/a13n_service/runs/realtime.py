@@ -717,16 +717,11 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
         finished = not disconnected
         if finished:
             await socket.close()
-    except TimeoutError:
+    except (RedisError, ServiceError, ValidationError, TimeoutError) as error:
         if observation is not None and not finished:
-            observation.reason = "transport_error"
-            if observation.terminal_reason is None:
-                observation.handshake("timeout")
-    except (RedisError, ServiceError, ValidationError) as error:
-        if observation is not None and not finished:
-            if isinstance(error, (RedisError, TransportError)):
+            if isinstance(error, (RedisError, TransportError, TimeoutError)):
                 observation.reason = "transport_error"
-            if isinstance(error, AttachTimeout) and observation.terminal_reason is None:
+            if isinstance(error, (AttachTimeout, TimeoutError)) and observation.terminal_reason is None:
                 observation.handshake("timeout")
         message = error.message if isinstance(error, ServiceError) else "The realtime request could not be accepted."
         if socket.client_state == socket.application_state == WebSocketState.CONNECTED:

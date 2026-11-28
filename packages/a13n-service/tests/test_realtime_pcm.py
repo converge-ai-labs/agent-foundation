@@ -9,6 +9,7 @@ from a13n_service.runs.realtime import Channel
 from a13n_service.runs.realtime_transport import Bridge, Pipe, TransportError
 from a13n_stream_protocol.realtime import SpeechTranscript
 from redis.asyncio import Redis
+from starlette.websockets import WebSocketState
 
 pytestmark = pytest.mark.anyio
 
@@ -500,6 +501,7 @@ async def test_worker_counts_fatal_control_queue_overflow(monkeypatch):
         ("webrtc", "provider_failure", "failed", "failed"),
         ("webrtc", "disconnect_after_seal", "failed", "failed"),
         ("websocket", "attach_timeout", "timeout", "transport_error"),
+        ("webrtc", "offer_timeout", "timeout", "transport_error"),
         ("websocket", "disconnect", "abandoned", "client_disconnected"),
         ("websocket", "restart", "abandoned", "draining"),
         ("websocket", "worker_drain", "ready", "draining"),
@@ -528,6 +530,7 @@ async def test_control_records_handshake_and_connection_lifetime(monkeypatch, tr
     socket = AsyncMock()
     socket.app.state.runtime = runtime
     socket.scope = {"subprotocols": [realtime.SUBPROTOCOL, "token"]}
+    socket.client_state = socket.application_state = WebSocketState.CONNECTED
     socket.receive_text.return_value = json.dumps(
         {"type": "offer", "sdp": "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"}
     )
@@ -549,6 +552,8 @@ async def test_control_records_handshake_and_connection_lifetime(monkeypatch, tr
     socket.send_json.side_effect = observe_send
     if scenario in {"disconnect", "restart"}:
         incoming.put_nowait({"type": "websocket.disconnect", "code": 1012 if scenario == "restart" else 1000})
+    elif scenario == "offer_timeout":
+        socket.receive_text.side_effect = TimeoutError
     elif scenario != "attach_timeout":
         pipe_frames.put_nowait(b"a")
         failed_before_ready = scenario in {"provider_failure", "disconnect_after_seal"}
@@ -571,3 +576,11 @@ async def test_control_records_handshake_and_connection_lifetime(monkeypatch, tr
     assert 0 <= elapsed < 2
     assert labels == {"transport": transport, "result": result}
     ended.add.assert_called_once_with(1, {"transport": transport, "reason": reason})
+    if result == "timeout":
+        message = (
+            "The realtime transport is unavailable"
+            if scenario == "attach_timeout"
+            else "The realtime request could not be accepted."
+        )
+        socket.send_json.assert_awaited_with({"type": "error", "message": message})
+        socket.close.assert_awaited_once_with(code=1008)
