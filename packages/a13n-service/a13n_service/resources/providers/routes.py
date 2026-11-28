@@ -197,6 +197,7 @@ async def complete_model_authorization(
         provider_id,
         body,
         keys=runtime.keys,
+        settings=runtime.settings.providers,
     )
 
 

@@ -15,7 +15,7 @@ from a13n_service.infra.outbound import open_http
 from a13n_service.providers.model_settings import check_request_headers
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.models.service import ResolvedModel
-from a13n_service.resources.providers.oauth import ChatGPTCredentialSource
+from a13n_service.resources.providers.oauth import model_credential_source
 from a13n_service.settings import Providers
 
 
@@ -53,14 +53,22 @@ async def open_model(
                 # Provider credentials, protocol and automatic affinity remain authoritative.
                 continue
             headers[name] = value
-    source = None
-    if definition.oauth is not None:
-        if storage is None or model.provider.location.organization_id is None:
-            raise ServiceError(
-                "unavailable", "Model Provider OAuth storage is unavailable", {"dependency": "model_oauth"}
-            )
-        source = ChatGPTCredentialSource(storage, keys, model.provider.id, model.provider.location.organization_id)
     async with open_http(policy, timeout=settings.model_timeout, max_bytes=settings.response_bytes) as client:
+        source = None
+        if definition.oauth is not None:
+            if storage is None or model.provider.location.organization_id is None:
+                raise ServiceError(
+                    "unavailable", "Model Provider OAuth storage is unavailable", {"dependency": "model_oauth"}
+                )
+            source = model_credential_source(
+                definition.oauth.scheme,
+                storage,
+                keys,
+                model.provider.id,
+                model.provider.location.organization_id,
+                settings=settings,
+                client=client,
+            )
         native = await definition.build(
             model.config.model_name,
             configuration=model.provider.config,

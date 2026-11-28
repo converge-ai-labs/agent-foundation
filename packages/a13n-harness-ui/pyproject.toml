@@ -67,6 +67,9 @@ Repository = "https://github.com/converge-ai-labs/agent-foundation"
 [project.scripts]
 a13n-harness-ui = "a13n_harness_ui.cli:main"
 
+[project.entry-points."a13n_harness_ui.model_providers"]
+google-ai-plan = "a13n_harness_ui.model_providers.google_ai_plan:GoogleAIPlanPlugin"
+
 [dependency-groups]
 test = [
     # MCP integration fixtures use the full FastMCP distribution.

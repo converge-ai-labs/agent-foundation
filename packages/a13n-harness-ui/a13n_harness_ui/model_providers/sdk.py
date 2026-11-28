@@ -118,6 +118,10 @@ class DeviceChallenge(_Contract):
     state: JsonValue = Field(repr=False, exclude=True)
 
 
+class OAuthClientUnconfigured(Exception):
+    """The Host has not provisioned this OAuth application's registration."""
+
+
 class CallbackChallenge(_Contract):
     authorization_url: str = Field(max_length=8192, repr=False)
     expires_in: float = Field(gt=0, allow_inf_nan=False)

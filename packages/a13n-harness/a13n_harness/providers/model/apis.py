@@ -56,6 +56,14 @@ MODEL_APIS = MappingProxyType(
             "pydantic_ai.models.anthropic",
             "AnthropicModelSettings",
         ),
+        "google.interactions": ModelApi(
+            "google.interactions",
+            "Google Interactions",
+            "a13n_harness.models.google_ai_plan",
+            "GoogleAIPlanModel",
+            "a13n_harness.models.google_ai_plan",
+            "GoogleAIPlanSettings",
+        ),
         "google.generate_content": ModelApi(
             "google.generate_content",
             "Google Generate Content",

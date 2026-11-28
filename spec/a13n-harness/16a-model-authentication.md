@@ -73,6 +73,14 @@ Inference uses the official fixed public Responses endpoint, profile and stream 
 
 Sign-out clears local tokens and pending authorization while retaining registration metadata. Remote access is managed in ChatGPT settings; the integration does not call a revocation endpoint.
 
+## Google AI Plan
+
+The Google AI Plan integration requires the Host to supply an approved `agent-foundation` OAuth client registration. Authorization uses PKCE S256, state, nonce, and a fixed-path IPv4 loopback redirect. A full pasted URL is validated against the issued redirect and state before code exchange. The grant binds to the `sub` in Google's verified ID token; the Host stores the complete credential set, including its private P-256 DPoP key and most recent nonce.
+
+Token proofs use ES256, a SHA-256 code-derived `jti` for exchange, and a random `jti` for refresh. Explicit Google DPoP nonce and clock challenges permit bounded resubmission; refresh retains the bound account and key and atomically replaces the rotated credential set through the Host source.
+
+The native Model uses the fixed Google per-user quota Interactions endpoint with Bearer authentication and `agent-foundation/<version>` User-Agent. Requests stream stateless typed steps with `store: false`; replay preserves signed thought steps and tool-call identities. The stream completes on `interaction.completed` and reports upstream token usage. Daily and zero quota, unavailable models and disabled access are terminal; transient pre-stream failures can retry within a fixed budget. Partial streams are never replayed.
+
 ## Codex Device Authorization
 
 `CodexDeviceAuthorizationFlow.start()` starts the reviewed vendor protocol at the Codex user-code endpoint. The public result exposes the verification URL, user code, interval, and maximum fifteen-minute lifetime, keeping the device authorization ID out of representations. Bounded polling treats HTTP 403/404 as pending. `wait_for_login()` exchanges the returned authorization code and verifier at the token endpoint using `https://auth.openai.com/deviceauth/callback`, not the browser loopback redirect. This is not the RFC 8628 token grant used by Grok. Cancellation interrupts polling; the Host alone publishes credentials. `DeviceAuthorizationError.reason` distinguishes expired, denied, and unsupported outcomes where the provider protocol identifies them; no protocol silently starts another login method.

@@ -13,7 +13,7 @@ from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.outbound import open_http
 from a13n_service.providers.registry import Registry
-from a13n_service.resources.providers.oauth import ChatGPTCredentialSource
+from a13n_service.resources.providers.oauth import model_credential_source
 from a13n_service.resources.providers.schemas import ProviderModel
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import ModelProviderRow
@@ -48,13 +48,21 @@ async def discover_models(
     definition = registry.get("model", provider.type)
     if not definition.supports_model_discovery:
         raise invalid("provider_id", "This provider does not support model discovery")
-    source = None
-    if definition.oauth is not None:
-        assert provider.location.organization_id is not None
-        source = ChatGPTCredentialSource(storage, keys, provider.id, provider.location.organization_id)
     try:
         with fail_after(settings.model_timeout):
             async with open_http(policy, timeout=settings.model_timeout, max_bytes=settings.response_bytes) as client:
+                source = None
+                if definition.oauth is not None:
+                    assert provider.location.organization_id is not None
+                    source = model_credential_source(
+                        definition.oauth.scheme,
+                        storage,
+                        keys,
+                        provider.id,
+                        provider.location.organization_id,
+                        settings=settings,
+                        client=client,
+                    )
                 models = await definition.discover_models(
                     configuration=provider.config,
                     credential=provider.reveal_credential(keys),

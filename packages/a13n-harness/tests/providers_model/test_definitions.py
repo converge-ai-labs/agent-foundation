@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import httpx2
 import pytest
+from a13n_harness.models.google_ai_plan import GoogleAIPlanModel
 from a13n_harness.providers.authentication import Authentication, AuthenticationCase, CredentialMode
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from google.auth.credentials import AnonymousCredentials
@@ -34,6 +35,14 @@ class UnusedOAuthSource:
         raise AssertionError("Construction must not refresh OAuth credentials")
 
 
+class UnusedGoogleOAuthSource:
+    async def current(self):
+        raise AssertionError("Construction must not load OAuth credentials")
+
+    async def refresh(self, expected):
+        raise AssertionError("Construction must not refresh OAuth credentials")
+
+
 class AllowEndpoints:
     async def validate(self, endpoint: str) -> str:
         return endpoint
@@ -46,6 +55,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
         "openai.chat_completions": OpenAIChatModel,
         "anthropic.messages": AnthropicModel,
         "google.generate_content": GoogleModel,
+        "google.interactions": GoogleAIPlanModel,
         "bedrock.converse": BedrockConverseModel,
         "bedrock_mantle.responses": BedrockMantleResponsesModel,
         "bedrock_mantle.chat_completions": BedrockMantleChatModel,
@@ -66,7 +76,9 @@ async def test_every_builtin_constructs_its_declared_native_apis():
         "google_vertex": {"project_id": "project", "client_email": "fixture@example.com", "private_key": "fixture-pem"},
         "ollama": None,
         "openai_chatgpt": None,
+        "google_ai_plan": None,
     }
+    oauth_sources = {"openai_chatgpt": UnusedOAuthSource(), "google_ai_plan": UnusedGoogleOAuthSource()}
     async with httpx2.AsyncClient() as client:
         with patch(
             "a13n_harness.providers.model.credentials.GoogleServiceAccount.native_credentials",
@@ -82,7 +94,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                         name,
                         configuration=configurations.get(definition.type, {}),
                         credential=credentials.get(definition.type, {"api_key": "secret"}),
-                        credential_source=UnusedOAuthSource() if definition.oauth is not None else None,
+                        credential_source=oauth_sources.get(definition.type),
                         model_api=api,
                         http_client=client,
                         endpoint_policy=AllowEndpoints(),
@@ -93,7 +105,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
                             assert model.client.meta.config.retries["total_max_attempts"] == 1
-    assert len(BUILT_IN_MODEL_PROVIDERS) == 22
+    assert len(BUILT_IN_MODEL_PROVIDERS) == 23
 
 
 class Configuration(BaseModel):

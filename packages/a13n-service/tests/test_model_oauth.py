@@ -530,3 +530,178 @@ async def test_declined_plan_usage_is_not_connected_and_reauthorization_requests
     started = await service.client.post(path + "/authorize", json={})
     assert started.status_code == 200
     assert parse_qs(urlsplit(started.json()["authorization_url"]).query)["prompt"] == ["consent"]
+
+
+async def test_google_ai_plan_workspace_login_refresh_and_model(service, monkeypatch, no_task_connection):
+    from contextlib import asynccontextmanager
+
+    from a13n_harness.models.google_ai_plan import GoogleAIPlanModel
+    from a13n_harness.providers.model.oauth.google_ai_plan import DPoPKey, GoogleAIPlanCredentials, GoogleAIPlanFlow
+    from a13n_service.resources.models import runtime as models_runtime
+    from a13n_service.resources.models.service import resolve_model
+    from a13n_service.tenancy.authorize import WorkspaceScope
+    from pydantic import SecretStr
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    provider = await create(service, "model", {"type": "google_ai_plan", "name": "Google AI Plan"})
+    path = f"{service.api}/model-providers/{provider['id']}"
+    original = service.runtime.settings
+    settings = original.providers.model_copy(
+        update={"google_ai_plan_client_id": None, "google_ai_plan_client_secret": None}
+    )
+    monkeypatch.setattr(
+        service.app.state,
+        "runtime",
+        replace(service.runtime, settings=original.model_copy(update={"providers": settings})),
+    )
+    missing = await service.client.post(path + "/authorize", json={})
+    assert missing.status_code == 503 and "approved Google AI Plan OAuth client" in missing.text
+    settings = settings.model_copy(
+        update={
+            "google_ai_plan_client_id": "fixture-client",
+            "google_ai_plan_client_secret": SecretStr("fixture-secret"),
+        }
+    )
+    monkeypatch.setattr(
+        service.app.state,
+        "runtime",
+        replace(service.runtime, settings=original.model_copy(update={"providers": settings})),
+    )
+    started = await service.client.post(path + "/authorize", json={})
+    assert started.status_code == 200, started.text
+    start = started.json()
+    query = parse_qs(urlsplit(start["authorization_url"]).query)
+    assert query["code_challenge_method"] == ["S256"]
+    async with short_session(service.runtime.storage) as session:
+        row = await session.get(ModelProviderOAuthRow, provider["id"])
+        assert row.pending and query["state"][0] not in json.dumps(row.pending)
+        location = SecretLocation(service.tenant.organization_id, "model_provider_oauth", "pending", provider["id"])
+        pending = service.runtime.keys.reveal(Envelope.model_validate(row.pending), location)
+        assert json.loads(pending)["state"] == query["state"][0]
+
+    initial = GoogleAIPlanCredentials(
+        account_id="fixture-verified-subject",
+        client_id="fixture-client",
+        access_token="fixture-initial-access",
+        refresh_token="fixture-initial-refresh",
+        expires_at=datetime.now(UTC),
+        dpop_jwk=DPoPKey.generate(),
+        dpop_nonce="fixture-initial-nonce",
+    )
+    exchanges = []
+
+    async def exchange(flow, code):
+        no_task_connection()
+        assert flow.registration.client_id == initial.client_id
+        async with short_session(service.runtime.storage) as session:
+            row = await session.get(ModelProviderOAuthRow, provider["id"])
+            assert row.pending is None and row.login_claim == start["attempt_id"]
+        exchanges.append(code)
+        return initial
+
+    monkeypatch.setattr(GoogleAIPlanFlow, "exchange_code", exchange)
+    callback = query["redirect_uri"][0] + "?" + urlencode({"code": "fixture-code", "state": query["state"][0]})
+    body = {"attempt_id": start["attempt_id"], "callback_url": callback}
+    bad = await service.client.post(
+        path + "/authorization/callback", json={**body, "callback_url": callback + "&code=x"}
+    )
+    assert bad.status_code == 400 and "fixture-code" not in bad.text
+    completed = await service.client.post(path + "/authorization/callback", json=body)
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["subject"] == initial.account_id and "fixture-initial" not in completed.text
+    replay = await service.client.post(path + "/authorization/callback", json=body)
+    assert replay.status_code == 409 and exchanges == ["fixture-code"]
+    async with short_session(service.runtime.storage) as session:
+        row = await session.get(ModelProviderOAuthRow, provider["id"])
+        assert row.tokens and "fixture-initial" not in json.dumps(row.tokens)
+        assert oauth._google_credentials(row, service.runtime.keys) == initial
+
+    responses = []
+    rotated = initial.model_copy(
+        update={
+            "access_token": "fixture-renewed-access",
+            "refresh_token": "fixture-renewed-refresh",
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+            "dpop_nonce": "fixture-renewed-nonce",
+        }
+    )
+
+    async def refresh(registration, http, current):
+        no_task_connection()
+        assert current == initial and registration.client_id == initial.client_id
+        responses.append(current)
+        await asyncio.sleep(0.04)
+        return rotated
+
+    monkeypatch.setattr(oauth, "refresh_google_ai_plan", refresh)
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda _: pytest.fail("Unexpected HTTP request"))
+    ) as client:
+        sources = [
+            oauth.model_credential_source(
+                "google-ai-plan",
+                service.runtime.storage,
+                service.runtime.keys,
+                provider["id"],
+                service.tenant.organization_id,
+                settings=settings,
+                client=client,
+            )
+            for _ in range(2)
+        ]
+        assert all(isinstance(source, oauth.GoogleAIPlanCredentialSource) for source in sources)
+        assert await asyncio.gather(*(source.current() for source in sources)) == [rotated, rotated]
+    assert responses == [initial]
+
+    model_row = await service.client.post(
+        service.api + "/models",
+        json={
+            "provider_id": provider["id"],
+            "key": "google-plan-fixture",
+            "name": "Google Plan Fixture",
+            "config": {"model_name": "gemini-fixture", "model_api": "google.interactions"},
+        },
+    )
+    assert model_row.status_code == 201, model_row.text
+    async with short_session(service.runtime.storage) as session:
+        resolved = await resolve_model(
+            session,
+            principal(service, (service.tenant.workspace_id, "admin")),
+            WorkspaceScope(service.tenant.organization_id, service.tenant.workspace_id),
+            "google-plan-fixture",
+        )
+
+    def respond(request):
+        no_task_connection()
+        assert request.url.path == "/v1beta/interactions:createPerUserQuota"
+        assert request.headers["authorization"] == "Bearer fixture-renewed-access"
+        assert request.headers["user-agent"].startswith("agent-foundation/")
+        payload = json.loads(request.content)
+        assert payload["store"] is False and payload["stream"] is True
+        completion = {
+            "event_type": "interaction.completed",
+            "interaction": {"id": "fixture-interaction", "status": "completed", "usage": {"total_input_tokens": 7}},
+        }
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"}, content="data: " + json.dumps(completion) + "\n\n"
+        )
+
+    @asynccontextmanager
+    async def http(*args, **kwargs):
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+            yield client
+
+    monkeypatch.setattr(models_runtime, "open_http", http)
+    async with models_runtime.open_model(
+        resolved,
+        registry=service.runtime.registry,
+        keys=service.runtime.keys,
+        policy=service.runtime.endpoint_policy,
+        settings=settings,
+        storage=service.runtime.storage,
+    ) as model:
+        assert isinstance(model, GoogleAIPlanModel)
+        result = await model.request([ModelRequest(parts=[UserPromptPart("Hello")])], None, ModelRequestParameters())
+    assert result.usage.input_tokens == 7
+    assert responses == [initial]

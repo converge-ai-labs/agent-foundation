@@ -8,7 +8,13 @@ import httpx2
 from pydantic import Field, model_validator
 
 from ..authentication import Authentication, CredentialMode
-from .definition import DiscoveredModel, ModelOAuth, ModelProviderDefinition, ProviderOperationError
+from .definition import (
+    DiscoveredModel,
+    ModelOAuth,
+    ModelOAuthCredentialSource,
+    ModelProviderDefinition,
+    ProviderOperationError,
+)
 from .types import ModelConnection, ProviderConfiguration
 
 if TYPE_CHECKING:
@@ -78,16 +84,18 @@ def _model(name: str, provider: Provider[Any]) -> Model[Any]:
 
 async def _discover(
     connection: ModelConnection[Config, Any],
-    source: OpenAIChatGPTCredentialSource | None,
+    source: ModelOAuthCredentialSource | None,
     client: httpx2.AsyncClient,
 ) -> tuple[DiscoveredModel, ...]:
     from openai import OpenAIError
     from pydantic_ai.exceptions import ModelAPIError, UserError
 
     from .chatgpt import discover_chatgpt_models
+    from .oauth.google_ai_plan import GoogleAIPlanCredentialSource
     from .oauth.models import ModelAuthenticationError
 
-    assert source is not None
+    if source is None or isinstance(source, GoogleAIPlanCredentialSource):
+        raise ProviderOperationError("ChatGPT model discovery requires a ChatGPT credential source")
     try:
         models = await discover_chatgpt_models(
             credential_source=source, http_client=client, extra_headers=connection.extra_headers
