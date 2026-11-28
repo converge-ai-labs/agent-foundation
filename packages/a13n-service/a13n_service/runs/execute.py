@@ -250,10 +250,6 @@ async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> No
             channel.finish(run_id, status, code)
 
 
-def _realtime_budget_failure() -> Outcome:
-    return Outcome.failed("usage_limit_exceeded", "The realtime usage budget was exceeded")
-
-
 def _realtime_activity(channel: Channel, event: object) -> None:
     if isinstance(event, FunctionToolCallEvent):
         channel.foreground.add(event.part.tool_call_id)
@@ -647,7 +643,6 @@ class _Attempt:
         self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan, *, channel: Channel | None = None
     ):
         self.channel = channel
-        self.realtime_budget_refused = False
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
         self.last_committed_tail_bytes: bytes | None = None
@@ -765,12 +760,12 @@ class _Attempt:
                     await inbox.fail_assigned(session, run.id, error.entry_id, Failure.of(error), at=current)
                 await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
                 return
-            outcome = self._refusal()
-            if outcome is None:
-                if self.realtime_budget_refused and not isinstance(error, AuthorityRevoked):
-                    outcome = _realtime_budget_failure()
-                else:
-                    outcome = _failure(self.lease, error)
+            if isinstance(error, AuthorityRevoked):
+                outcome = _failure(self.lease, error)
+            elif self.channel is not None and self.channel.end_reason == "usage_limit_exceeded":
+                outcome = self._budget_failure()
+            else:
+                outcome = self._refusal() or _failure(self.lease, error)
             if outcome is None and self.channel is not None:
                 outcome = Outcome.failed("realtime_unavailable", "The realtime attempt ended before completing")
             if outcome is None:
@@ -1143,7 +1138,7 @@ class _Attempt:
                 # Overflow already marks the channel failed. Keep any cancellation or lease loss in flight.
                 with suppress(TransportError):
                     channel.flush_transcripts()
-        if (channel.failed and not self.realtime_budget_refused) or stream.result is None:
+        if (channel.failed and channel.end_reason != "usage_limit_exceeded") or stream.result is None:
             if channel.failed:
                 raise TransportError("The realtime connection failed")
             raise ServiceError("unavailable", "The realtime run ended before it completed")
@@ -1151,7 +1146,7 @@ class _Attempt:
 
     async def _check_realtime_budget(self, channel: Channel) -> None:
         policy = self.runtime.admission
-        if self.realtime_budget_refused or not isinstance(policy, RealtimeBudgetPolicy):
+        if channel.end_reason == "usage_limit_exceeded" or not isinstance(policy, RealtimeBudgetPolicy):
             return
         # Harness attributes the native turn before publishing its event; reports may be retried by flush.
         await self.usage_reporter.flush()
@@ -1162,7 +1157,6 @@ class _Attempt:
             async with transaction(self.runtime.storage) as session:
                 await policy.check_realtime_budget(session, context)
         except (ServiceError, UsageLimitExceeded):
-            self.realtime_budget_refused = True
             channel.end_for_limit("usage_limit_exceeded")
 
     async def _receive_realtime_notices(self, stream: HarnessLiveStream, channel: Channel) -> None:
@@ -1675,11 +1669,18 @@ class _Attempt:
         await self.control.stopped.wait()
         stream.cancel()
 
+    def _budget_failure(self) -> Outcome:
+        refusal = self._refusal()
+        if self.control.outcome.failure is not None and self.control.outcome.failure.code == "authority_revoked":
+            return self.control.outcome
+        return refusal or Outcome.failed("usage_limit_exceeded", "The realtime usage budget was exceeded")
+
     async def _end(self, result: HarnessRunResult) -> None:
         self.usage.add(result.usage_records)
-        if self.realtime_budget_refused and result.status != "completed":
+        reason = self.channel.end_reason if self.channel is not None else None
+        if reason == "usage_limit_exceeded" and result.status != "completed":
             await self._record_usage()
-            await self._seal_interrupted(self._refusal() or _realtime_budget_failure())
+            await self._seal_interrupted(self._budget_failure())
             return
         if result.status == "failed":
             assert result.failure is not None
@@ -1715,12 +1716,11 @@ class _Attempt:
         snapshot = self._snapshot(terminal=True)
         if result.status == "completed":
             require_output_size(result.output, self.runtime.settings.worker.output_bytes)
-            reason = self.channel.end_reason if self.channel is not None else None
-            if self.realtime_budget_refused:
-                outcome = self._refusal() or _realtime_budget_failure()
-            else:
-                assert reason != "usage_limit_exceeded"
-                outcome = Outcome(status="completed", output=result.output, reason=reason)
+            outcome = (
+                self._budget_failure()
+                if reason == "usage_limit_exceeded"
+                else Outcome(status="completed", output=result.output, reason=reason)
+            )
             await self._commit(result.state, cursors=self.cursors.snapshot(), snapshot=snapshot, outcome=outcome)
         else:
             assert result.deferred is not None

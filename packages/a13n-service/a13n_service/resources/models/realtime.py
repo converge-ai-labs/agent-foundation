@@ -16,7 +16,7 @@ from pydantic_ai.realtime.xai import XaiRealtimeModel
 
 from a13n_service.infra.crypto import KeyRing
 from a13n_service.infra.errors import invalid
-from a13n_service.infra.outbound import open_http, validate_cdp_endpoint
+from a13n_service.infra.outbound import open_http, validate_ws_endpoint
 from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.models.service import ResolvedModel
@@ -58,7 +58,7 @@ async def open_realtime_model(
         await policy.validate(endpoint)
         destination = urlsplit(endpoint)
         websocket = destination._replace(scheme="wss", path=destination.path + protocol.websocket_path).geturl()
-        await validate_cdp_endpoint(policy, websocket)
+        await validate_ws_endpoint(policy, websocket)
     except EndpointPolicyError:
         raise invalid("model", f"The outbound policy denies the {api} endpoint") from None
 
