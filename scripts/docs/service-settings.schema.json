@@ -544,6 +544,14 @@
     "Control": {
       "additionalProperties": false,
       "properties": {
+        "realtime_ice_servers": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/IceServerConfig"
+          },
+          "title": "Realtime Ice Servers",
+          "type": "array"
+        },
         "update_notices_enabled": {
           "default": true,
           "title": "Update Notices Enabled",
@@ -931,6 +939,56 @@
         }
       },
       "title": "Environments",
+      "type": "object"
+    },
+    "IceServerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "urls": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Urls"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        },
+        "credential": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credential"
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "title": "IceServerConfig",
       "type": "object"
     },
     "Kind": {
@@ -2590,6 +2648,20 @@
           "maximum": 1024,
           "minimum": 1,
           "title": "Realtime Slots",
+          "type": "integer"
+        },
+        "realtime_max_duration_seconds": {
+          "default": 1800,
+          "maximum": 14400,
+          "minimum": 30,
+          "title": "Realtime Max Duration Seconds",
+          "type": "integer"
+        },
+        "realtime_idle_seconds": {
+          "default": 300,
+          "maximum": 3600,
+          "minimum": 0,
+          "title": "Realtime Idle Seconds",
           "type": "integer"
         },
         "realtime_call_limit": {

@@ -116,6 +116,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 | 设置                                  | 环境变量                                    | 类型 / 选项 | 约束与默认值                                    |
 | ------------------------------------- | ------------------------------------------- | ----------- | ----------------------------------------------- |
+| `control.realtime_ice_servers`        | `A13N_CONTROL__REALTIME_ICE_SERVERS`        | 对象数组    | default=[]                                      |
 | `control.update_notices_enabled`      | `A13N_CONTROL__UPDATE_NOTICES_ENABLED`      | 布尔值      | default=true                                    |
 | `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | 数值        | maximum=60; exclusiveMinimum=0; default=1       |
 | `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | 整数        | minimum=1; maximum=10000; default=100           |
@@ -163,34 +164,36 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `worker`
 
-| 设置                             | 环境变量                               | 类型 / 选项 | 约束与默认值                                     |
-| -------------------------------- | -------------------------------------- | ----------- | ------------------------------------------------ |
-| `worker.realtime_slots`          | `A13N_WORKER__REALTIME_SLOTS`          | 整数        | minimum=1; maximum=1024; default=8               |
-| `worker.realtime_call_limit`     | `A13N_WORKER__REALTIME_CALL_LIMIT`     | 整数        | minimum=1; default=32                            |
-| `worker.realtime_pcm_limit`      | `A13N_WORKER__REALTIME_PCM_LIMIT`      | 整数        | minimum=1; default=8                             |
-| `worker.realtime_accepted_limit` | `A13N_WORKER__REALTIME_ACCEPTED_LIMIT` | 整数        | minimum=1; default=16                            |
-| `worker.realtime_ticket_limit`   | `A13N_WORKER__REALTIME_TICKET_LIMIT`   | 整数        | minimum=1; default=128                           |
-| `worker.slots`                   | `A13N_WORKER__SLOTS`                   | 整数        | minimum=1; maximum=1024; default=128             |
-| `worker.max_attempts`            | `A13N_WORKER__MAX_ATTEMPTS`            | 整数        | minimum=1; maximum=20; default=3                 |
-| `worker.lease_seconds`           | `A13N_WORKER__LEASE_SECONDS`           | 整数        | minimum=3; maximum=300; default=30               |
-| `worker.scan_seconds`            | `A13N_WORKER__SCAN_SECONDS`            | 数值        | maximum=30; exclusiveMinimum=0; default=1        |
-| `worker.authority_seconds`       | `A13N_WORKER__AUTHORITY_SECONDS`       | 数值        | maximum=30; exclusiveMinimum=0; default=1        |
-| `worker.drain_seconds`           | `A13N_WORKER__DRAIN_SECONDS`           | 数值        | maximum=300; exclusiveMinimum=0; default=10      |
-| `worker.post_run_concurrency`    | `A13N_WORKER__POST_RUN_CONCURRENCY`    | 整数        | minimum=1; maximum=1024; default=16              |
-| `worker.post_run_seconds`        | `A13N_WORKER__POST_RUN_SECONDS`        | 数值        | maximum=300; exclusiveMinimum=0; default=30      |
-| `worker.delivery_count`          | `A13N_WORKER__DELIVERY_COUNT`          | 整数        | minimum=1; maximum=128; default=8                |
-| `worker.delivery_bytes`          | `A13N_WORKER__DELIVERY_BYTES`          | 整数        | minimum=1024; maximum=16777216; default=262144   |
-| `worker.output_bytes`            | `A13N_WORKER__OUTPUT_BYTES`            | 整数        | minimum=1024; maximum=16777216; default=1048576  |
-| `worker.page_items`              | `A13N_WORKER__PAGE_ITEMS`              | 整数        | minimum=16; maximum=4096; default=256            |
-| `worker.page_bytes`              | `A13N_WORKER__PAGE_BYTES`              | 整数        | minimum=65536; maximum=16777216; default=1048576 |
-| `worker.content_bytes`           | `A13N_WORKER__CONTENT_BYTES`           | 整数        | minimum=1024; maximum=16777216; default=65536    |
-| `worker.compression_level`       | `A13N_WORKER__COMPRESSION_LEVEL`       | 整数        | minimum=1; maximum=19; default=3                 |
-| `worker.stream_length`           | `A13N_WORKER__STREAM_LENGTH`           | 整数        | minimum=16; maximum=100000; default=10000        |
-| `worker.stream_ttl`              | `A13N_WORKER__STREAM_TTL`              | 整数        | minimum=1; maximum=86400; default=600            |
-| `worker.stream_coalesce_seconds` | `A13N_WORKER__STREAM_COALESCE_SECONDS` | 数值        | minimum=0; maximum=1; default=0.1                |
-| `worker.stream_trim_seconds`     | `A13N_WORKER__STREAM_TRIM_SECONDS`     | 数值        | minimum=0; maximum=600; default=10               |
-| `worker.child_depth`             | `A13N_WORKER__CHILD_DEPTH`             | 整数        | minimum=0; maximum=16; default=4                 |
-| `worker.child_count`             | `A13N_WORKER__CHILD_COUNT`             | 整数        | minimum=0; maximum=256; default=16               |
+| 设置                                   | 环境变量                                     | 类型 / 选项 | 约束与默认值                                     |
+| -------------------------------------- | -------------------------------------------- | ----------- | ------------------------------------------------ |
+| `worker.realtime_slots`                | `A13N_WORKER__REALTIME_SLOTS`                | 整数        | minimum=1; maximum=1024; default=8               |
+| `worker.realtime_max_duration_seconds` | `A13N_WORKER__REALTIME_MAX_DURATION_SECONDS` | 整数        | minimum=30; maximum=14400; default=1800          |
+| `worker.realtime_idle_seconds`         | `A13N_WORKER__REALTIME_IDLE_SECONDS`         | 整数        | minimum=0; maximum=3600; default=300             |
+| `worker.realtime_call_limit`           | `A13N_WORKER__REALTIME_CALL_LIMIT`           | 整数        | minimum=1; default=32                            |
+| `worker.realtime_pcm_limit`            | `A13N_WORKER__REALTIME_PCM_LIMIT`            | 整数        | minimum=1; default=8                             |
+| `worker.realtime_accepted_limit`       | `A13N_WORKER__REALTIME_ACCEPTED_LIMIT`       | 整数        | minimum=1; default=16                            |
+| `worker.realtime_ticket_limit`         | `A13N_WORKER__REALTIME_TICKET_LIMIT`         | 整数        | minimum=1; default=128                           |
+| `worker.slots`                         | `A13N_WORKER__SLOTS`                         | 整数        | minimum=1; maximum=1024; default=128             |
+| `worker.max_attempts`                  | `A13N_WORKER__MAX_ATTEMPTS`                  | 整数        | minimum=1; maximum=20; default=3                 |
+| `worker.lease_seconds`                 | `A13N_WORKER__LEASE_SECONDS`                 | 整数        | minimum=3; maximum=300; default=30               |
+| `worker.scan_seconds`                  | `A13N_WORKER__SCAN_SECONDS`                  | 数值        | maximum=30; exclusiveMinimum=0; default=1        |
+| `worker.authority_seconds`             | `A13N_WORKER__AUTHORITY_SECONDS`             | 数值        | maximum=30; exclusiveMinimum=0; default=1        |
+| `worker.drain_seconds`                 | `A13N_WORKER__DRAIN_SECONDS`                 | 数值        | maximum=300; exclusiveMinimum=0; default=10      |
+| `worker.post_run_concurrency`          | `A13N_WORKER__POST_RUN_CONCURRENCY`          | 整数        | minimum=1; maximum=1024; default=16              |
+| `worker.post_run_seconds`              | `A13N_WORKER__POST_RUN_SECONDS`              | 数值        | maximum=300; exclusiveMinimum=0; default=30      |
+| `worker.delivery_count`                | `A13N_WORKER__DELIVERY_COUNT`                | 整数        | minimum=1; maximum=128; default=8                |
+| `worker.delivery_bytes`                | `A13N_WORKER__DELIVERY_BYTES`                | 整数        | minimum=1024; maximum=16777216; default=262144   |
+| `worker.output_bytes`                  | `A13N_WORKER__OUTPUT_BYTES`                  | 整数        | minimum=1024; maximum=16777216; default=1048576  |
+| `worker.page_items`                    | `A13N_WORKER__PAGE_ITEMS`                    | 整数        | minimum=16; maximum=4096; default=256            |
+| `worker.page_bytes`                    | `A13N_WORKER__PAGE_BYTES`                    | 整数        | minimum=65536; maximum=16777216; default=1048576 |
+| `worker.content_bytes`                 | `A13N_WORKER__CONTENT_BYTES`                 | 整数        | minimum=1024; maximum=16777216; default=65536    |
+| `worker.compression_level`             | `A13N_WORKER__COMPRESSION_LEVEL`             | 整数        | minimum=1; maximum=19; default=3                 |
+| `worker.stream_length`                 | `A13N_WORKER__STREAM_LENGTH`                 | 整数        | minimum=16; maximum=100000; default=10000        |
+| `worker.stream_ttl`                    | `A13N_WORKER__STREAM_TTL`                    | 整数        | minimum=1; maximum=86400; default=600            |
+| `worker.stream_coalesce_seconds`       | `A13N_WORKER__STREAM_COALESCE_SECONDS`       | 数值        | minimum=0; maximum=1; default=0.1                |
+| `worker.stream_trim_seconds`           | `A13N_WORKER__STREAM_TRIM_SECONDS`           | 数值        | minimum=0; maximum=600; default=10               |
+| `worker.child_depth`                   | `A13N_WORKER__CHILD_DEPTH`                   | 整数        | minimum=0; maximum=16; default=4                 |
+| `worker.child_count`                   | `A13N_WORKER__CHILD_COUNT`                   | 整数        | minimum=0; maximum=256; default=16               |
 
 ## `tool_executions`
 

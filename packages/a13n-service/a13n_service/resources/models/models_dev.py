@@ -86,6 +86,10 @@ def _catalog_model(
             api = "openai.realtime"
         elif channel == "openai" and model.startswith("gpt-live"):
             api = "openai.live"
+        elif channel == "azure" and model.startswith("gpt-realtime"):
+            api = "azure.realtime"
+        elif channel == "google" and ("-live-" in model or "-native-audio-" in model or model.endswith("-live")):
+            api = "google.realtime"
         elif channel in {"xai", "x-ai"} and model.startswith("grok-voice"):
             api = "xai.realtime"
         if api is None:

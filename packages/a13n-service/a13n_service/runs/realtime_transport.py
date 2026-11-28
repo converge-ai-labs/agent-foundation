@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from uuid import uuid4
 
 from a13n_logging import get_logger
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
@@ -58,6 +58,7 @@ class Offer(BaseModel):
     control_id: str
     audio: bool
     draft: str = ""
+    max_duration_seconds: int | None = Field(default=None, ge=30)
     principal_id: str
     workspace_id: str
 

@@ -116,7 +116,7 @@ def _finish_attempt(
 
 
 def _sealed(session: AsyncSession, run: RunRow, outcome: Outcome, at: datetime) -> None:
-    reason = outcome.failure.code if outcome.failure is not None else None
+    reason = outcome.failure.code if outcome.failure is not None else outcome.reason
     labels = {"status": outcome.status} | ({"reason": reason} if reason is not None else {})
     fields = {"run_id": run.id, "status": outcome.status, "reason": reason}
     duration = max(0, (at - run.created_at).total_seconds())

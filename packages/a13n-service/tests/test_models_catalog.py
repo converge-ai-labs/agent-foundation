@@ -87,6 +87,28 @@ def test_the_catalog_offers_recent_text_models_of_served_channels() -> None:
     assert item.characteristics.capabilities == {ModelCapability.IMAGE_UNDERSTANDING}
 
 
+@pytest.mark.parametrize(
+    ("provider", "name", "api"),
+    [("azure", "gpt-realtime-2.1", "azure.realtime"), ("google", "gemini-3.1-flash-live-preview", "google.realtime")],
+)
+def test_catalog_routes_native_live_models(provider, name, api):
+    payload = document(
+        {
+            provider: {
+                "models": {
+                    name: model(
+                        type="realtime",
+                        modalities={"input": ["audio", "image"], "output": ["audio"]},
+                    )
+                }
+            }
+        }
+    )
+    [item] = parse_catalog(payload, frozenset({provider}))
+    assert item.model_api == api
+    assert ModelCapability.IMAGE_UNDERSTANDING in item.characteristics.capabilities
+
+
 def test_input_modalities_declare_the_understanding_capabilities() -> None:
     inputs = {"input": ["text", "image", "audio", "video", "pdf"], "output": ["text"]}
     [item] = parse_catalog(document({"openai": {"models": {"omni": model(modalities=inputs)}}}), CHANNELS)
