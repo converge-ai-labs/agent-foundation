@@ -637,3 +637,41 @@ async def test_post_end_reply_citations_survive_tail_restore_and_page_retirement
     assert len(stored.content["citations"]) == 5 and "citations" not in stored.content_refs
     resumed.committed(settled)
     assert before.id not in resumed.items
+
+
+@pytest.mark.parametrize("boundary", ["raw", "interrupt"])
+def test_assistant_page_retires_without_an_open_model_request(boundary: str) -> None:
+    fold = DisplayFold("run_citations", Tail(), attempt=1, page_items=1, page_bytes=1024)
+    if boundary == "interrupt":
+        fold.fold(
+            [
+                {
+                    "type": "CUSTOM",
+                    "name": "a13n.harness.lifecycle",
+                    "value": {"event": {"payload": {"type": "model_request_started"}}},
+                }
+            ]
+        )
+        restored = Tail.model_validate_json(fold.snapshot().tail.model_dump_json())
+        assert restored.continuation is not None
+        assert restored.continuation.open_request_items == {"root": []}
+        fold = DisplayFold("run_citations", restored, attempt=1, page_items=1, page_bytes=1024)
+    start = {"type": "TEXT_MESSAGE_START", "messageId": "reply", "role": "assistant"}
+    fold.fold(
+        [
+            start,
+            start,
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "reply", "delta": "Answer"},
+            {"type": "TEXT_MESSAGE_END", "messageId": "reply"},
+        ]
+    )
+    [reply] = [item for item in fold.items.values() if item.kind == "text_message"]
+    if boundary == "interrupt":
+        assert fold.open_request_items == {"root": [reply.id]}
+        assert reply in fold.snapshot().tail.items
+        fold.interrupt()
+    assert not fold.open_request_items
+    settled = fold.snapshot()
+    assert reply not in settled.tail.items
+    assert any(reply in page.items for page in settled.pages)
+    assert reply.state == "completed"

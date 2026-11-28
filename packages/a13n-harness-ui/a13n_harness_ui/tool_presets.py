@@ -168,8 +168,6 @@ def selected_tool_capabilities(
         options: dict[str, Any] = {"kind": key, **parameters.get(key, {})}
         if key == "web_search" and authentication == "codex_subscription":
             options.setdefault("external_web_access", True)
-        if key == "web_fetch":
-            options.setdefault("enable_citations", True)
         NativeTool.from_spec(**options)
         capabilities.append(
             {

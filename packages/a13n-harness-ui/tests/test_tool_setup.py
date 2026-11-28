@@ -335,8 +335,6 @@ def test_citation_choice_materializes_separately_from_native_tools(route):
     capabilities = selected_tool_capabilities(("citations", "web_fetch"))
     assert capabilities[1:] == [
         {"capability": "Citations", "configuration": {}},
-        {"capability": "NativeTool", "configuration": {"kind": "web_fetch", "enable_citations": True}},
+        {"capability": "NativeTool", "configuration": {"kind": "web_fetch"}},
     ]
-    assert selected_tool_capabilities(("web_fetch",), parameters={"web_fetch": {"enable_citations": False}})[1][
-        "configuration"
-    ] == {"kind": "web_fetch", "enable_citations": False}
+    assert selected_tool_capabilities(("web_fetch",))[1:] == capabilities[2:]

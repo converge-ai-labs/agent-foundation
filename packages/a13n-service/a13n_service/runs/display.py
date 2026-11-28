@@ -188,6 +188,7 @@ class DisplayFold(SemanticDisplayFold):
     def interrupt(self, open_calls: Collection[str] = ()) -> None:
         """Host terminal/retry policy, separate from pure checkpoint capture."""
         self.revisable_speech = None
+        self.open_request_items.clear()
         kept = {item_id(self.run_id, "tool_call", call) for call in open_calls}
         for key, item in self.items.items():
             if item.state == "in_progress" and key not in kept:

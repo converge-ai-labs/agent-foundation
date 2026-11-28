@@ -477,8 +477,13 @@ class DisplayFold:
         if group is not None and "responseGroup" not in content:
             content["responseGroup"] = group
         scope = str(content.get("subagentRunId") or "root")
-        if event_type == "TEXT_MESSAGE_START" and content.get("role") == "assistant":
-            self.open_request_items.setdefault(scope, []).append(key)
+        if (
+            event_type == "TEXT_MESSAGE_START"
+            and content.get("role") == "assistant"
+            and (open_items := self.open_request_items.get(scope)) is not None
+            and key not in open_items
+        ):
+            open_items.append(key)
         if event_type == "TEXT_MESSAGE_END" and content.get("role") == "assistant":
             sources = self.memory_sources.get(scope)
             if sources is not None:
@@ -558,6 +563,7 @@ class DisplayFold:
             if lifecycle_type in {"model_request_completed", "model_request_failed"}:
                 self.open_request_items.pop(scope, None)
             if lifecycle_type == "model_request_started":
+                self.open_request_items.setdefault(scope, [])
                 self.response_groups[scope] = f"{self.run_id}:{self.attempt}:{self.sequence}"
         if assembled.get("name") == "a13n.harness.context" and isinstance(lifecycle, dict):
             sources = memory_sources(lifecycle)

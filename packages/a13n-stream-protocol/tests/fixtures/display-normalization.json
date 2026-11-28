@@ -67,6 +67,9 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": []
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -144,6 +147,9 @@
           "full_content": false,
           "response_groups": {
             "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": []
           },
           "arguments": null,
           "fragments": {
@@ -225,6 +231,9 @@
           "full_content": false,
           "response_groups": {
             "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": []
           },
           "arguments": null,
           "fragments": {
@@ -2782,6 +2791,9 @@
           "response_groups": {
             "root": "run:2:1"
           },
+          "open_request_items": {
+            "root": []
+          },
           "arguments": null,
           "fragments": {
             "pending": {},
@@ -2859,6 +2871,9 @@
           "full_content": true,
           "response_groups": {
             "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": []
           },
           "arguments": null,
           "fragments": {
@@ -2940,6 +2955,9 @@
           "full_content": true,
           "response_groups": {
             "root": "run:2:1"
+          },
+          "open_request_items": {
+            "root": []
           },
           "arguments": null,
           "fragments": {

@@ -6,12 +6,11 @@ import re
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from a13n_stream_protocol.citations import UNRESOLVED_CITATION_PATTERN, Citation, WebCitationSource, project_citations
-
 if TYPE_CHECKING:
+    from a13n_stream_protocol.citations import Citation
+
     from a13n_harness_ui.surfaces import TranscriptPart
 
-_UNRESOLVED = re.compile(UNRESOLVED_CITATION_PATTERN)
 _STANDALONE_MARKER = re.compile(
     r"\ue200[^\ue200\ue201]+\ue201|\(\[[^\n]+\]\([^\n]+\)\)|(?:\[\d+\]|\[\[\d+\]\])(?:\([^\n]+\))?"
 )
@@ -19,6 +18,8 @@ _STANDALONE_MARKER = re.compile(
 
 def cited_text(text: str, citations: Iterable[object] | None = None) -> str:
     """Keep claims and prose links, number distinct sources, and label unresolved markers."""
+    from a13n_stream_protocol.citations import UNRESOLVED_CITATION_PATTERN, WebCitationSource, project_citations
+
     sources: dict[tuple[str, str | None], tuple[int, str]] = {}
     replacements: dict[tuple[int, int], list[int]] = {}
     for citation in project_citations(citations, text_length=len(text)):
@@ -48,7 +49,7 @@ def cited_text(text: str, citations: Iterable[object] | None = None) -> str:
         fragments.append("".join(f"[{n}]" for n in dict.fromkeys(numbers)))
         consumed = end
     fragments.append(text[consumed:])
-    body = _UNRESOLVED.sub("[source unavailable]", "".join(fragments))
+    body = re.sub(UNRESOLVED_CITATION_PATTERN, "[source unavailable]", "".join(fragments))
     if not sources:
         return body
     return body.rstrip() + "\n\nSources\n" + "\n".join(f"[{number}] {label}" for number, label in sources.values())
