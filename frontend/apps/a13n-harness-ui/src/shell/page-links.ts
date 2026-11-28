@@ -76,7 +76,7 @@ export function nativeLink(search: string): {
   pane: "files" | "changes" | null;
   path: string;
   diffPath: string;
-  comparison: "staged" | "unstaged" | "untracked" | null;
+  comparison: Schema<"GitDiff">["comparison"] | null;
   terminal: string;
   background: ActivitySection | null;
 } {
@@ -90,7 +90,8 @@ export function nativeLink(search: string): {
     comparison:
       comparison === "staged" ||
       comparison === "unstaged" ||
-      comparison === "untracked"
+      comparison === "untracked" ||
+      comparison === "branch"
         ? comparison
         : null,
     terminal: query.get("terminal") || "",

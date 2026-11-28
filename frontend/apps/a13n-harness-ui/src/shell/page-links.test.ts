@@ -13,23 +13,30 @@ it("round-trips exact native paths, Git axes and terminal identity without keys 
     pane: "files",
     path: file.target.kind === "file" && file.target.path,
   });
-  const diff = new URL(
-    pageLink({
-      target: {
-        kind: "changes",
-        repository_root: "/code/repo",
-        path: "src/with # space.ts",
-        comparison: "staged",
-      },
-    })!,
-    "https://example.invalid",
-  );
-  expect(nativeLink(diff.search)).toMatchObject({
-    pane: "changes",
-    path: "/code/repo",
-    diffPath: "src/with # space.ts",
-    comparison: "staged",
-  });
+  for (const comparison of [
+    "staged",
+    "unstaged",
+    "untracked",
+    "branch",
+  ] as const) {
+    const diff = new URL(
+      pageLink({
+        target: {
+          kind: "changes",
+          repository_root: "/code/repo",
+          path: "src/with # space.ts",
+          comparison,
+        },
+      })!,
+      "https://example.invalid",
+    );
+    expect(nativeLink(diff.search)).toMatchObject({
+      pane: "changes",
+      path: "/code/repo",
+      diffPath: "src/with # space.ts",
+      comparison,
+    });
+  }
   expect(nativeLink("?terminal=terminal-live").terminal).toBe("terminal-live");
   expect(nativeLink("?native=execute&comparison=discard")).toMatchObject({
     pane: null,

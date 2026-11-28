@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 MAX_INLINE_CONTEXT_BYTES = 64 * 1024
+Comparison = Literal["staged", "unstaged", "untracked", "branch"]
 
 
 class FileContextSource(BaseModel):
@@ -31,8 +32,10 @@ class GitContextSource(BaseModel):
     git_dir: str = Field(min_length=1, max_length=4096)
     path: str = Field(min_length=1, max_length=4096)
     original_path: str | None = None
-    comparison: Literal["staged", "unstaged", "untracked"]
+    comparison: Comparison
     head_oid: str | None
+    base_ref: str | None = None
+    base_oid: str | None = None
     index_revision: str = Field(min_length=1, max_length=128)
     revision: str = Field(min_length=1, max_length=128)
     start_line: int | None = Field(default=None, ge=1)

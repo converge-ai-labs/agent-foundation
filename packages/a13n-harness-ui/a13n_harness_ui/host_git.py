@@ -16,6 +16,7 @@ from anyio.abc import ByteReceiveStream
 from pydantic import Field, model_validator
 
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.file_context import Comparison as Comparison
 from a13n_harness_ui.file_context import GitContextSource
 from a13n_harness_ui.host_files import NativePath, Revision
 from a13n_harness_ui.surfaces import SurfaceModel
@@ -24,7 +25,25 @@ MAX_GIT_BYTES = 2 * 1024 * 1024
 MAX_GIT_ENTRIES = 10_000
 GIT_TIMEOUT_SECONDS = 15
 GitPath = Annotated[str, Field(min_length=1, max_length=4096)]
-Comparison = Literal["staged", "unstaged", "untracked"]
+_DIFF_OPTIONS = (
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-relative",
+    "--find-renames",
+    "--ignore-submodules=none",
+)
+_PATCH_OPTIONS = (
+    "diff",
+    "--patch",
+    "--full-index",
+    "--no-color",
+    *_DIFF_OPTIONS,
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--unified=3",
+    "--inter-hunk-context=0",
+    "--submodule=short",
+)
 
 
 def _error(code: str, message: str) -> HarnessUiError:
@@ -89,11 +108,21 @@ class GitChange(SurfaceModel):
     submodule: str | None = None
 
 
+class GitBranchChange(SurfaceModel):
+    path: GitPath
+    original_path: GitPath | None = None
+    status: str
+
+
 class GitStatus(SurfaceModel):
     repository: GitRepository
     revision: Revision
     entries: tuple[GitChange, ...]
     next_offset: int | None
+    base_ref: str | None = None
+    base_oid: str | None = None
+    branch_entries: tuple[GitBranchChange, ...] = ()
+    branch_error: str | None = None
 
 
 class GitDiffRequest(SurfaceModel):
@@ -112,6 +141,8 @@ class GitDiff(SurfaceModel):
     revision: Revision
     presentation: Literal["text", "binary", "unchanged"]
     text: str | None = None
+    base_ref: str | None = None
+    base_oid: str | None = None
 
 
 class GitCaptureRequest(SurfaceModel):
@@ -230,6 +261,28 @@ def _changes(raw: bytes) -> tuple[GitChange, ...]:
     return tuple(sorted(result, key=lambda entry: entry.path))
 
 
+def _branch_entries(raw: bytes) -> tuple[GitBranchChange, ...]:
+    records = iter(raw.split(b"\x00"))
+    result: list[GitBranchChange] = []
+    for record in records:
+        if not record:
+            break
+        status = _text(record[:1])
+        # Git's name-status diff lists the rename/copy source before its destination.
+        original = next(records, b"") if status in {"R", "C"} else None
+        path = next(records, b"")
+        if original == b"" or not path:
+            raise _error("failed", "Git returned an incomplete branch change record.")
+        result.append(
+            GitBranchChange(
+                path=_text(path), original_path=_text(original) if original is not None else None, status=status
+            )
+        )
+        if len(result) > MAX_GIT_ENTRIES:
+            raise _error("too_large", "Git branch changes exceed 10000 entries; use a smaller repository.")
+    return tuple(sorted(result, key=lambda entry: entry.path))
+
+
 class HostGit:
     """App-owned read-only queries; the checkout/index are the only Git state."""
 
@@ -313,6 +366,56 @@ class HostGit:
         )
         return raw, _changes(raw)
 
+    async def _branch_base(self, repository: GitRepository) -> tuple[str | None, str | None]:
+        if repository.head_oid is None:
+            return None, None
+        directory = Path(repository.root)
+
+        async def symbolic_ref(name: str) -> str:
+            _, raw, _ = await _git(directory, "symbolic-ref", "--quiet", name, accepted=(0, 1))
+            return _text(raw).removesuffix("\n")
+
+        async def existing_ref(ref: str) -> str:
+            if not ref:
+                return ""
+            code, _, _ = await _git(directory, "rev-parse", "--verify", "--quiet", ref, accepted=(0, 1))
+            return "" if code else ref
+
+        # A remote default can point at a tracking branch that was pruned.
+        ref = await existing_ref(await symbolic_ref("refs/remotes/origin/HEAD"))
+        if not ref:
+            candidates = (
+                "refs/remotes/origin/main",
+                "refs/remotes/origin/master",
+                "refs/heads/main",
+                "refs/heads/master",
+            )
+            _, raw, _ = await _git(directory, "for-each-ref", "--format=%(refname)", *candidates)
+            available = set(_text(raw).splitlines())
+            current = await symbolic_ref("HEAD")
+            ref = next((candidate for candidate in candidates if candidate in available and candidate != current), "")
+            if not ref and Path(repository.git_dir) != Path(repository.common_dir):
+                # Ask Git for the common HEAD; reftable repositories do not store it in a plain HEAD file.
+                head = await symbolic_ref("main-worktree/HEAD")
+                if head.startswith("refs/heads/") and head != current:
+                    ref = await existing_ref(head)
+        if not ref:
+            return None, None
+        # Resolve against the same observed HEAD used for tree reads and patch generation.
+        code, raw, _ = await _git(directory, "merge-base", ref, repository.head_oid, accepted=(0, 1))
+        oid = _text(raw).strip()
+        if code or not oid:
+            return None, None
+        return ref.removeprefix("refs/remotes/").removeprefix("refs/heads/"), oid
+
+    async def _branch_changes(self, repository: GitRepository, base_oid: str) -> tuple[GitBranchChange, ...]:
+        if repository.head_oid is None or base_oid == repository.head_oid:
+            return ()
+        _, raw, _ = await _git(
+            Path(repository.root), "diff", "--name-status", *_DIFF_OPTIONS, "-z", base_oid, repository.head_oid
+        )
+        return _branch_entries(raw)
+
     async def status(
         self,
         path: str,
@@ -331,23 +434,36 @@ class HostGit:
         if (offset and expected_revision is None) or (expected_revision is not None and expected_revision != revision):
             raise _error("conflict", "Git status changed; refresh from the first page.")
         end = offset + limit
+        base_ref, base_oid = await self._branch_base(repository) if offset == 0 else (None, None)
+        branch_error = None
+        branch_entries: tuple[GitBranchChange, ...] = ()
+        if base_oid is not None:
+            try:
+                branch_entries = await self._branch_changes(repository, base_oid)
+            except HarnessUiError as exc:
+                if exc.code not in {"host_git_too_large", "host_git_timeout"}:
+                    raise
+                branch_error = str(exc)
         return GitStatus(
             repository=repository,
             revision=revision,
             entries=entries[offset:end],
             next_offset=end if end < len(entries) else None,
+            base_ref=base_ref,
+            base_oid=base_oid,
+            branch_entries=branch_entries,
+            branch_error=branch_error,
         )
 
-    async def diff(self, request: GitDiffRequest) -> GitDiff:
-        self.require_enabled()
-        selected = _relative(request.path)
-        repository = await self._repository(request.repository_path)
+    async def _worktree_patch(
+        self, repository: GitRepository, selected: str, comparison: Comparison
+    ) -> tuple[str | None, bytes, str]:
         directory = Path(repository.root)
         _, entries = await self._status(repository, False)
         change = next((entry for entry in entries if entry.path == selected), None)
         original = None
         if change is not None:
-            axis = change.index_status if request.comparison == "staged" else change.worktree_status
+            axis = change.index_status if comparison == "staged" else change.worktree_status
             if axis in {"R", "C"}:
                 original = change.original_path
         paths = [selected] if original is None else [selected, _relative(original)]
@@ -355,23 +471,7 @@ class HostGit:
         _, index, _ = await _git(directory, "ls-files", "--stage", "-z", "--", *pathspecs)
         if change is None and not index:
             raise _error("selection_invalid", "Select one changed or tracked file, not a directory or absent path.")
-        options = [
-            "diff",
-            "--patch",
-            "--full-index",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-relative",
-            "--find-renames",
-            "--src-prefix=a/",
-            "--dst-prefix=b/",
-            "--unified=3",
-            "--inter-hunk-context=0",
-            "--submodule=short",
-            "--ignore-submodules=none",
-        ]
-        if request.comparison == "untracked":
+        if comparison == "untracked":
             if change is None or change.kind != "untracked":
                 raise _error("conflict", "The selected path is no longer an untracked file; refresh status.")
             # Status can become stale before diff; never deliberately recurse a
@@ -382,22 +482,61 @@ class HostGit:
                 raise _error("conflict", "The untracked file disappeared; refresh status.") from None
             if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
                 raise _error("selection_invalid", "Select a regular untracked file or symlink.")
-            _, patch, _ = await _git(directory, *options, "--no-index", "--", os.devnull, selected, accepted=(0, 1))
+            _, patch, _ = await _git(
+                directory, *_PATCH_OPTIONS, "--no-index", "--", os.devnull, selected, accepted=(0, 1)
+            )
         else:
             baseline: list[str] = []
-            if request.comparison == "staged":
+            if comparison == "staged":
                 head = repository.head_oid
                 if head is None:
                     # Compute the repository's empty tree ID without writing an object.
                     _, empty, _ = await _git(directory, "hash-object", "-t", "tree", "--stdin")
                     head = _text(empty).strip()
                 baseline = ["--cached", head]
-            _, patch, _ = await _git(directory, *options, *baseline, "--", *pathspecs)
+            _, patch, _ = await _git(directory, *_PATCH_OPTIONS, *baseline, "--", *pathspecs)
         _, after_index, _ = await _git(directory, "ls-files", "--stage", "-z", "--", *pathspecs)
         if after_index != index:
             raise _error("conflict", "The selected index entries changed while reading the diff; refresh.")
-        index_revision = _digest(index)
+        return original, patch, _digest(index)
+
+    async def _branch_patch(
+        self, repository: GitRepository, selected: str, base_oid: str, head_oid: str
+    ) -> tuple[str | None, bytes]:
+        directory = Path(repository.root)
+        entries = await self._branch_changes(repository, base_oid)
+        change = next((entry for entry in entries if entry.path == selected), None)
+        if change is None:
+            _, tree, _ = await _git(directory, "ls-tree", "-z", head_oid, "--", f":(top,literal){selected}")
+            header, _, path = tree.removesuffix(b"\x00").partition(b"\t")
+            kind = header.partition(b" ")[2].partition(b" ")[0]
+            if path != selected.encode() or kind not in {b"blob", b"commit"}:
+                raise _error("selection_invalid", "Select one changed or tracked file, not a directory or absent path.")
+            return None, b""
+        original = change.original_path
+        pathspecs = [_pathspec(selected)]
+        if original is not None:
+            pathspecs.append(_pathspec(_relative(original)))
+        _, patch, _ = await _git(directory, *_PATCH_OPTIONS, base_oid, head_oid, "--", *pathspecs)
+        return original, patch
+
+    async def diff(self, request: GitDiffRequest) -> GitDiff:
+        self.require_enabled()
+        selected = _relative(request.path)
+        repository = await self._repository(request.repository_path)
+        base_ref = base_oid = None
+        if request.comparison == "branch":
+            base_ref, base_oid = await self._branch_base(repository)
+            head_oid = repository.head_oid
+            if base_oid is None or head_oid is None:
+                raise _error("selection_invalid", "No branch comparison base is available for this worktree.")
+            original, patch = await self._branch_patch(repository, selected, base_oid, head_oid)
+            index_revision = _digest(f"{base_oid}:{head_oid}".encode())
+        else:
+            original, patch, index_revision = await self._worktree_patch(repository, selected, request.comparison)
         identity = [repository.model_dump_json(), selected, original, request.comparison, index_revision]
+        if base_ref is not None:
+            identity.append(base_ref)
         revision = _digest(repr(identity).encode() + patch)
         if request.expected_revision is not None and request.expected_revision != revision:
             raise _error("conflict", "The reviewed comparison changed; refresh before selecting it.")
@@ -418,6 +557,8 @@ class HostGit:
             revision=revision,
             presentation=presentation,
             text=text if presentation == "text" else None,
+            base_ref=base_ref,
+            base_oid=base_oid,
         )
 
     async def capture(self, request: GitCaptureRequest) -> SelectedDiff:
@@ -444,6 +585,8 @@ class HostGit:
             original_path=preview.original_path,
             comparison=preview.comparison,
             head_oid=preview.repository.head_oid,
+            base_ref=preview.base_ref,
+            base_oid=preview.base_oid,
             index_revision=preview.index_revision,
             revision=preview.revision,
             start_line=request.start_line,

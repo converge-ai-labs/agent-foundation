@@ -12,6 +12,7 @@ from anyio import Event
 from pydantic import Field, model_validator
 
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.file_context import Comparison
 from a13n_harness_ui.host_files import NativePath
 from a13n_harness_ui.surfaces import SurfaceModel
 
@@ -60,7 +61,7 @@ class ChangesPage(SurfaceModel):
     kind: Literal["changes"] = "changes"
     repository_root: NativePath
     path: str | None = Field(default=None, min_length=1, max_length=4096)
-    comparison: Literal["staged", "unstaged", "untracked"] | None = None
+    comparison: Comparison | None = None
 
 
 class TerminalPage(SurfaceModel):

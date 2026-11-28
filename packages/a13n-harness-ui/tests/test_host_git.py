@@ -23,9 +23,9 @@ def git(root: Path, *args: str, check: bool = True) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-def repository(root: Path) -> Path:
+def repository(root: Path, *, branch: str = "main") -> Path:
     root.mkdir()
-    git(root, "init", "-b", "main")
+    git(root, "init", "-b", branch)
     git(root, "config", "user.name", "Git Tests")
     git(root, "config", "user.email", "git-tests@example.invalid")
     git(root, "config", "commit.gpgsign", "false")
@@ -124,6 +124,185 @@ async def test_status_axes_paging_ignored_rename_delete_and_literals(tmp_path: P
         git(root, "--literal-pathspecs", "add", "--", name)
         staged = await service.diff(GitDiffRequest(repository_path=str(root), path=name, comparison="staged"))
         assert "+literal selection" in staged.text and staged.path == name
+
+
+@pytest.fixture
+def committed_worktree(tmp_path: Path) -> tuple[Path, str]:
+    root = repository(tmp_path / "repo")
+    (root / "docs").mkdir()
+    (root / "docs" / "unchanged.md").write_text("reference\n")
+    (root / "modified.txt").write_text("base\n")
+    (root / "deleted.txt").write_text("delete me\n")
+    (root / "old name.txt").write_text("rename me\n")
+    commit(root)
+    base = git(root, "rev-parse", "HEAD")
+    git(root, "remote", "add", "origin", str(root))
+    git(root, "update-ref", "refs/remotes/origin/trunk", base)
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+    (root / "base-only.txt").write_text("added on the base branch only\n")
+    commit(root)
+    git(root, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    linked = tmp_path / "linked"
+    git(root, "worktree", "add", "-b", "feature", str(linked), base)
+    (linked / "modified.txt").write_text("committed\n")
+    (linked / "added.bin").write_bytes(b"\x00\xffdata")
+    (linked / "deleted.txt").unlink()
+    git(linked, "mv", "old name.txt", "new name.txt")
+    commit(linked)
+    # A pushed feature branch tracks itself, not the branch it should be compared with.
+    git(linked, "update-ref", "refs/remotes/origin/feature", "HEAD")
+    git(linked, "branch", "--set-upstream-to=origin/feature")
+    return linked, base
+
+
+@pytest.mark.anyio
+async def test_committed_branch_status_is_separate_from_worktree_status(committed_worktree: tuple[Path, str]) -> None:
+    linked, base = committed_worktree
+    service = HostGit(enabled=True)
+    status = await service.status(str(linked))
+    assert status.entries == () and status.next_offset is None
+    assert status.base_ref == "origin/trunk" and status.base_oid == base
+    assert [(entry.path, entry.status, entry.original_path) for entry in status.branch_entries] == [
+        ("added.bin", "A", None),
+        ("deleted.txt", "D", None),
+        ("modified.txt", "M", None),
+        ("new name.txt", "R", "old name.txt"),
+    ]
+    (linked / "untracked-first.txt").write_text("dirty")
+    (linked / "untracked-second.txt").write_text("dirty")
+    first = await service.status(str(linked), limit=1)
+    assert first.next_offset == 1 and first.branch_entries == status.branch_entries
+    # Moving the base ref does not invalidate the worktree status cursor.
+    git(linked, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+    page = await service.status(str(linked), offset=1, limit=1, expected_revision=first.revision)
+    assert [entry.path for entry in page.entries] == ["untracked-second.txt"]
+    assert page.branch_entries == () and page.base_ref is None and page.base_oid is None
+    assert (await service.status(str(linked))).branch_entries == ()
+
+
+@pytest.mark.anyio
+async def test_branch_base_resolution_uses_remote_then_local_refs(tmp_path: Path) -> None:
+    root = repository(tmp_path / "repo")
+    (root / "file").write_text("base\n")
+    commit(root)
+    base = git(root, "rev-parse", "HEAD")
+    git(root, "branch", "master")
+    git(root, "update-ref", "refs/remotes/origin/master", "HEAD")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    service = HostGit(enabled=True)
+    synced = await service.status(str(root))
+    assert (synced.base_ref, synced.base_oid, synced.branch_entries) == ("origin/main", base, ())
+    git(root, "checkout", "--detach")
+    (root / "remote-only").write_text("advanced\n")
+    commit(root)
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(root, "checkout", "main")
+    behind = await service.status(str(root))
+    assert (behind.base_ref, behind.base_oid, behind.branch_entries) == ("origin/main", base, ())
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+    assert (await service.status(str(root))).base_ref == "origin/main"
+    git(root, "update-ref", "-d", "refs/remotes/origin/main")
+    assert (await service.status(str(root))).base_ref == "origin/master"
+    git(root, "update-ref", "-d", "refs/remotes/origin/master")
+    git(root, "tag", "main")  # Git can abbreviate the checked-out branch as heads/main.
+    assert (await service.status(str(root))).base_ref == "master"
+    git(root, "checkout", "-b", "feature")
+    assert (await service.status(str(root))).base_ref == "main"
+
+
+@pytest.mark.anyio
+async def test_branch_base_uses_custom_default_in_linked_worktree(tmp_path: Path) -> None:
+    root = repository(tmp_path / "repo", branch="trunk")
+    service = HostGit(enabled=True)
+    assert (await service.status(str(root))).base_oid is None
+    request = GitDiffRequest(repository_path=str(root), path="file", comparison="branch")
+    with pytest.raises(HarnessUiError) as error:
+        await service.diff(request)
+    assert error.value.code == "host_git_selection_invalid"
+    (root / "file").write_text("base\n")
+    commit(root)
+    assert (await service.status(str(root))).base_ref is None
+    linked = tmp_path / "linked"
+    git(root, "worktree", "add", "-b", "feature", str(linked))
+    (linked / "file").write_text("feature\n")
+    commit(linked)
+    status = await service.status(str(linked))
+    assert status.base_ref == "trunk" and status.base_oid == git(root, "rev-parse", "HEAD")
+    assert status.branch_entries[0].path == "file"
+    git(root, "symbolic-ref", "HEAD", "refs/heads/unborn-trunk")
+    status = await service.status(str(linked))
+    assert status.base_ref is None and status.branch_error is None
+
+
+@pytest.mark.anyio
+async def test_branch_status_failure_preserves_worktree_entries(
+    committed_worktree: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    linked, base = committed_worktree
+    monkeypatch.setattr(host_git, "MAX_GIT_ENTRIES", 1)
+    (linked / "local.txt").write_text("untracked local content")
+    service = HostGit(enabled=True)
+    status = await service.status(str(linked))
+    assert [entry.path for entry in status.entries] == ["local.txt"]
+    assert status.base_ref == "origin/trunk" and status.base_oid == base
+    assert status.branch_entries == ()
+    assert status.branch_error is not None and "Git branch changes exceed" in status.branch_error
+
+
+@pytest.mark.anyio
+async def test_branch_diff_uses_only_committed_trees(committed_worktree: tuple[Path, str]) -> None:
+    linked, base = committed_worktree
+    service = HostGit(enabled=True)
+    (linked / "modified.txt").write_text("staged\n")
+    git(linked, "add", "modified.txt")
+    (linked / "modified.txt").write_text("unstaged\n")
+    (linked / "untracked.txt").write_text("untracked\n")
+    request = GitDiffRequest(repository_path=str(linked), path="modified.txt", comparison="branch")
+    text = await service.diff(request)
+    assert text.presentation == "text" and text.text is not None
+    assert text.base_ref == "origin/trunk" and text.base_oid == base
+    assert "+committed" in text.text and "+staged" not in text.text and "+unstaged" not in text.text
+    renamed = await service.diff(request.model_copy(update={"path": "new name.txt"}))
+    assert renamed.original_path == "old name.txt" and "rename from old name.txt" in renamed.text
+    deleted = await service.diff(request.model_copy(update={"path": "deleted.txt"}))
+    assert "-delete me" in deleted.text
+    binary = await service.diff(request.model_copy(update={"path": "added.bin"}))
+    assert binary.presentation == "binary" and binary.text is None
+    unchanged = await service.diff(request.model_copy(update={"path": "docs/unchanged.md"}))
+    assert unchanged.presentation == "unchanged" and unchanged.text is None
+    for path in ("docs", "docs/*.md" if os.name != "nt" else "docs/no.md", "missing", "untracked.txt", "old name.txt"):
+        with pytest.raises(HarnessUiError) as error:
+            await service.diff(request.model_copy(update={"path": path}))
+        assert error.value.code == "host_git_selection_invalid"
+
+
+@pytest.mark.anyio
+async def test_branch_capture_records_base_and_rejects_base_or_head_changes(
+    committed_worktree: tuple[Path, str],
+) -> None:
+    linked, base = committed_worktree
+    service = HostGit(enabled=True)
+    request = GitDiffRequest(repository_path=str(linked), path="modified.txt", comparison="branch")
+    preview = await service.diff(request)
+    capture = GitCaptureRequest(
+        repository_path=str(linked), path=request.path, comparison="branch", expected_revision=preview.revision
+    )
+    (linked / "modified.txt").write_text("not committed\n")
+    git(linked, "add", "modified.txt")
+    reviewed = await service.capture(capture)
+    assert reviewed.data.decode() == preview.text
+    assert reviewed.source.comparison == "branch" and reviewed.source.base_ref == "origin/trunk"
+    assert reviewed.source.base_oid == base and reviewed.source.head_oid == git(linked, "rev-parse", "HEAD")
+    git(linked, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+    with pytest.raises(HarnessUiError) as error:
+        await service.capture(capture)
+    assert error.value.code == "host_git_conflict"
+    git(linked, "update-ref", "refs/remotes/origin/trunk", "refs/remotes/origin/main")
+    commit(linked)
+    with pytest.raises(HarnessUiError) as error:
+        await service.capture(capture)
+    assert error.value.code == "host_git_conflict"
 
 
 @pytest.mark.anyio
