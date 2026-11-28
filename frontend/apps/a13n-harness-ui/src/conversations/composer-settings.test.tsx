@@ -461,21 +461,22 @@ it("distinguishes inherited and explicit agents with long names on mobile", asyn
   const user = userEvent.setup();
   const onAgentChange = vi.fn();
   const name = "OpenAI GPT-6 Astra Coding";
-  render(
+  const choices = (agentId: string) => (
     <ThreadRunChoices
       catalog={{
         ...catalog,
         agents: [{ ...catalog.agents[0], name }],
       }}
-      agentId=""
+      agentId={agentId}
       defaultAgentId="writer"
       disabled={false}
       controls={{}}
       onAgentChange={onAgentChange}
       onModelChange={() => {}}
       onControlsChange={() => {}}
-    />,
+    />
   );
+  const view = render(choices(""));
   await user.click(
     screen.getByRole("button", { name: "Agent & Model settings" }),
   );
@@ -490,6 +491,7 @@ it("distinguishes inherited and explicit agents with long names on mobile", asyn
   expect(explicit.getAttribute("aria-pressed")).toBe("false");
   await user.click(explicit);
   expect(onAgentChange).toHaveBeenCalledWith("writer");
+  view.rerender(choices("writer"));
   await user.click(screen.getByRole("button", { name: "Agent" }));
   await user.click(
     screen.getByRole("button", {

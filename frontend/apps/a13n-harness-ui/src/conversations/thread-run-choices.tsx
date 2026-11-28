@@ -404,7 +404,7 @@ function AgentModelChoices({
         value={agentId}
         disabled={disabled || !catalog}
         onChange={(next) => {
-          onAgentChange(next);
+          if (next !== agentId) onAgentChange(next);
           settings.navigate("root");
         }}
       />

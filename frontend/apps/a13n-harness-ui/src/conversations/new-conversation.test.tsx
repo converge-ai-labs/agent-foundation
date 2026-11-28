@@ -2400,6 +2400,10 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
   );
   const agent = () => screen.getByRole("button", { name: "Agent" });
   await waitFor(() => expect(agent().textContent).toContain("Writer"));
+  await user.click(agent());
+  await user.click(screen.getByRole("button", { name: /Writer.*agent-one/ }));
+  await waitFor(() => expect(agent().textContent).toContain("Writer"));
+  expect(writes).toHaveLength(0);
   const historyReads = reads.filter((path) =>
     path.endsWith("/transcript"),
   ).length;
