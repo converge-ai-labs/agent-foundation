@@ -2,17 +2,12 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import cast
 from urllib.parse import urlsplit
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_harness.providers.model.credentials import ApiKeyCredential
-from google.genai import Client
-from google.genai.types import HttpOptions
-from openai import AsyncAzureOpenAI, AsyncOpenAI
-from pydantic_ai.providers.azure import AzureProvider
+from anyio import to_thread
 from pydantic_ai.providers.google import GoogleProvider
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.xai import XaiProvider
 from pydantic_ai.realtime import RealtimeModel
 from pydantic_ai.realtime.azure import AzureRealtimeModel, AzureRealtimeModelProfile
@@ -67,31 +62,27 @@ async def open_realtime_model(
     except EndpointPolicyError:
         raise invalid("model", f"The outbound policy denies the {api} endpoint") from None
 
-    api_key = connection.credential.api_key.get_secret_value()
     model_name = model.config.model_name
     adapter = protocol.adapter
     if issubclass(adapter, XaiRealtimeModel):
-        yield adapter(model_name, provider=XaiProvider(api_key=api_key))
+        # The Harness xAI builder targets Chat Completions, not the native Grok Voice adapter.
+        yield adapter(model_name, provider=XaiProvider(api_key=connection.credential.api_key.get_secret_value()))
         return
 
+    build_provider = definition.build_provider
+    assert build_provider is not None
     async with open_http(policy, timeout=settings.model_timeout, max_bytes=settings.response_bytes) as client:
+        provider = await to_thread.run_sync(build_provider, connection, client, api)
         if issubclass(adapter, AzureRealtimeModel):
-            sdk = AsyncOpenAI(api_key=api_key, base_url=endpoint, http_client=client, max_retries=0)
-            azure = AzureProvider(openai_client=cast(AsyncAzureOpenAI, sdk))
             # This API selects Azure OpenAI GA, not the independently configured Azure AI Voice Live API.
             yield adapter(
                 model_name,
-                provider=azure,
+                provider=provider,
                 profile=AzureRealtimeModelProfile(azure_realtime_apis=frozenset(("azure_openai",))),
             )
         elif issubclass(adapter, GoogleRealtimeModel):
-            sdk = Client(
-                vertexai=False,
-                api_key=api_key,
-                http_options=HttpOptions(base_url=endpoint, api_version="v1beta", httpx_async_client=client),
-            )
-            async with sdk.aio:
-                yield adapter(model_name, provider=GoogleProvider(client=sdk))
+            assert isinstance(provider, GoogleProvider)
+            async with provider.client.aio:
+                yield adapter(model_name, provider=provider)
         else:
-            provider = OpenAIProvider(api_key=api_key, base_url=endpoint, http_client=client)
             yield adapter(model_name, provider=provider)

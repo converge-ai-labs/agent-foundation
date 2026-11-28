@@ -219,6 +219,25 @@ async def test_primary_model_selects_its_realtime_adapter(provider_type, api, na
         assert native.profile["audio_output_sample_rate"] == 24000
         if api in {"azure.realtime", "google.realtime"}:
             assert native.profile["supports_image_input"]
+        if isinstance(native, AzureRealtimeModel):
+            assert native.profile["azure_realtime_apis"] == frozenset(("azure_openai",))
+        if isinstance(native, GoogleRealtimeModel):
+            socket = AsyncMock()
+            socket.recv.return_value = b'{"setupComplete":{"sessionId":"session"}}'
+
+            @asynccontextmanager
+            async def mock_connect(url, *, additional_headers, **options):
+                assert url == (
+                    "wss://generativelanguage.googleapis.com/ws/"
+                    "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+                )
+                assert additional_headers["x-goog-api-key"] == "test-key"
+                yield socket
+
+            monkeypatch.setattr("google.genai.live.ws_connect", mock_connect)
+            async with native.client.aio.live.connect(model=name) as session:
+                assert session.session_id == "session"
+            socket.send.assert_awaited_once()
 
     restricted = EndpointPolicy().for_run(RunConfiguration(allowed_hosts=frozenset()))
     with pytest.raises(ServiceError, match="outbound policy"):
