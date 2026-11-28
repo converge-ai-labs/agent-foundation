@@ -61,11 +61,13 @@ function mount({
   failResetOnce = false,
   groups = false,
   usable = true,
+  enabled = true,
+  supportsUsage = true,
   requiredAction = "none" as Schema<"AccountProjection">["required_action"],
   snapshot = { usage: null } as Schema<"UsageSnapshot">,
   provider = "codex",
 } = {}) {
-  const selectedAccount = { ...account, provider };
+  const selectedAccount = { ...account, provider, enabled };
   const writes: { path: string; method: string; body: any }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -172,7 +174,7 @@ function mount({
                 provider,
                 managed_accounts: true,
                 supports_groups: true,
-                supports_usage: true,
+                supports_usage: supportsUsage,
                 supports_allow_credits: provider === "codex",
                 supports_reset_vouchers: provider === "codex",
                 label: provider === "codex" ? "Codex" : "Example Cloud",
@@ -235,6 +237,16 @@ it("shows the rejected grant and last observed allowance before opening details"
   ).toBeTruthy();
   expect(screen.queryByText("Connected")).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry refresh" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Usage for Work" }));
+  expect(
+    screen.getByText("Authorization is no longer valid. Sign in again."),
+  ).toBeTruthy();
+  expect(screen.getByText(`Last observed ${quotaTime(1000_000)}`)).toBeTruthy();
+  expect(screen.queryByText(/^Refresh failed at/)).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "View vouchers" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
   expect(await screen.findByText("Login target: acct-work")).toBeTruthy();
   expect(writes).toEqual([]);
@@ -247,6 +259,11 @@ it("retries only usage and clears the historical label on a successful refresh",
   expect(
     screen.getByText(`Last known · ${quotaTime(1000_000, true)}`),
   ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Usage for Work" }));
+  expect(
+    screen.getByText(`Refresh failed at ${quotaTime(2000_000)}`),
+  ).toBeTruthy();
+  expect(screen.getByText(`Last observed ${quotaTime(1000_000)}`)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry refresh" }));
   await waitFor(() =>
     expect(screen.queryByText("Usage refresh failed")).toBeNull(),
@@ -255,6 +272,47 @@ it("retries only usage and clears the historical label on a successful refresh",
   expect(writes.map(({ method, path }) => [method, path])).toEqual([
     ["POST", "/api/subscriptions/accounts/acct-work/refresh"],
   ]);
+});
+
+it.each([
+  { enabled: false, requiredAction: "none", label: "Paused" },
+  {
+    enabled: true,
+    requiredAction: "reauthenticate",
+    label: "Reauthentication required",
+  },
+  { enabled: true, requiredAction: "login", label: "Sign-in required" },
+] as const)(
+  "shows member health instead of historical allowance: $label",
+  async ({ enabled, requiredAction, label }) => {
+    mount({
+      enabled,
+      requiredAction,
+      usable: false,
+      snapshot: lastUsage,
+      groups: true,
+    });
+    expect(await screen.findByText(`· ${label}`)).toBeTruthy();
+    expect(screen.queryByText(/Weekly 14% left/)).toBeNull();
+  },
+);
+
+it("omits unsupported refresh actions and disables voucher mutations for paused accounts", async () => {
+  const writes = mount({
+    enabled: false,
+    supportsUsage: false,
+    snapshot: lastUsage,
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  expect(
+    (
+      await screen.findByRole("menuitem", { name: "Reset voucher…" })
+    ).getAttribute("aria-disabled"),
+  ).toBe("true");
+  expect(screen.queryByRole("menuitem", { name: "Refresh usage" })).toBeNull();
+  expect(writes).toEqual([]);
 });
 
 it("refreshes the selected account and opens login for the newly created native identity", async () => {

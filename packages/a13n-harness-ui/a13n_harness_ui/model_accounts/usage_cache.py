@@ -23,7 +23,7 @@ from .codex import CodexAccountStore
 from .coordination import store_lock
 from .grok import GrokAccountStore
 from .managed import SubscriptionAccount, SubscriptionAccounts
-from .models import AccountProjection, AccountStoreError, RequiredAction
+from .models import CODEX_SIGN_IN_REQUIRED, AccountProjection, AccountStoreError, Availability, RequiredAction
 from .provider_usage import GrokUsage, read_grok_usage
 from .usage import CodexUsage, CodexUsageClient, PaidCredits, UsageLimits, UsageSignInRequired, UsageWindow
 
@@ -66,7 +66,7 @@ class SubscriptionUsage:
     def _path(self, account: SubscriptionAccount):
         return self.accounts.root / "state" / f"{account.id}.json"
 
-    async def read(self, account: SubscriptionAccount) -> UsageSnapshot:
+    async def read(self, account: SubscriptionAccount, *, projection: AccountProjection | None = None) -> UsageSnapshot:
         raw = await read_json_snapshot(self._path(account), provider=account.provider)
         try:
             value = UsageSnapshot.model_validate(raw.document or {})
@@ -83,8 +83,12 @@ class SubscriptionUsage:
         ):
             # A successful same-account sign-in may show the last observation while
             # fetching new usage. Logout, switches and old cooldowns never carry over.
-            projection = await self.accounts.store(account).inspect()
-            if projection.account_id == account.upstream_account_id:
+            if projection is None:
+                projection = await self.accounts.store(account).inspect()
+            if (
+                projection.availability is Availability.AVAILABLE
+                and projection.account_id == account.upstream_account_id
+            ):
                 return fresh.model_copy(
                     update={
                         "usage": value.usage,
@@ -96,9 +100,34 @@ class SubscriptionUsage:
 
     async def inspect(self, account: SubscriptionAccount) -> tuple[AccountProjection, UsageSnapshot]:
         projection = await self.accounts.store(account).inspect()
-        snapshot = await self.read(account)
-        if snapshot.required_action == "reauthenticate" and projection.account_id is not None:
-            projection = replace(projection, usable=False, required_action=RequiredAction.REAUTHENTICATE)
+        snapshot = await self.read(account, projection=projection)
+        provider = account.provider
+        adoption = (
+            (await self.accounts.adoption()).get(provider)
+            if provider in ("codex", "grok")
+            and account.id == f"acct-{provider}-default"
+            and account.login_revision == 0
+            else None
+        )
+        if snapshot.required_action == "reauthenticate" and projection.availability is Availability.AVAILABLE:
+            projection = replace(
+                projection,
+                usable=False,
+                required_action=RequiredAction.REAUTHENTICATE,
+                message=(
+                    "This login was imported from the CLI and its shared refresh grant was rejected. "
+                    "Sign in here to create an independent Harness UI session without affecting the CLI."
+                    if adoption is not None and adoption.status == "adopted"
+                    else CODEX_SIGN_IN_REQUIRED
+                ),
+            )
+        elif (
+            adoption is not None
+            and adoption.status == "adopted"
+            and (projection.usable or projection.required_action is RequiredAction.REFRESH)
+            and projection.message is None
+        ):
+            projection = replace(projection, message=adoption.message)
         return projection, snapshot
 
     async def _read_provider(self, account: SubscriptionAccount) -> CodexUsage | GrokUsage | PluginUsageSnapshot | None:
@@ -125,15 +154,18 @@ class SubscriptionUsage:
         account = await self.accounts.get(account_id)
         previous = await self.read(account)
         started = self.clock()
-        if not force and previous.checked_at > 0 and started - previous.checked_at < max_age:
+        if not force and (
+            previous.required_action == "reauthenticate"
+            or (previous.checked_at > 0 and started - previous.checked_at < max_age)
+        ):
             return previous
         usage = None
         error = None
-        grant_rejected = False
+        grant_rejection = None
         try:
             usage = await self._reader(account)
         except UsageSignInRequired as exc:
-            grant_rejected = True
+            grant_rejection = exc
             error = str(exc)
         except (ValueError, AccountStoreError):
             error = "Usage refresh failed. The last successful snapshot is retained."
@@ -147,8 +179,18 @@ class SubscriptionUsage:
                 return await self.read(current_account)
             raw = await read_json_snapshot(self._path(account), provider=account.provider)
             current = await self.read(account)
+            if grant_rejection is not None and not await self._grant_is_current(account, grant_rejection.fingerprint):
+                return current
+            grant_rejected = grant_rejection is not None
             newer_observation = max(current.checked_at, current.observed_at) > started
-            if newer_observation and not grant_rejected:
+            # Response headers can advance allowance without settling credentials.
+            recovered_with_newer_headers = (
+                force
+                and usage is not None
+                and previous.required_action == current.required_action == "reauthenticate"
+                and current.checked_at <= started < current.observed_at
+            )
+            if newer_observation and not (grant_rejected or recovered_with_newer_headers):
                 return current
             updates = {}
             if not newer_observation:
@@ -162,8 +204,19 @@ class SubscriptionUsage:
                     if usage is not None
                     else current.rejected,
                 }
-            if grant_rejected or current.required_action == "reauthenticate":
+            if grant_rejected:
                 updates["required_action"] = "reauthenticate"
+                updates["error"] = error
+            elif recovered_with_newer_headers:
+                updates.update(
+                    checked_at=started,
+                    required_action=None,
+                    error=None,
+                    rejected={key: stamp for key, stamp in current.rejected.items() if stamp > started},
+                )
+            elif current.required_action == "reauthenticate" and (usage is None or not force):
+                updates["required_action"] = "reauthenticate"
+                updates["error"] = current.error
             updated = current.model_copy(update=updates)
             await write_json_if_unchanged(
                 self._path(account), updated.model_dump(mode="json"), raw.digest, provider=account.provider
@@ -224,28 +277,65 @@ class SubscriptionUsage:
                 update={
                     "observed_at": observed,
                     "usage": usage.model_copy(update={"rate_limit": limits, "credits": credits or usage.credits}),
+                    "error": current.error if current.required_action == "reauthenticate" else None,
+                    "required_action": None if current.required_action == "refresh" else current.required_action,
                 }
             )
             await write_json_if_unchanged(
                 self._path(account), updated.model_dump(mode="json"), raw.digest, provider=account.provider
             )
 
-    async def reject(self, account: SubscriptionAccount, model_name: str, *, grant_rejected: bool = False) -> None:
+    async def _grant_is_current(self, account: SubscriptionAccount, fingerprint: str | None) -> bool:
+        if fingerprint is None:
+            return True
+        from .codex_transport import grant_fingerprint
+
+        store = self.accounts.store(account)
+        if not isinstance(store, CodexAccountStore):
+            return False
+        try:
+            credentials = await store.load()
+        except AccountStoreError:
+            return False
+        return grant_fingerprint(credentials.refresh_token) == fingerprint
+
+    async def reject(
+        self,
+        account: SubscriptionAccount,
+        model_name: str,
+        *,
+        grant_rejected: bool = False,
+        fingerprint: str | None = None,
+    ) -> None:
+        await self._record_rejection(
+            account, model_name, CODEX_SIGN_IN_REQUIRED if grant_rejected else None, fingerprint
+        )
+
+    async def mark_reauthenticate(self, account: SubscriptionAccount, rejection: UsageSignInRequired) -> None:
+        await self._record_rejection(account, None, str(rejection), rejection.fingerprint)
+
+    async def _record_rejection(
+        self, account: SubscriptionAccount, model_name: str | None, grant_error: str | None, fingerprint: str | None
+    ) -> None:
         async with store_lock(self._path(account)):
             latest = await self.accounts.get(account.id)
             if (latest.login_revision, latest.login_generation) != (account.login_revision, account.login_generation):
                 return
             raw = await read_json_snapshot(self._path(account), provider=account.provider)
             current = await self.read(account)
+            if grant_error is not None and not await self._grant_is_current(account, fingerprint):
+                return
             now = self.clock()
             rejected = {key: stamp for key, stamp in current.rejected.items() if now - stamp < REJECTION_SECONDS}
-            rejected[model_name] = now
+            if model_name is not None:
+                rejected[model_name] = now
             await write_json_if_unchanged(
                 self._path(account),
                 current.model_copy(
                     update={
                         "rejected": rejected,
-                        "required_action": "reauthenticate" if grant_rejected else current.required_action,
+                        "required_action": "reauthenticate" if grant_error is not None else current.required_action,
+                        "error": grant_error if grant_error is not None else current.error,
                     }
                 ).model_dump(mode="json"),
                 raw.digest,
@@ -265,6 +355,8 @@ class SubscriptionUsage:
 
     async def tier(self, account: SubscriptionAccount, model_name: str, *, allow_credits: bool) -> int | None:
         snapshot = await self.refresh(account.id, max_age=REQUEST_REFRESH_SECONDS)
+        if snapshot.required_action == "reauthenticate":
+            return None
         rejected = snapshot.rejected.get(model_name)
         if rejected is not None and self.clock() - rejected < REJECTION_SECONDS:
             return None

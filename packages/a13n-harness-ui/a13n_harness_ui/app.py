@@ -267,7 +267,7 @@ from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount, SubscriptionAccounts
-from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
+from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection, Availability, RequiredAction
 from a13n_harness_ui.model_accounts.provider_usage import CopilotUsage, read_copilot_usage
 from a13n_harness_ui.model_accounts.subscriptions import (
     SubscriptionAccountCreate,
@@ -275,7 +275,13 @@ from a13n_harness_ui.model_accounts.subscriptions import (
     SubscriptionAccountView,
     SubscriptionCatalog,
 )
-from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
+from a13n_harness_ui.model_accounts.usage import (
+    CodexUsage,
+    CodexUsageClient,
+    ResetRequest,
+    ResetResult,
+    UsageSignInRequired,
+)
 from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage, UsageSnapshot
 from a13n_harness_ui.model_authoring import (
     ModelChoice,
@@ -3610,9 +3616,10 @@ class HarnessUiApp:
             providers: list[SetupProvider] = []
             for provider in Provider:
                 try:
-                    account = await self._account(provider).inspect()
+                    account = await self._inspect_builtin_model_account(provider)
                     selected = account.usable or (
-                        account.availability.value == "available" and account.required_action.value == "refresh"
+                        account.availability is Availability.AVAILABLE
+                        and account.required_action is RequiredAction.REFRESH
                     )
                     providers.append(
                         SetupProvider(
@@ -3620,6 +3627,9 @@ class HarnessUiApp:
                             available=selected,
                             selected=selected,
                             action=account.required_action.value,
+                            diagnostic=account.message
+                            if account.required_action is RequiredAction.REAUTHENTICATE
+                            else None,
                         )
                     )
                 except (AccountStoreError, AppStateError) as exc:
@@ -4063,7 +4073,18 @@ class HarnessUiApp:
         async with self._operation():
             if self._catalog.model_providers.get(provider) is not None:
                 return await self._inspect_plugin_account(provider)
-            return await self._account(self._builtin_account_provider(provider)).inspect()
+            return await self._inspect_builtin_model_account(self._builtin_account_provider(provider))
+
+    async def _inspect_builtin_model_account(self, provider: Provider) -> AccountProjection:
+        if provider in {Provider.CODEX, Provider.GROK}:
+            try:
+                account = await self.subscription_accounts.get(f"acct-{provider.value}-default")
+            except AccountStoreError:
+                pass
+            else:
+                projection, _ = await self.subscription_usage.inspect(account)
+                return projection
+        return await self._account(provider).inspect()
 
     async def login_model_account(
         self,
@@ -4077,21 +4098,29 @@ class HarnessUiApp:
                 if self._copilot_login is None:
                     raise AppStateError("No Copilot login flow is registered.", code="model_account_login_unavailable")
                 return await self._copilot_account.login(self._copilot_login, allow_account_switch=allow_account_switch)
+            account_id = f"acct-{selected.value}-default"
             if selected is Provider.CODEX:
                 if self._codex_login is None:
                     raise AppStateError(
                         "No Codex login flow is registered.",
                         code="model_account_login_unavailable",
                     )
-                return await self.subscription_accounts.login_codex("acct-codex-default", self._codex_login)
-            account = self._account(Provider.GROK)
-            assert isinstance(account, GrokAccountStore)
-            if self._grok_login is None:
-                raise AppStateError(
-                    "No Grok login flow is registered.",
-                    code="model_account_login_unavailable",
-                )
-            return await self.subscription_accounts.login_grok("acct-grok-default", self._grok_login)
+                projection = await self.subscription_accounts.login_codex(account_id, self._codex_login)
+            else:
+                account = self._account(Provider.GROK)
+                assert isinstance(account, GrokAccountStore)
+                if self._grok_login is None:
+                    raise AppStateError(
+                        "No Grok login flow is registered.",
+                        code="model_account_login_unavailable",
+                    )
+                projection = await self.subscription_accounts.login_grok(account_id, self._grok_login)
+            try:
+                await self.subscription_usage.refresh(account_id)
+            except AccountStoreError:
+                # Credential publication has already succeeded.
+                pass
+            return projection
 
     async def logout_model_account(self, provider: Provider | str) -> bool:
         async with self._operation():
@@ -4397,6 +4426,9 @@ class HarnessUiApp:
                     return await CodexUsageClient(
                         account, client, expected_account_id=native.upstream_account_id
                     ).read()
+            except UsageSignInRequired as exc:
+                await self.subscription_usage.mark_reauthenticate(native, exc)
+                raise AppStateError(str(exc), code="subscription_usage_failed") from None
             except ValueError as exc:
                 raise AppStateError(str(exc), code="subscription_usage_failed") from None
 
@@ -4414,19 +4446,24 @@ class HarnessUiApp:
                     "The reset confirmation does not match the selected account.",
                     code="subscription_reset_identity_mismatch",
                 )
-            try:
-                async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
-                    result = await CodexUsageClient(
-                        account,
-                        client,
-                        expected_account_id=request.account_id,
-                    ).redeem(request)
-            except ValueError as exc:
-                raise AppStateError(str(exc), code="subscription_reset_unconfirmed") from None
+            async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
+                usage_client = CodexUsageClient(account, client, expected_account_id=request.account_id)
+                try:
+                    result = await usage_client.redeem(request)
+                except UsageSignInRequired as exc:
+                    await self.subscription_usage.mark_reauthenticate(native, exc)
+                    raise AppStateError(str(exc), code="subscription_reset_unconfirmed") from None
+                except ValueError as exc:
+                    if usage_client.grant_rejection is not None:
+                        await self.subscription_usage.mark_reauthenticate(native, usage_client.grant_rejection)
+                    raise AppStateError(str(exc), code="subscription_reset_unconfirmed") from None
             # A confirmed redemption stays successful even if a concurrent logout
             # prevents updating its advisory usage snapshot.
             try:
-                await self.subscription_usage.refresh(account_id, force=True)
+                if usage_client.grant_rejection is not None:
+                    await self.subscription_usage.mark_reauthenticate(native, usage_client.grant_rejection)
+                else:
+                    await self.subscription_usage.refresh(account_id, force=True)
             except AccountStoreError:
                 pass
             return result

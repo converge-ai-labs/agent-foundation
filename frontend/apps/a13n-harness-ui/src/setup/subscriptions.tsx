@@ -44,6 +44,7 @@ import { result, type Schema } from "../transport/client";
 import { EmptyList, ErrorNotice, SearchField } from "../shell/ui";
 import { TextField as ModalTextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
+import { accountStatus, subscriptionPollInterval } from "./account-status";
 import layout from "../configuration/settings.module.css";
 import {
   ChatGPTAllowance,
@@ -53,6 +54,7 @@ import {
 import {
   availableVouchers,
   compactAllowance,
+  compactObservedTime,
   quotaTime,
   voucherSummary,
   windowLabel,
@@ -70,7 +72,8 @@ export function useSubscriptions(enabled = true) {
     queryFn: ({ signal }) =>
       result(client.GET("/api/subscriptions", { signal })),
     // This reads the shared cache; provider polling belongs to the Host.
-    refetchInterval: 15_000,
+    refetchInterval: (query) =>
+      subscriptionPollInterval(query.state.data?.accounts),
   });
 }
 
@@ -184,6 +187,11 @@ export function AccountUsage({
   onVouchers?: () => void;
 }) {
   const { t } = useTranslation();
+  const status = accountStatus(
+    view.authentication,
+    view.account.enabled,
+    view.usage,
+  );
   const observed = view.usage.usage;
   if (observed && "windows" in observed) {
     return (
@@ -195,7 +203,10 @@ export function AccountUsage({
             label={windowLabel(window.limit_window_seconds)}
           />
         ))}
-        <UsageFreshness snapshot={view.usage} />
+        <UsageFreshness
+          snapshot={view.usage}
+          reauthenticate={status.reauthenticate}
+        />
       </div>
     );
   }
@@ -206,7 +217,10 @@ export function AccountUsage({
         <GrokAllowance
           usage={observed?.provider === "grok" ? observed : null}
         />
-        <UsageFreshness snapshot={view.usage} />
+        <UsageFreshness
+          snapshot={view.usage}
+          reauthenticate={status.reauthenticate}
+        />
       </div>
     );
   }
@@ -244,7 +258,12 @@ export function AccountUsage({
         <div className={styles.balanceCell}>
           <VoucherSummary usage={usage} />
           {onVouchers && (
-            <Button variant="ghost" size="sm" onClick={onVouchers}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!status.canRefresh}
+              onClick={onVouchers}
+            >
               {t("View vouchers")}
               <CaretRightIcon />
             </Button>
@@ -273,64 +292,65 @@ export function AccountUsage({
           </div>
         )}
       </div>
-      <UsageFreshness snapshot={view.usage} />
+      <UsageFreshness
+        snapshot={view.usage}
+        reauthenticate={status.reauthenticate}
+      />
     </div>
   );
 }
 
-function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
+function UsageFreshness({
+  snapshot,
+  reauthenticate,
+}: {
+  snapshot: Schema<"UsageSnapshot">;
+  reauthenticate: boolean;
+}) {
   const { t } = useTranslation();
-  if (snapshot.error && snapshot.checked_at) {
-    return (
-      <span className={styles.quotaDetail}>
-        {t("Refresh failed at {{time}}", {
-          time: quotaTime(snapshot.checked_at * 1000),
-        })}
-      </span>
-    );
-  }
-  return (
-    <span className={styles.quotaDetail}>
-      {snapshot.error ? t("Refresh failed - ") : ""}
-      {snapshot.observed_at
-        ? t("Updated {{time}}", {
-            time: quotaTime(snapshot.observed_at * 1000),
+  const failure = reauthenticate
+    ? t("Authorization is no longer valid. Sign in again.")
+    : snapshot.error
+      ? snapshot.checked_at
+        ? t("Refresh failed at {{time}}", {
+            time: quotaTime(snapshot.checked_at * 1000),
           })
-        : t("Not refreshed yet")}
-    </span>
+        : t("Usage refresh failed")
+      : null;
+  const observed = snapshot.observed_at
+    ? quotaTime(snapshot.observed_at * 1000)
+    : null;
+  return (
+    <div className={styles.freshness}>
+      {failure && <span className={styles.usageWarning}>{failure}</span>}
+      <span>
+        {observed
+          ? failure || snapshot.required_action === "refresh"
+            ? t("Last observed {{time}}", { time: observed })
+            : t("Updated {{time}}", { time: observed })
+          : t("Not refreshed yet")}
+      </span>
+    </div>
   );
 }
 
 function ConnectionStatus({
-  authentication,
-  enabled = true,
+  status,
 }: {
-  authentication: AccountView["authentication"];
-  enabled?: boolean;
+  status: ReturnType<typeof accountStatus>;
 }) {
   const { t } = useTranslation();
-  const reauthenticate =
-    enabled && authentication.required_action === "reauthenticate";
-  let label = t("Sign-in required");
-  if (!enabled) label = t("Paused");
-  else if (reauthenticate) label = t("Reauthentication required");
-  else if (authentication.usable) label = t("Connected");
-  else if (authentication.required_action === "refresh")
-    label = t("Refreshes on first use");
   return (
-    <span
-      className={styles.status}
-      data-connected={enabled && authentication.usable}
-      data-warning={reauthenticate}
-    >
-      {reauthenticate && <WarningCircleIcon aria-hidden />}
-      {label}
+    <span className={styles.status} data-tone={status.tone}>
+      {status.tone === "warning" && <WarningCircleIcon aria-hidden />}
+      {t(status.label)}
     </span>
   );
 }
 
 function SubscriptionAccountRow({
   view,
+  status,
   children,
   refreshing,
   onRefresh,
@@ -339,6 +359,7 @@ function SubscriptionAccountRow({
   onVouchers,
 }: {
   view: AccountView;
+  status: ReturnType<typeof accountStatus>;
   children: ReactNode;
   refreshing: boolean;
   onRefresh?: () => void;
@@ -348,72 +369,32 @@ function SubscriptionAccountRow({
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const { account, authentication } = view;
-  const reauthenticate = authentication.required_action === "reauthenticate";
-  const canRefresh =
-    authentication.usable || authentication.required_action === "refresh";
+  const { account } = view;
+  const { reauthenticate, canRefresh, refreshFailed, stale, recovery } = status;
   const usage = view.usage.usage;
   const usageAvailable = !!usage || (!!onRefresh && canRefresh);
   const allowance = compactAllowance(usage);
-  const refreshFailed = !!view.usage.error && !reauthenticate;
-  const stale =
-    reauthenticate || refreshFailed || view.usage.required_action === "refresh";
+  const observedAt = view.usage.observed_at
+    ? view.usage.observed_at * 1000
+    : null;
   return (
     <article className={styles.accountCard}>
-      <header
-        className={styles.accountHeader}
-        data-recovery={account.enabled && (reauthenticate || refreshFailed)}
-      >
+      <header className={styles.accountHeader}>
         <div className={styles.identity}>
           <strong>{account.name}</strong>
           <span className={styles.accountMeta}>
-            <ConnectionStatus
-              authentication={authentication}
-              enabled={account.enabled}
-            />
+            <ConnectionStatus status={status} />
             {usage && "plan_type" in usage && usage.plan_type !== "unknown" && (
               <span className={styles.plan}>{usage.plan_type}</span>
-            )}
-            {account.enabled && refreshFailed && (
-              <span className={styles.usageWarning}>
-                {t("Usage refresh failed")}
-              </span>
             )}
           </span>
         </div>
         <div className={styles.cardActions}>
-          {usageAvailable && (
-            <div className={styles.allowance}>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={t("Usage for {{name}}", { name: account.name })}
-                aria-expanded={expanded}
-                onClick={() => setExpanded(!expanded)}
-              >
-                <span className={styles.allowanceSummary}>
-                  {allowance || t("Usage")}
-                </span>
-                <CaretRightIcon
-                  className={expanded ? styles.expanded : undefined}
-                />
-              </Button>
-              {stale && usage && (
-                <span className={styles.lastKnown}>
-                  {view.usage.observed_at
-                    ? t("Last known · {{time}}", {
-                        time: quotaTime(view.usage.observed_at * 1000, true),
-                      })
-                    : t("Last known usage")}
-                </span>
-              )}
-            </div>
-          )}
-          {!account.enabled && onEnable ? (
+          {recovery === "enable" && onEnable ? (
             <Button variant="outline" size="sm" onClick={onEnable}>
               {t("Enable")}
             </Button>
-          ) : account.enabled && (reauthenticate || !canRefresh) && onSignIn ? (
+          ) : recovery === "signIn" && onSignIn ? (
             <Button
               variant={reauthenticate ? "default" : "outline"}
               size="sm"
@@ -421,7 +402,7 @@ function SubscriptionAccountRow({
             >
               {reauthenticate ? t("Sign in again") : t("Sign in")}
             </Button>
-          ) : account.enabled && refreshFailed && onRefresh ? (
+          ) : recovery === "refresh" && onRefresh ? (
             <Button
               variant="outline"
               size="sm"
@@ -434,25 +415,59 @@ function SubscriptionAccountRow({
           {children}
         </div>
       </header>
+      {(usageAvailable || (canRefresh && refreshFailed)) && (
+        <div className={styles.allowanceRow}>
+          {usageAvailable && (
+            <Button
+              className={styles.allowanceButton}
+              variant="ghost"
+              size="sm"
+              aria-label={t("Usage for {{name}}", { name: account.name })}
+              aria-expanded={expanded}
+              onClick={() => setExpanded(!expanded)}
+            >
+              <span className={styles.allowanceSummary}>
+                {allowance || t("Usage")}
+              </span>
+              <CaretRightIcon
+                className={expanded ? styles.expanded : undefined}
+              />
+            </Button>
+          )}
+          {stale && usage && (
+            <span
+              className={styles.lastKnown}
+              title={observedAt ? quotaTime(observedAt) : undefined}
+            >
+              {observedAt
+                ? t("Last known · {{time}}", {
+                    time: compactObservedTime(observedAt),
+                  })
+                : t("Last known usage")}
+            </span>
+          )}
+          {canRefresh && refreshFailed && (
+            <span className={styles.usageWarning}>
+              {t("Usage refresh failed")}
+            </span>
+          )}
+        </div>
+      )}
       {expanded && usageAvailable && (
         <div className={styles.usageDetails}>
           <div className={styles.usageToolbar}>
             <span>{t("Usage & allowance")}</span>
-            {onRefresh &&
-              account.enabled &&
-              canRefresh &&
-              !refreshFailed &&
-              !reauthenticate && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  loading={refreshing}
-                  onClick={onRefresh}
-                >
-                  <ArrowsClockwiseIcon />
-                  {t("Refresh")}
-                </Button>
-              )}
+            {onRefresh && canRefresh && !refreshFailed && (
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={refreshing}
+                onClick={onRefresh}
+              >
+                <ArrowsClockwiseIcon />
+                {t("Refresh")}
+              </Button>
+            )}
           </div>
           <AccountUsage view={view} onVouchers={onVouchers} />
         </div>
@@ -701,13 +716,19 @@ export function SubscriptionAccounts({
               <div className={styles.accountList}>
                 {providerAccounts.map((view) => {
                   const { account } = view;
+                  const status = accountStatus(
+                    view.authentication,
+                    account.enabled,
+                    view.usage,
+                  );
+                  const refreshing =
+                    refresh.isPending && refresh.variables === account.id;
                   return (
                     <SubscriptionAccountRow
                       key={account.id}
                       view={view}
-                      refreshing={
-                        refresh.isPending && refresh.variables === account.id
-                      }
+                      status={status}
+                      refreshing={refreshing}
                       onRefresh={
                         connection?.supports_usage
                           ? () => refresh.mutate(account.id)
@@ -771,21 +792,23 @@ export function SubscriptionAccounts({
                             {account.enabled ? t("Pause") : t("Enable")}
                           </MenuItem>
                           {connection?.supports_reset_vouchers && (
-                            <MenuItem onClick={() => setReset(account)}>
+                            <MenuItem
+                              disabled={!status.canRefresh}
+                              onClick={() => setReset(account)}
+                            >
                               <TicketIcon />
                               {t("Reset voucher…")}
                             </MenuItem>
                           )}
-                          <MenuItem
-                            disabled={
-                              refresh.isPending &&
-                              refresh.variables === account.id
-                            }
-                            onClick={() => refresh.mutate(account.id)}
-                          >
-                            <ArrowsClockwiseIcon />
-                            {t("Refresh usage")}
-                          </MenuItem>
+                          {connection?.supports_usage && (
+                            <MenuItem
+                              disabled={!status.canRefresh || refreshing}
+                              onClick={() => refresh.mutate(account.id)}
+                            >
+                              <ArrowsClockwiseIcon />
+                              {t("Refresh usage")}
+                            </MenuItem>
+                          )}
                           <MenuSeparator />
                           <MenuItem
                             variant="destructive"
@@ -834,7 +857,7 @@ export function SubscriptionAccounts({
                           {status.account_id ?? t("Server account")}
                         </strong>
                         <span className={styles.accountMeta}>
-                          <ConnectionStatus authentication={status} />
+                          <ConnectionStatus status={accountStatus(status)} />
                         </span>
                       </div>
                     </div>
@@ -1113,11 +1136,29 @@ export function AccountGroups() {
                   const view = accounts.find(
                     (entry) => entry.account.id === member.account,
                   );
+                  const status =
+                    view &&
+                    accountStatus(
+                      view.authentication,
+                      view.account.enabled,
+                      view.usage,
+                    );
+                  const detail =
+                    status?.kind === "connected"
+                      ? status.stale
+                        ? t(
+                            status.refreshFailed
+                              ? "Usage refresh failed"
+                              : "Last known usage",
+                          )
+                        : compactAllowance(view?.usage.usage)
+                      : status && t(status.label);
                   return (
-                    <span key={member.account}>
+                    <span key={member.account} data-tone={status?.tone}>
                       {view?.account.name ?? t("Deleted account")}
-                      {compactAllowance(view?.usage.usage) &&
-                        ` - ${compactAllowance(view?.usage.usage)}`}
+                      {detail && (
+                        <span className={styles.memberDetail}> · {detail}</span>
+                      )}
                       {item.strategy === "weighted"
                         ? ` ×${member.weight ?? 1}`
                         : ""}

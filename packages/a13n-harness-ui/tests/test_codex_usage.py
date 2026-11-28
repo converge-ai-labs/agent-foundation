@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -266,6 +266,35 @@ async def test_missing_windows_are_not_zero_remaining() -> None:
     )
     assert "Usage windows unavailable" in text
     assert "% remaining" not in text
+
+
+async def test_confirmed_redemption_survives_rejected_proactive_refresh() -> None:
+    from a13n_harness_ui.model_accounts.codex_transport import grant_fingerprint
+
+    from .test_model_accounts import _jwt
+
+    source = _source()
+    source.load.return_value = replace(
+        source.load.return_value,
+        access_token=_jwt(expires_at=datetime.now(UTC) + timedelta(seconds=20)),
+    )
+    requests = []
+
+    def respond(request):
+        requests.append(request.url.path)
+        if request.url.path == "/oauth/token":
+            return httpx2.Response(400, json={"error": "invalid_grant"})
+        return httpx2.Response(200, json={"code": "reset", "windows_reset": 1})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        usage = CodexUsageClient(source, client=client)
+        result = await usage.redeem(
+            ResetRequest(account_id="account-1", credit_id="credit-1", redeem_request_id=uuid4())
+        )
+    assert result.code == "reset"
+    assert usage.grant_rejection is not None
+    assert usage.grant_rejection.fingerprint == grant_fingerprint("fixture-refresh")
+    assert requests == ["/oauth/token", "/backend-api/wham/rate-limit-reset-credits/consume"]
 
 
 @pytest.mark.parametrize(

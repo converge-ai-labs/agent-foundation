@@ -77,6 +77,42 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("makes reauthentication primary and hides the stale credential expiry", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const { pathname } = new URL(request.url);
+      if (pathname.startsWith("/api/subscriptions/accounts/"))
+        return json({
+          availability: "available",
+          usable: false,
+          required_action: "reauthenticate",
+          account_id: "native-id",
+          source: "file",
+          expiry: "valid",
+          expires_at: "2099-01-01T00:00:00Z",
+          message:
+            "This login was imported from the CLI and its shared refresh grant was rejected. Sign in here to create an independent Harness UI session without affecting the CLI.",
+        });
+      if (request.method === "POST") {
+        requests.push(pathname);
+        return json(login);
+      }
+      return json(pathname.endsWith("login-test") ? login : null);
+    }),
+  );
+  mount();
+  expect(await screen.findByText("Reauthentication required")).toBeTruthy();
+  expect(
+    screen.getByText(/create an independent Harness UI session/),
+  ).toBeTruthy();
+  expect(screen.getByText(/Account: native-id/)).toBeTruthy();
+  expect(screen.queryByText(/Session expires|file - valid/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+  await waitFor(() => expect(requests).toEqual(["/api/auth/logins"]));
+});
+
 it("recovers device login with a visible URL, ordered instructions and a copyable code", async () => {
   mount();
   const link = await screen.findByRole("link", {

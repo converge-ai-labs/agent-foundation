@@ -21,8 +21,27 @@
   font-size: var(--a13n-text-body);
 }
 .identity .accountStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--a13n-text);
+  font-weight: 500;
+}
+.identity .accountStatus[data-tone="warning"] {
+  color: var(--warning-foreground);
+}
+.accountStatus svg {
+  flex-shrink: 0;
+}
+.accountMessage {
+  margin: 0;
+  color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
+  line-height: 1.55;
+}
+.accountMessage[data-tone="warning"] {
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--a13n-warning);
 }
 .advanced {
   composes: details from "../shell/workbench.module.css";

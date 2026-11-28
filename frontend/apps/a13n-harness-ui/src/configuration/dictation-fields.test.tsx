@@ -47,6 +47,7 @@ vi.mock("../transport/context", () => ({
                       enabled: true,
                     },
                     authentication: { usable: true },
+                    usage: { checked_at: 0 },
                   },
                 ],
               },

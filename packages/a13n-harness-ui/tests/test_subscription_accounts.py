@@ -14,7 +14,7 @@ from a13n_harness_ui.model_accounts.managed import SubscriptionAccounts
 from anyio import create_task_group
 from pydantic import ValidationError
 
-from .test_model_accounts import _GROK_SCOPE, _NOW, _codex_tokens, _grok_entry
+from .test_model_accounts import _GROK_SCOPE, _NOW, _codex_credential, _codex_tokens, _grok_entry, _jwt
 
 pytestmark = pytest.mark.anyio
 
@@ -76,6 +76,73 @@ async def test_adoption_is_private_once_and_never_changes_cli_files(
         await native_codex.load()
     with pytest.raises(AccountStoreError, match="unavailable"):
         await accounts.get("acct-grok-default")
+
+
+@pytest.mark.parametrize("operation", ["usage", "reset"])
+async def test_app_status_and_setup_follow_rejected_adopted_grant(tmp_path, monkeypatch, operation):
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from a13n_harness.providers.model.oauth import CodexLoginResult
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.errors import AppStateError
+    from a13n_harness_ui.interactive.usage import subscription_text
+    from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, UsageSignInRequired
+    from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    external, _ = _external(tmp_path / "home")
+    expires = datetime.now(UTC) + timedelta(hours=2)
+    identity = "upstream-codex"
+    external.write_text(json.dumps({"tokens": _codex_tokens(account_id=identity, expires_at=expires, marker="cli")}))
+    original = external.read_bytes()
+    monkeypatch.setenv("CODEX_HOME", str(external.parent))
+    usage_reads = []
+
+    async def login(request):
+        return CodexLoginResult(
+            credentials=_codex_credential(account_id=identity, expires_at=expires, marker="native"),
+            id_token=_jwt(expires_at=expires, account_id=identity),
+        )
+
+    async def reject(client, *args):
+        raise UsageSignInRequired("Rejected refresh grant. Sign in again.")
+
+    async def read(usage, account):
+        usage_reads.append(account.login_revision)
+        return CodexUsage(account_id=identity, plan_type="plus")
+
+    monkeypatch.setattr(CodexUsageClient, "read" if operation == "usage" else "redeem", reject)
+    monkeypatch.setattr(SubscriptionUsage, "_read_provider", read)
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")),
+        configuration_path=tmp_path / "config.yaml",
+        codex_login=login,
+    ) as app:
+        adopted = await app.inspect_model_account("codex")
+        assert adopted.usable and "still shared with the original CLI" in adopted.message
+        with pytest.raises(AppStateError, match="Rejected refresh grant"):
+            if operation == "usage":
+                await app.codex_usage()
+            else:
+                await app.redeem_codex_reset(
+                    ResetRequest(account_id=identity, credit_id="credit", redeem_request_id=uuid4())
+                )
+        revoked = await app.inspect_model_account("codex")
+        assert not revoked.usable and revoked.required_action == "reauthenticate"
+        assert "independent Harness UI session" in revoked.message
+        assert revoked == await app.inspect_subscription_account("acct-codex-default")
+        status = await app.setup_status()
+        codex = next(provider for provider in status.providers if provider.provider == "codex")
+        assert not codex.available and codex.action == "reauthenticate"
+        assert codex.diagnostic == revoked.message
+        assert "reauthentication required" in subscription_text(await app.subscriptions())
+
+        assert (await app.login_model_account("codex")).usable
+        native = await app.inspect_model_account("codex")
+        assert native.usable and native.message is None
+        assert usage_reads == [1]
+        assert external.read_bytes() == original
 
 
 @pytest.mark.parametrize("provider", ["codex", "grok"])

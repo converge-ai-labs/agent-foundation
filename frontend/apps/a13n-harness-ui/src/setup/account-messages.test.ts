@@ -70,6 +70,8 @@ it("translates only known Host account status messages", () => {
     "Sign in to create a managed subscription account.",
     "The external login could not be imported. Sign in here.",
     "Imported the existing login. Its refresh grant is still shared with the original CLI; sign in again here if that grant is rejected.",
+    "This login was imported from the CLI and its shared refresh grant was rejected. Sign in here to create an independent Harness UI session without affecting the CLI.",
+    "The Codex authorization is no longer valid. Sign in again.",
   ];
   for (const message of messages) {
     expect(accountMessage(message, t)).toBe(t(message));

@@ -9,8 +9,6 @@ from uuid import UUID
 import httpx2
 from pydantic import BaseModel, ConfigDict, Field
 
-from .codex_transport import CodexRefreshGrantRejected, check_codex_refresh_response
-
 if TYPE_CHECKING:
     from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
 
@@ -22,6 +20,10 @@ _BASE_URL = "https://chatgpt.com/backend-api/wham"
 
 class UsageSignInRequired(ValueError):
     """The account operation requires a new authorization."""
+
+    def __init__(self, message: str, *, fingerprint: str | None = None) -> None:
+        super().__init__(message)
+        self.fingerprint = fingerprint
 
 
 class _ProviderView(BaseModel):
@@ -130,7 +132,17 @@ class CodexUsageClient:
             credential_source=BoundCodexCredentialSource(source, account_id=expected_account_id),
             http_client=client,
         )
-        self.client.event_hooks["response"].append(check_codex_refresh_response)
+        self.grant_rejection: UsageSignInRequired | None = None
+        self.client.event_hooks["response"].append(self._observe_refresh)
+
+    async def _observe_refresh(self, response: httpx2.Response) -> None:
+        from .codex_transport import CodexRefreshGrantRejected, check_codex_refresh_response
+
+        try:
+            await check_codex_refresh_response(response)
+        except CodexRefreshGrantRejected as exc:
+            self.grant_rejection = UsageSignInRequired(exc.message, fingerprint=exc.fingerprint)
+            raise
 
     async def _request(
         self, method: str, path: str, *, body: dict[str, str] | None = None
@@ -139,6 +151,8 @@ class CodexUsageClient:
 
         try:
             async with self.client.stream(method, _BASE_URL + path, json=body, timeout=10) as response:
+                if method == "GET" and self.grant_rejection is not None:
+                    raise self.grant_rejection from None
                 response.raise_for_status()
                 chunks = bytearray()
                 async for chunk in response.aiter_bytes():
@@ -149,11 +163,11 @@ class CodexUsageClient:
                 if not isinstance(value, dict):
                     raise ValueError("Codex returned an unsupported usage response.")
                 return value, response.request.headers["ChatGPT-Account-Id"]
-        except (CredentialsRefreshError, CredentialsPersistenceError) as exc:
+        except (CredentialsRefreshError, CredentialsPersistenceError):
             # Upstream token errors may include provider response text. Account
             # diagnostics retain the outcome category, never that raw payload.
-            if isinstance(exc, CodexRefreshGrantRejected):
-                raise UsageSignInRequired(exc.message) from None
+            if self.grant_rejection is not None:
+                raise self.grant_rejection from None
             raise ValueError(
                 "Codex credentials could not be refreshed or saved. Check the shared account store before retrying."
             ) from None

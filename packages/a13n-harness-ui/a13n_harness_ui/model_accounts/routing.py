@@ -25,7 +25,6 @@ from a13n_harness_ui.configuration.models import SubscriptionGroupResource
 from a13n_harness_ui.model_providers.credentials import PluginAccountStore
 
 from ._common import read_json_snapshot
-from .codex_transport import CodexRefreshGrantRejected
 from .managed import SubscriptionAccount, SubscriptionAccounts
 from .models import AccountStoreError, Availability, MainAccountSelection
 from .provenance import main_request
@@ -272,12 +271,17 @@ class SubscriptionGroupModel(WrapperModel):
                     model = await self._model(account, request_scope)
                     response = await operation(model)
                 except Exception as error:
+                    from .codex_transport import CodexRefreshGrantRejected
+
                     failure = account_failure(error)
                     if failure is None:
                         raise
                     reason, last_error = failure, error
                     await self.usage.reject(
-                        account, self.model_name, grant_rejected=isinstance(error, CodexRefreshGrantRejected)
+                        account,
+                        self.model_name,
+                        grant_rejected=isinstance(error, CodexRefreshGrantRejected),
+                        fingerprint=error.fingerprint if isinstance(error, CodexRefreshGrantRejected) else None,
                     )
                     continue
                 self._active_id = account.id
@@ -334,12 +338,17 @@ class SubscriptionGroupModel(WrapperModel):
                         model.request_stream(messages, model_settings, model_request_parameters, run_context)
                     )
                 except Exception as error:
+                    from .codex_transport import CodexRefreshGrantRejected
+
                     failure = account_failure(error)
                     if failure is None:
                         raise
                     reason, last_error = failure, error
                     await self.usage.reject(
-                        account, self.model_name, grant_rejected=isinstance(error, CodexRefreshGrantRejected)
+                        account,
+                        self.model_name,
+                        grant_rejected=isinstance(error, CodexRefreshGrantRejected),
+                        fingerprint=error.fingerprint if isinstance(error, CodexRefreshGrantRejected) else None,
                     )
                     continue
                 # Stream iteration, cleanup and caller exceptions must never enter the retry loop.
