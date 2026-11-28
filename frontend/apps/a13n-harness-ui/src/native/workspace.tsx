@@ -926,6 +926,8 @@ export function NativeWorkspace({
     );
   };
   // Conversation and navigation own their query failures; this slot only owns pane actions.
+  const showWorkingFolders =
+    pane === "changes" && localRoots.length > 1 && localRoots.includes(root);
   const folderBreadcrumbs =
     !projectLoading &&
     directory &&
@@ -1729,11 +1731,9 @@ export function NativeWorkspace({
                   {!projectLoading &&
                     directory &&
                     ((view !== "page" && folderBreadcrumbs) ||
-                      (localRoots.length > 1 &&
-                        view === "page" &&
-                        pane === "changes")) && (
+                      (view === "page" && showWorkingFolders)) && (
                       <div className={styles.location}>
-                        {pane === "changes" && localRoots.length > 1 && (
+                        {showWorkingFolders && (
                           <nav
                             className={styles.projectFolders}
                             aria-label={t("Working folders")}
@@ -1745,22 +1745,14 @@ export function NativeWorkspace({
                                 variant="ghost"
                                 title={folder}
                                 aria-pressed={root === folder}
-                                onClick={() => {
-                                  navigateTab(
-                                    pane === "changes"
-                                      ? {
-                                          kind: "changes",
-                                          root: folder,
-                                          selection: null,
-                                          choices: [],
-                                        }
-                                      : {
-                                          kind: "files",
-                                          directory: folder,
-                                          root: folder,
-                                        },
-                                  );
-                                }}
+                                onClick={() =>
+                                  navigateTab({
+                                    kind: "changes",
+                                    root: folder,
+                                    selection: null,
+                                    choices: [],
+                                  })
+                                }
                               >
                                 <Folder />
                                 {basename(folder)}

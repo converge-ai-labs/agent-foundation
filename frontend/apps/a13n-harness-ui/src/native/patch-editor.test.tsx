@@ -37,84 +37,95 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-it("keeps editor selection in exact patch coordinates and resets it for a replacement revision", async () => {
-  const text =
-    "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -40 +50 @@\n-old\n+new\n";
-  const value: Schema<"GitDiff"> = {
-    repository: {
-      root: "/fixture",
-      git_dir: "/fixture/.git",
-      common_dir: "/fixture/.git",
-      head_oid: "head",
-      branch: "main",
-    },
-    path: "file",
-    comparison: "staged",
-    revision: "reviewed",
-    index_revision: "index",
-    presentation: "text",
-    text,
-  };
-  const post = vi.fn(async () => ({
-    data: { attachment: { attachment_id: "attachment-patch" } },
-  }));
-  const queries = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  const draft = new ThreadDraft();
-  draft.draftId = "draft-one";
-  vi.spyOn(draft, "synchronized", "get").mockReturnValue(true);
-  const tree = (revision: string) => (
-    <QueryClientProvider client={queries}>
-      <TransportContext
-        value={{ client: { POST: post } } as unknown as Transport}
-      >
-        <ComposerDrafts value={new Map([["thread-one", draft]])}>
-          <PatchEditor
-            key={revision}
-            value={{ ...value, revision }}
-            threadId="thread-one"
-            disabled={false}
-          />
-        </ComposerDrafts>
-      </TransportContext>
-    </QueryClientProvider>
-  );
-  const view = render(tree("reviewed"));
-  const editor = EditorView.findFromDOM(
-    await screen.findByLabelText(
-      "Git patch with old and new file line numbers",
-    ),
-  )!;
-  expect(editor.state.doc.toString()).toBe(text);
-  expect(editor.state.readOnly).toBe(true);
-  act(() =>
-    editor.dispatch({
-      selection: {
-        anchor: editor.state.doc.line(5).from,
-        head: editor.state.doc.line(6).to,
+it.each(["staged", "branch"] as const)(
+  "keeps %s editor selection in exact patch coordinates and resets it for a replacement revision",
+  async (comparison) => {
+    const text =
+      "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -40 +50 @@\n-old\n+new\n";
+    const value: Schema<"GitDiff"> = {
+      repository: {
+        root: "/fixture",
+        git_dir: "/fixture/.git",
+        common_dir: "/fixture/.git",
+        head_oid: "head",
+        branch: "main",
       },
-    }),
-  );
-  expect(
-    screen.getByText("Selected patch lines 5–6 (including headers)"),
-  ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Attach selection" }));
-  await waitFor(() => expect(post).toHaveBeenCalledOnce());
-  expect(post.mock.calls[0]).toEqual([
-    "/api/threads/{thread_id}/host-git-captures",
-    {
-      params: { path: { thread_id: "thread-one" } },
-      body: {
-        repository_path: "/fixture",
-        path: "file",
-        comparison: "staged",
-        expected_revision: "reviewed",
-        start_line: 5,
-        end_line: 6,
+      path: "file",
+      comparison,
+      base_ref: comparison === "branch" ? "origin/main" : null,
+      revision: "reviewed",
+      index_revision: "index",
+      presentation: "text",
+      text,
+    };
+    const post = vi.fn(async () => ({
+      data: { attachment: { attachment_id: "attachment-patch" } },
+    }));
+    const queries = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const draft = new ThreadDraft();
+    draft.draftId = "draft-one";
+    vi.spyOn(draft, "synchronized", "get").mockReturnValue(true);
+    const tree = (revision: string) => (
+      <QueryClientProvider client={queries}>
+        <TransportContext
+          value={{ client: { POST: post } } as unknown as Transport}
+        >
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <PatchEditor
+              key={revision}
+              value={{ ...value, revision }}
+              threadId="thread-one"
+              disabled={false}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>
+    );
+    const view = render(tree("reviewed"));
+    expect(
+      screen.getByText(
+        comparison === "branch" ? "origin/main → HEAD" : "HEAD → index",
+      ),
+    ).toBeTruthy();
+    const editor = EditorView.findFromDOM(
+      await screen.findByLabelText(
+        "Git patch with old and new file line numbers",
+      ),
+    )!;
+    expect(editor.state.doc.toString()).toBe(text);
+    expect(editor.state.readOnly).toBe(true);
+    act(() =>
+      editor.dispatch({
+        selection: {
+          anchor: editor.state.doc.line(5).from,
+          head: editor.state.doc.line(6).to,
+        },
+      }),
+    );
+    expect(
+      screen.getByText("Selected patch lines 5–6 (including headers)"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Attach selection" }));
+    await waitFor(() => expect(post).toHaveBeenCalledOnce());
+    expect(post.mock.calls[0]).toEqual([
+      "/api/threads/{thread_id}/host-git-captures",
+      {
+        params: { path: { thread_id: "thread-one" } },
+        body: {
+          repository_path: "/fixture",
+          path: "file",
+          comparison,
+          expected_revision: "reviewed",
+          start_line: 5,
+          end_line: 6,
+        },
       },
-    },
-  ]);
-  view.rerender(tree("replacement"));
-  expect(screen.queryByRole("button", { name: "Attach selection" })).toBeNull();
-});
+    ]);
+    view.rerender(tree("replacement"));
+    expect(
+      screen.queryByRole("button", { name: "Attach selection" }),
+    ).toBeNull();
+  },
+);

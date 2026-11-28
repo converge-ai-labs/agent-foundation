@@ -111,7 +111,11 @@ export function PatchEditor({
             ? t("HEAD → index")
             : value.comparison === "unstaged"
               ? t("Index → worktree")
-              : t("New file")}
+              : value.comparison === "branch"
+                ? value.base_ref
+                  ? t("{{base}} → HEAD", { base: value.base_ref })
+                  : t("Branch → HEAD")
+                : t("New file")}
         </span>
         <span className={styles.addedCount}>
           +{lines.filter((line) => line.kind === "addition").length}

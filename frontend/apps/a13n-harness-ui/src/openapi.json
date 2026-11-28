@@ -4140,7 +4140,8 @@
               "enum": [
                 "staged",
                 "unstaged",
-                "untracked"
+                "untracked",
+                "branch"
               ],
               "type": "string",
               "default": "unstaged",
@@ -14767,7 +14768,8 @@
                 "enum": [
                   "staged",
                   "unstaged",
-                  "untracked"
+                  "untracked",
+                  "branch"
                 ],
                 "type": "string"
               },
@@ -18975,6 +18977,40 @@
         ],
         "title": "Gauge"
       },
+      "GitBranchChange": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "status"
+        ],
+        "title": "GitBranchChange"
+      },
       "GitChange": {
         "properties": {
           "path": {
@@ -19084,7 +19120,8 @@
             "enum": [
               "staged",
               "unstaged",
-              "untracked"
+              "untracked",
+              "branch"
             ],
             "title": "Comparison"
           },
@@ -19098,6 +19135,28 @@
               }
             ],
             "title": "Head Oid"
+          },
+          "base_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Ref"
+          },
+          "base_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Oid"
           },
           "index_revision": {
             "type": "string",
@@ -19179,7 +19238,8 @@
             "enum": [
               "staged",
               "unstaged",
-              "untracked"
+              "untracked",
+              "branch"
             ],
             "title": "Comparison"
           },
@@ -19214,6 +19274,28 @@
               }
             ],
             "title": "Text"
+          },
+          "base_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Ref"
+          },
+          "base_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Oid"
           }
         },
         "additionalProperties": false,
@@ -19398,6 +19480,47 @@
               }
             ],
             "title": "Next Offset"
+          },
+          "base_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Ref"
+          },
+          "base_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Oid"
+          },
+          "branch_entries": {
+            "items": {
+              "$ref": "#/components/schemas/GitBranchChange"
+            },
+            "type": "array",
+            "title": "Branch Entries",
+            "default": []
+          },
+          "branch_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Error"
           }
         },
         "additionalProperties": false,
@@ -33210,7 +33333,8 @@
             "enum": [
               "staged",
               "unstaged",
-              "untracked"
+              "untracked",
+              "branch"
             ],
             "title": "Comparison",
             "type": "string"

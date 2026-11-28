@@ -5064,7 +5064,7 @@ export interface components {
              * Comparison
              * @default null
              */
-            comparison?: ("staged" | "unstaged" | "untracked") | null;
+            comparison?: ("staged" | "unstaged" | "untracked" | "branch") | null;
         };
         /** ChatGPTSubscriptionAuthentication */
         ChatGPTSubscriptionAuthentication: {
@@ -6465,6 +6465,15 @@ export interface components {
             /** Peak */
             peak: number;
         };
+        /** GitBranchChange */
+        GitBranchChange: {
+            /** Path */
+            path: string;
+            /** Original Path */
+            original_path?: string | null;
+            /** Status */
+            status: string;
+        };
         /** GitChange */
         GitChange: {
             /** Path */
@@ -6512,9 +6521,13 @@ export interface components {
              * Comparison
              * @enum {string}
              */
-            comparison: "staged" | "unstaged" | "untracked";
+            comparison: "staged" | "unstaged" | "untracked" | "branch";
             /** Head Oid */
             head_oid: string | null;
+            /** Base Ref */
+            base_ref?: string | null;
+            /** Base Oid */
+            base_oid?: string | null;
             /** Index Revision */
             index_revision: string;
             /** Revision */
@@ -6535,7 +6548,7 @@ export interface components {
              * Comparison
              * @enum {string}
              */
-            comparison: "staged" | "unstaged" | "untracked";
+            comparison: "staged" | "unstaged" | "untracked" | "branch";
             /** Index Revision */
             index_revision: string;
             /** Revision */
@@ -6547,6 +6560,10 @@ export interface components {
             presentation: "text" | "binary" | "unchanged";
             /** Text */
             text?: string | null;
+            /** Base Ref */
+            base_ref?: string | null;
+            /** Base Oid */
+            base_oid?: string | null;
         };
         /** GitDiscovery */
         GitDiscovery: {
@@ -6595,6 +6612,17 @@ export interface components {
             entries: components["schemas"]["GitChange"][];
             /** Next Offset */
             next_offset: number | null;
+            /** Base Ref */
+            base_ref?: string | null;
+            /** Base Oid */
+            base_oid?: string | null;
+            /**
+             * Branch Entries
+             * @default []
+             */
+            branch_entries?: components["schemas"]["GitBranchChange"][];
+            /** Branch Error */
+            branch_error?: string | null;
         };
         /**
          * GoalView
@@ -11817,7 +11845,7 @@ export interface components {
              * @default unstaged
              * @enum {string}
              */
-            comparison?: "staged" | "unstaged" | "untracked";
+            comparison?: "staged" | "unstaged" | "untracked" | "branch";
             /** Expected Revision */
             expected_revision: string;
             /** Start Line */
@@ -15361,7 +15389,7 @@ export interface operations {
             query: {
                 repository_path: string;
                 path: string;
-                comparison?: "staged" | "unstaged" | "untracked";
+                comparison?: "staged" | "unstaged" | "untracked" | "branch";
                 expected_revision?: string | null;
             };
             header?: never;

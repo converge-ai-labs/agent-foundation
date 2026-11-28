@@ -90,12 +90,11 @@ export function useGitStatus(path: string, includeIgnored: boolean) {
     enabled: !!root && discovery.data?.state === "repository" && !!feature,
     refetchOnMount: "always",
   });
-  return {
-    discovery,
-    status,
-    feature,
-    entries: status.data?.pages.flatMap((page) => page.entries) ?? [],
-  };
+  const entries = useMemo(
+    () => status.data?.pages.flatMap((page) => page.entries) ?? [],
+    [status.data],
+  );
+  return { discovery, status, feature, entries };
 }
 export function changeAxes(
   change: Schema<"GitChange">,
@@ -132,29 +131,52 @@ export function Changes({
   const [ignored, setIgnored] = useState(false);
   const [filter, setFilter] = useState("");
   const { discovery, status, feature, entries } = useGitStatus(path, ignored);
-  const repository =
-    status.data?.pages[0]?.repository ?? discovery.data?.repository;
-  const choices = useMemo(() => {
-    const groups = ["staged", "unstaged", "untracked"] as const;
-    const matches = (
-      status.data?.pages.flatMap((page) => page.entries) ?? []
-    ).filter((entry) =>
+  const firstPage = status.data?.pages[0];
+  const repository = firstPage?.repository ?? discovery.data?.repository;
+  const baseRef = firstPage?.base_ref;
+  const branchEntries = firstPage?.branch_entries;
+  const branchError = firstPage?.branch_error;
+  const { groups, ignoredMatches } = useMemo(() => {
+    const query = filter.toLowerCase();
+    const matchesPath = (entry: {
+      path: string;
+      original_path?: string | null;
+    }) =>
       `${entry.path} ${entry.original_path ?? ""}`
         .toLowerCase()
-        .includes(filter.toLowerCase()),
-    );
-    return repository
-      ? groups.flatMap((comparison) =>
-          matches
-            .filter((entry) => changeAxes(entry).includes(comparison))
-            .map((entry) => ({
-              repository_path: repository.root,
-              path: entry.path,
-              comparison,
+        .includes(query);
+    const matches = entries.filter(matchesPath);
+    const workingAxes = ["staged", "unstaged", "untracked"] as const;
+    return {
+      groups: [
+        ...workingAxes.map((axis) => ({
+          axis,
+          rows: matches.filter((entry) => changeAxes(entry).includes(axis)),
+        })),
+        {
+          axis: "branch" as const,
+          rows: (branchEntries ?? []).filter(matchesPath),
+        },
+      ].filter(({ rows }) => rows.length),
+      ignoredMatches: ignored
+        ? matches.filter((entry) => entry.kind === "ignored")
+        : [],
+    };
+  }, [entries, branchEntries, filter, ignored]);
+  const root = repository?.root;
+  const choices = useMemo(
+    () =>
+      root
+        ? groups.flatMap(({ axis, rows }) =>
+            rows.map(({ path }) => ({
+              repository_path: root,
+              path,
+              comparison: axis,
             })),
-        )
-      : [];
-  }, [status.data, repository?.root, filter]);
+          )
+        : [],
+    [groups, root],
+  );
   useEffect(() => {
     onChoices?.(choices);
   }, [choices, onChoices]);
@@ -171,12 +193,19 @@ export function Changes({
     );
   if (!path)
     return <p>{t("Choose a server directory to inspect its repository.")}</p>;
-  const groups = ["staged", "unstaged", "untracked"] as const;
-  const matches = entries.filter((entry) =>
-    `${entry.path} ${entry.original_path ?? ""}`
-      .toLowerCase()
-      .includes(filter.toLowerCase()),
-  );
+  const labels = {
+    staged: { name: t("Staged"), title: t("HEAD → index") },
+    unstaged: { name: t("Unstaged"), title: t("Index → worktree") },
+    untracked: { name: t("Untracked"), title: t("New files") },
+    branch: {
+      name: baseRef
+        ? t("Committed · {{base}}", { base: baseRef })
+        : t("Committed"),
+      title: baseRef
+        ? t("{{base}} → HEAD", { base: baseRef })
+        : t("Branch → HEAD"),
+    },
+  };
   return (
     <div className={styles.changes}>
       <ErrorNotice
@@ -219,6 +248,7 @@ export function Changes({
             </summary>
             <div>
               <p>{t("Worktree: {{path}}", { path: repository.root })}</p>
+              {baseRef && <p>{t("Base: {{base}}", { base: baseRef })}</p>}
               <DebugOnly>
                 <p>
                   {t("HEAD: {{head}}", {
@@ -271,96 +301,90 @@ export function Changes({
               {t("Counts and filtering cover loaded changes only.")}
             </small>
           )}
-          {groups.map((axis) => {
-            const rows = matches.filter((entry) =>
-              changeAxes(entry).includes(axis),
-            );
-            if (!rows.length) return null;
-            return (
-              <details className={styles.changeGroup} key={axis} open>
-                <summary
-                  title={
-                    axis === "staged"
-                      ? t("HEAD → index")
-                      : axis === "unstaged"
-                        ? t("Index → worktree")
-                        : t("New files")
+          {groups.map(({ axis, rows }) => (
+            <details className={styles.changeGroup} key={axis} open>
+              <summary title={labels[axis].title}>
+                <CaretRight size={12} aria-hidden />
+                <span>{labels[axis].name}</span>
+                <small>
+                  {rows.length}
+                  {axis !== "branch" && status.hasNextPage ? "+" : ""}
+                </small>
+              </summary>
+              {rows.map((entry) => (
+                <button
+                  type="button"
+                  className={`${styles.changeRow} ${selected?.path === entry.path && selected.comparison === axis && selected.repository_path === repository.root ? styles.selected : ""}`}
+                  key={entry.path}
+                  title={entry.path}
+                  onClick={() =>
+                    select(
+                      {
+                        repository_path: repository.root,
+                        path: entry.path,
+                        comparison: axis,
+                      },
+                      choices,
+                    )
                   }
                 >
-                  <CaretRight size={12} aria-hidden />
                   <span>
-                    {axis === "staged"
-                      ? t("Staged")
-                      : axis === "unstaged"
-                        ? t("Unstaged")
-                        : t("Untracked")}
+                    {entry.original_path ? `${entry.original_path} → ` : ""}
+                    {entry.path}
                   </span>
                   <small>
-                    {rows.length}
-                    {status.hasNextPage ? "+" : ""}
-                  </small>
-                </summary>
-                {rows.map((entry) => (
-                  <button
-                    type="button"
-                    className={`${styles.changeRow} ${selected?.path === entry.path && selected.comparison === axis && selected.repository_path === repository.root ? styles.selected : ""}`}
-                    key={entry.path}
-                    title={entry.path}
-                    onClick={() =>
-                      select(
-                        {
-                          repository_path: repository.root,
-                          path: entry.path,
-                          comparison: axis,
-                        },
-                        choices,
-                      )
-                    }
-                  >
-                    <span>
-                      {entry.original_path ? `${entry.original_path} → ` : ""}
-                      {entry.path}
-                    </span>
-                    <small>
-                      {entry.kind === "conflicted"
+                    {"status" in entry
+                      ? entry.status
+                      : entry.kind === "conflicted"
                         ? t("Conflict")
                         : axis === "staged"
                           ? entry.index_status
                           : axis === "unstaged"
                             ? entry.worktree_status
                             : t("New")}
-                      {entry.submodule && entry.submodule !== "N..."
-                        ? ` - ${entry.submodule}`
-                        : ""}
-                    </small>
-                  </button>
-                ))}
-              </details>
-            );
-          })}
-          {ignored &&
-            matches
-              .filter((entry) => entry.kind === "ignored")
-              .map((entry) => (
-                <button
-                  type="button"
-                  className={styles.changeRow}
-                  key={entry.path}
-                  onClick={() => openFile(gitPath(repository.root, entry.path))}
-                >
-                  <span>{entry.path}</span>
-                  <small>{t("Open in Files")}</small>
+                    {"submodule" in entry &&
+                    entry.submodule &&
+                    entry.submodule !== "N..."
+                      ? ` - ${entry.submodule}`
+                      : ""}
+                  </small>
                 </button>
               ))}
-          {!matches.length && status.isSuccess && !status.error && (
-            <p className={styles.changeEmpty}>
-              {filter
-                ? t("No loaded changes match this filter.")
-                : status.hasNextPage
-                  ? t("No changes in this loaded page.")
-                  : t("No changes in this worktree.")}
-            </p>
+            </details>
+          ))}
+          {branchError && (
+            <ErrorNotice
+              inline
+              error={branchError}
+              message={t("Couldn't load committed changes: {{message}}", {
+                message: branchError,
+              })}
+            />
           )}
+          {ignoredMatches.map((entry) => (
+            <button
+              type="button"
+              className={styles.changeRow}
+              key={entry.path}
+              onClick={() => openFile(gitPath(repository.root, entry.path))}
+            >
+              <span>{entry.path}</span>
+              <small>{t("Open in Files")}</small>
+            </button>
+          ))}
+          {!groups.length &&
+            !ignoredMatches.length &&
+            !branchError &&
+            status.isSuccess &&
+            !status.error && (
+              <p className={styles.changeEmpty}>
+                {filter
+                  ? t("No loaded changes match this filter.")
+                  : status.hasNextPage
+                    ? t("No changes in this loaded page.")
+                    : t("No changes in this worktree.")}
+              </p>
+            )}
           {status.hasNextPage && (
             <Button
               variant="ghost"

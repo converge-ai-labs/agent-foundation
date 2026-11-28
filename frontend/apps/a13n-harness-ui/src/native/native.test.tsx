@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import {
   act,
   cleanup,
@@ -21,7 +22,7 @@ import { i18n } from "../i18n";
 import { FileBuffers, FileBuffer } from "./buffer";
 import { FileView } from "./file-view";
 import { NativeWorkspace } from "./workspace";
-import { Changes } from "./changes";
+import { Changes, DiffView, type DiffSelection } from "./changes";
 import { FileOperation, Files } from "./files";
 
 vi.mock("../configuration/editor", () => ({
@@ -406,6 +407,145 @@ it("filters changed files, keeps pagination scoped, and exposes ignored files in
       screen.queryByRole("button", { name: "Load more changes" }),
     ).toBeNull(),
   );
+});
+
+it("filters and navigates committed changes from a clean linked worktree", async () => {
+  const f = fixture();
+  const repository = {
+    root: "/code/.worktrees/feature",
+    git_dir: "/code/.git/worktrees/feature",
+    common_dir: "/code/.git",
+    head_oid: "head",
+    branch: "feature",
+  };
+  const branchEntries = [
+    { path: "checkout.ts", status: "M" },
+    { path: "current.md", original_path: "legacy.md", status: "R" },
+  ];
+  f.get.mockImplementation(async (path, options) => {
+    if (path === "/api/status")
+      return { data: { features: { host_git: true } } };
+    if (path === "/api/host/git/repository")
+      return { data: { state: "repository", repository } };
+    if (path === "/api/host/git/status")
+      return {
+        data: {
+          repository,
+          revision: "status-version",
+          next_offset: null,
+          entries: [],
+          base_ref: "origin/main",
+          branch_entries: branchEntries,
+        },
+      };
+    const { query } = (options as { params: { query: DiffSelection } }).params;
+    return { data: { repository, ...query, presentation: "binary" } };
+  });
+  function Review() {
+    const [selection, setSelection] = useState<DiffSelection | null>(null);
+    const [choices, setChoices] = useState<DiffSelection[]>([]);
+    return (
+      <>
+        <Changes
+          path={repository.root}
+          selected={selection}
+          select={setSelection}
+          openFile={() => {}}
+          onChoices={setChoices}
+        />
+        {selection && (
+          <DiffView
+            selection={selection}
+            choices={choices}
+            openFile={() => {}}
+            navigate={setSelection}
+          />
+        )}
+      </>
+    );
+  }
+  render(<Review />, { wrapper: f.Wrapper });
+  const user = userEvent.setup();
+  const group = await screen.findByTitle("origin/main → HEAD");
+  expect(within(group).getByText("Committed · origin/main")).toBeTruthy();
+  expect(within(group).getByText("2")).toBeTruthy();
+  expect(screen.queryByText("No changes in this worktree.")).toBeNull();
+  await user.click(screen.getByLabelText("Repository details"));
+  expect(screen.getByText("Base: origin/main")).toBeTruthy();
+  const filter = screen.getByLabelText("Filter loaded changes by path");
+  await user.type(filter, "LEGACY");
+  expect(
+    screen.getByRole("button", { name: /legacy\.md → current\.md\s*R/ }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /checkout\.ts/ })).toBeNull();
+  await user.clear(filter);
+  const expectDiff = (path: string) =>
+    waitFor(() =>
+      expect(f.get).toHaveBeenCalledWith(
+        "/api/host/git/diff",
+        expect.objectContaining({
+          params: {
+            query: {
+              repository_path: repository.root,
+              path,
+              comparison: "branch",
+            },
+          },
+        }),
+      ),
+    );
+  await user.click(screen.getByRole("button", { name: /checkout\.ts\s*M/ }));
+  await expectDiff("checkout.ts");
+  expect(screen.getByText("1 / 2")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Next file" }));
+  await expectDiff("current.md");
+  expect(screen.getByText("2 / 2")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Previous file" }));
+  expect(screen.getByText("1 / 2")).toBeTruthy();
+});
+
+it("shows a bounded branch error without losing working-tree changes or claiming the worktree is clean", async () => {
+  const f = fixture();
+  const repository = {
+    root: "/code",
+    git_dir: "/code/.git",
+    common_dir: "/code/.git",
+    head_oid: "head",
+    branch: "feature",
+  };
+  f.get.mockImplementation(async (path) => {
+    if (path === "/api/status")
+      return { data: { features: { host_git: true } } };
+    if (path === "/api/host/git/repository")
+      return { data: { state: "repository", repository } };
+    return {
+      data: {
+        repository,
+        revision: "status-version",
+        next_offset: null,
+        entries: [{ path: "local.txt", kind: "untracked" }],
+        branch_error: "Git branch changes exceed 10000 entries.",
+      },
+    };
+  });
+  render(
+    <Changes
+      path={repository.root}
+      selected={null}
+      select={() => {}}
+      openFile={() => {}}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Couldn't load committed changes",
+  );
+  expect(screen.getByRole("button", { name: /local\.txt/ })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Filter loaded changes by path"), {
+    target: { value: "missing" },
+  });
+  expect(screen.queryByText("No loaded changes match this filter.")).toBeNull();
+  expect(screen.queryByText("No changes in this worktree.")).toBeNull();
 });
 
 it("nonstandard source separators offer only explicit whole-source capture, for Files and Changes", async () => {

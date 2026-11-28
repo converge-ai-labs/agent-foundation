@@ -1474,6 +1474,31 @@ it("a chat without a Project does not pick another Project's folder", async () =
   ).toBe(false);
 });
 
+it.each(["/native", "/tmp/linked-worktree"])(
+  "Changes shows the project folder switcher only inside its working folders: %s",
+  async (root) => {
+    setup(
+      `/threads/current?native=changes&native_path=${encodeURIComponent(root)}`,
+      true,
+      undefined,
+      "project-one",
+      "project-one",
+      ["/native", "/other"],
+    );
+    await screen.findByText(`Repository ${root} - Diff`);
+    const folders = screen.queryByRole("navigation", {
+      name: "Working folders",
+    });
+    if (root === "/native") {
+      expect(folders).not.toBeNull();
+      fireEvent.click(within(folders!).getByRole("button", { name: "other" }));
+      await screen.findByText("Repository /other - Diff");
+    } else {
+      expect(folders).toBeNull();
+    }
+  },
+);
+
 it.each(["file", "diff"])(
   "explicit projectless %s links retain their explorer without a folder chooser",
   async (target) => {
