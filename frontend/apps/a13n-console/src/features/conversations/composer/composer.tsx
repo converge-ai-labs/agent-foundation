@@ -218,6 +218,11 @@ export function Composer({
               changed();
             }}
             onKeyDown={(event) => {
+              if (
+                event.nativeEvent.isComposing ||
+                event.nativeEvent.keyCode === 229
+              )
+                return;
               if (event.key === "Escape" && stopMode) {
                 event.preventDefault();
                 stop?.();
@@ -227,8 +232,7 @@ export function Composer({
                 event.key !== "Enter" ||
                 !(event.metaKey || event.ctrlKey) ||
                 event.shiftKey ||
-                event.altKey ||
-                event.nativeEvent.isComposing
+                event.altKey
               )
                 return;
               event.preventDefault();

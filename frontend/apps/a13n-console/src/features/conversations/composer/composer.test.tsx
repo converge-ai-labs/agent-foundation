@@ -33,14 +33,17 @@ vi.mock("react-i18next", () => ({
 }));
 afterEach(cleanup);
 
-function mount(submit: (input: unknown, key: string) => Promise<void | false>) {
+function mount(
+  submit: (input: unknown, key: string) => Promise<void | false>,
+  stop?: () => void,
+) {
   render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { mutations: { retry: false } } })
       }
     >
-      <Composer submit={submit} />
+      <Composer submit={submit} stop={stop} />
     </QueryClientProvider>,
   );
   return screen.getByRole("textbox", { name: "Message" });
@@ -73,11 +76,11 @@ it.each(["metaKey", "ctrlKey"])(
       [modifier]: true,
       shiftKey: true,
     });
-    fireEvent.keyDown(input, {
-      key: "Enter",
-      [modifier]: true,
-      isComposing: true,
-    });
+    for (const ime of [{ isComposing: true }, { keyCode: 229 }]) {
+      expect(
+        fireEvent.keyDown(input, { key: "Enter", [modifier]: true, ...ime }),
+      ).toBe(true);
+    }
     expect(submit).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Enter", [modifier]: true });
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
@@ -106,6 +109,17 @@ it("retains message and attachment drafts when closing the attachment dialog", a
     type: "url",
     url: "https://example.com/report.pdf",
   });
+});
+
+it("leaves Escape to the IME before handling Stop", () => {
+  const stop = vi.fn();
+  const input = mount(vi.fn(), stop);
+  for (const ime of [{ isComposing: true }, { keyCode: 229 }]) {
+    expect(fireEvent.keyDown(input, { key: "Escape", ...ime })).toBe(true);
+  }
+  expect(stop).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(stop).toHaveBeenCalledOnce();
 });
 
 it("keeps the waveform action usable after audio startup fails with an empty draft", async () => {

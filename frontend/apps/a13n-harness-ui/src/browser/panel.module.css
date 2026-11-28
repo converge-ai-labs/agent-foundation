@@ -186,7 +186,11 @@
   bottom: 12px;
   left: 12px;
   right: 12px;
-  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
   padding: 8px 12px;
   border-radius: 8px;
   background: var(--a13n-elevated);
@@ -194,4 +198,14 @@
   box-shadow: var(--a13n-shadow);
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   pointer-events: none;
+}
+
+.inputNotice button {
+  pointer-events: auto;
+}
+
+@media (pointer: coarse) {
+  .inputNotice button {
+    min-height: 44px;
+  }
 }

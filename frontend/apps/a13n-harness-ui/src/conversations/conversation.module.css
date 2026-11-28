@@ -619,6 +619,11 @@
   font-size: var(--harness-prose-size);
   line-height: var(--harness-prose-leading);
 }
+@supports not (field-sizing: content) {
+  .messageEditor textarea {
+    min-height: 3lh;
+  }
+}
 .messageEditor textarea:focus-visible {
   outline: none;
   box-shadow: none;

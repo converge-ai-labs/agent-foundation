@@ -20,7 +20,10 @@ vi.mock("./dictation-audio", () => ({
   recordAudio: vi.fn(async () => async () => new Blob(["sample"])),
   encodeAudio: async () => "recorded-audio",
 }));
-afterEach(cleanup);
+afterEach(() => {
+  window.getSelection()?.removeAllRanges();
+  cleanup();
+});
 
 it("keeps comment dictation and its retry attached to the quote when working elsewhere", async () => {
   Object.defineProperty(Range.prototype, "getClientRects", {
@@ -93,4 +96,33 @@ it("keeps comment dictation and its retry attached to the quote when working els
   expect(draft.annotations).toMatchObject([
     { text: "Review this change", comment: "Looks good." },
   ]);
+});
+
+it("leaves composing Enter and WebKit's 229 confirmation to the IME", async () => {
+  const reader = createRef<HTMLDivElement>();
+  const draft = new ThreadDraft();
+  const user = userEvent.setup();
+  render(
+    <ReplyAnnotations draft={draft} reader={reader} enabled>
+      <div ref={reader}>
+        <p data-reply-source="reply">Review this change</p>
+      </div>
+    </ReplyAnnotations>,
+  );
+  const range = document.createRange();
+  range.selectNodeContents(screen.getByText("Review this change"));
+  window.getSelection()!.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  await user.click(await screen.findByRole("button", { name: "Add to chat" }));
+  const comment = screen.getByRole("textbox", { name: "Annotation comment" });
+  fireEvent.change(comment, { target: { value: "確認" } });
+  for (const ime of [{ isComposing: true }, { keyCode: 229 }]) {
+    expect(fireEvent.keyDown(comment, { key: "Enter", ...ime })).toBe(true);
+  }
+  expect(draft.annotations).toEqual([]);
+  expect(screen.getByRole("textbox", { name: "Annotation comment" })).toBe(
+    comment,
+  );
+  fireEvent.keyDown(comment, { key: "Enter" });
+  expect(draft.annotations).toMatchObject([{ comment: "確認" }]);
 });

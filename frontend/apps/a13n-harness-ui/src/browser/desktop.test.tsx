@@ -40,6 +40,11 @@ const { connections, controls } = vi.hoisted(() => ({
     sendKey: ReturnType<typeof vi.fn>;
     clipboardPasteFrom: ReturnType<typeof vi.fn>;
     canvas: HTMLCanvasElement;
+    getImageData: () => {
+      width: number;
+      height: number;
+      data: Uint8ClampedArray;
+    };
   })[],
 }));
 vi.mock("@novnc/novnc", () => ({
@@ -246,6 +251,21 @@ it("captures a read-only framebuffer without acquiring control or reconnecting",
   await waitFor(() => expect(document.activeElement).toBe(capture));
   expect(connections[0].viewOnly).toBe(true);
 });
+it("reports capture failures without needing remote input authority", async () => {
+  await show();
+  vi.spyOn(connections[0], "getImageData").mockReturnValue({
+    width: 0,
+    height: 0,
+    data: new Uint8ClampedArray(),
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Capture and annotate screenshot" }),
+  );
+  expect(
+    screen.getByText("Wait for a browser frame before capturing."),
+  ).toBeTruthy();
+});
+
 it("suspends controller input while editing and returns to chat after copy", async () => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     putImageData: vi.fn(),
@@ -520,4 +540,51 @@ it("keeps a third-party clipboard error raw across language changes", async () =
   });
   expect(screen.getByText(message)).toBeTruthy();
   expect(view.post).toHaveBeenCalledTimes(requests);
+});
+
+it("copies rejected remote text from the notice and removes the action on handback", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  try {
+    const view = await show();
+    view.update("controller-a");
+    await screen.findByRole("textbox", {
+      name: "Remote browser keyboard input",
+    });
+    const offer = async (text: string) => {
+      writeText.mockRejectedValueOnce(
+        new DOMException("blocked", "NotAllowedError"),
+      );
+      await act(async () => {
+        connections[1].dispatchEvent(
+          new CustomEvent("clipboard", { detail: { text } }),
+        );
+      });
+      return screen.findByRole("button", { name: "Copy remote text" });
+    };
+    const copy = await offer("remote text");
+    copy.focus();
+    fireEvent.click(copy);
+    expect(writeText).toHaveBeenLastCalledWith("remote text");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Copy remote text" }),
+      ).toBeNull(),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Remote browser keyboard input",
+    });
+    input.focus();
+    const expired = await offer("must stay remote");
+    view.update();
+    expect(
+      screen.queryByRole("button", { name: "Copy remote text" }),
+    ).toBeNull();
+    const writes = writeText.mock.calls.length;
+    fireEvent.click(expired);
+    expect(writeText).toHaveBeenCalledTimes(writes);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

@@ -119,10 +119,11 @@ export function Desktop({
   const [clipboardError, setClipboardErrorState] = useState({
     message: "",
     external: false,
+    canCopyRemote: false,
   });
   const setClipboardError = useCallback(
-    (message: string, external = false) =>
-      setClipboardErrorState({ message, external }),
+    (message: string, external = false, canCopyRemote = false) =>
+      setClipboardErrorState({ message, external, canCopyRemote }),
     [],
   );
   const clipboard = useRef<ReturnType<typeof bindClipboard> | null>(null);
@@ -620,13 +621,25 @@ export function Desktop({
             </div>
           </div>
         )}
-        {!!clipboardError.message && (
-          <p className={styles.inputNotice} role="status">
-            {clipboardError.external
-              ? clipboardError.message
-              : t(clipboardError.message)}
-          </p>
-        )}
+        {!!clipboardError.message &&
+          (interactive || !clipboardError.canCopyRemote) && (
+            <div className={styles.inputNotice}>
+              <span role="status">
+                {clipboardError.external
+                  ? clipboardError.message
+                  : t(clipboardError.message)}
+              </span>
+              {clipboardError.canCopyRemote && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => void clipboard.current?.copyRemote()}
+                >
+                  {t("Copy remote text")}
+                </Button>
+              )}
+            </div>
+          )}
       </div>
     </>
   );
