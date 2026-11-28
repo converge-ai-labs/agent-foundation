@@ -25,6 +25,7 @@ import { presentItems } from "../projection";
 
 let displayItems: DisplayItem[] = [];
 let navigation = false;
+let realtime = false;
 let pendingDetail: Promise<void> | undefined;
 let pendingItems: Promise<void> | undefined;
 let firstOrdinal = 1;
@@ -83,6 +84,7 @@ vi.mock("./inbox", () => ({ ThreadInbox: () => <p>Thread inbox</p> }));
 beforeEach(() => {
   displayItems = [];
   navigation = false;
+  realtime = false;
   pendingDetail = undefined;
   pendingItems = undefined;
   firstOrdinal = 1;
@@ -187,8 +189,9 @@ beforeEach(() => {
             thread_id: "thread",
             session_id: "session",
             agent_id: "agent",
-            status: "failed",
-            input: textInput("Build an agent"),
+            status: realtime ? "completed" : "failed",
+            trigger: realtime ? "realtime" : "input",
+            input: realtime ? null : textInput("Build an agent"),
             output: null,
             revision_selection: "pinned",
             options: { max_usage: { requests: 4 } },
@@ -262,6 +265,27 @@ it("reads the level from the URL and shows the run's display at either level", a
     (request) => new URL(request.url).pathname.split("/").at(-1) === "attempts",
   );
   expect(panels).toEqual([]);
+});
+
+it("copies only the last assistant reply in an interleaved voice conversation", async () => {
+  realtime = true;
+  const user = userEvent.setup();
+  displayItems = ["First reply", "Next question", "Second reply"].map(
+    (text, index) => ({
+      id: "itm_" + index,
+      ordinal: index + 1,
+      kind: "text_message",
+      state: "completed",
+      started_at: new Date(index * 1000).toISOString(),
+      first_stream_id: "1-" + index,
+      last_stream_id: "1-" + index,
+      content: { role: index === 1 ? "user" : "assistant", text },
+    }),
+  );
+  show();
+  const button = await screen.findByRole("button", { name: "Copy reply" });
+  await user.click(button);
+  expect(await navigator.clipboard.readText()).toBe("Second reply");
 });
 
 it("keeps retained observations inside Debug and loads their full content on demand", async () => {

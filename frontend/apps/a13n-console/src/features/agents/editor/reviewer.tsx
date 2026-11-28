@@ -34,6 +34,8 @@ import styles from "./editor.module.css";
 import { ModelIcon, providerBrand } from "../../models/model-icon";
 import { useMountedModal } from "../../../shared/dialogs";
 
+import { useRequestModelChoices } from "../../models/provider-definitions";
+
 const risks = [
   { value: "low", label: "Low risk" },
   { value: "medium", label: "Medium risk" },
@@ -58,34 +60,43 @@ export function ReviewerSection({
 }) {
   const { t } = useTranslation();
   const reviewer = draft.reviewer;
+  const { definitions, accepts } = useRequestModelChoices();
   function patch(change: Partial<Reviewer>) {
     draft.setReviewer({ ...reviewer, model: reviewer?.model ?? "", ...change });
   }
   return (
     <>
+      <ErrorNotice
+        error={definitions.error}
+        retry={() => void definitions.refetch()}
+      />
       <ChoiceField
         popupClassName={formStyles.compactChoicePopup}
         label={t("Review model")}
         readOnly={readOnly}
+        disabled={!definitions.data}
         value={reviewer?.model ?? ""}
         options={[
           { value: "", label: t("Not configured") },
-          ...(choices.data?.models ?? []).map((model) => ({
-            value: model.key,
-            label: model.name,
-            icon: (
-              <ModelIcon
-                upstream={model.config.model_name}
-                catalogRef={model.catalog_ref}
-                provider={providerBrand(
-                  choices.data?.providers?.find(
-                    (provider) => provider.id === model.provider_id,
-                  ),
-                )}
-                size={20}
-              />
-            ),
-          })),
+          ...(choices.data?.models ?? [])
+            .filter((model) => accepts(model) || model.key === reviewer?.model)
+            .map((model) => ({
+              disabled: !accepts(model),
+              value: model.key,
+              label: model.name,
+              icon: (
+                <ModelIcon
+                  upstream={model.config.model_name}
+                  catalogRef={model.catalog_ref}
+                  provider={providerBrand(
+                    choices.data?.providers?.find(
+                      (provider) => provider.id === model.provider_id,
+                    ),
+                  )}
+                  size={20}
+                />
+              ),
+            })),
         ]}
         onValueChange={(model) =>
           model ? patch({ model }) : draft.setReviewer(undefined)
@@ -198,6 +209,7 @@ export function ReviewerSettings({
 }) {
   const { close: onClose, modalProps } = useMountedModal(onClosed);
   const { t } = useTranslation();
+  const { definitions, accepts } = useRequestModelChoices();
   const [value, setValue] = useState<Reviewer>(() => ({
     ...initial,
     model: initial?.model ?? "",
@@ -285,13 +297,16 @@ export function ReviewerSettings({
         <SheetPanel>
           <ErrorNotice error={error} />
           <ErrorNotice
-            error={modelLookup?.error}
-            retry={() => void modelLookup?.refetch()}
+            error={modelLookup?.error ?? definitions.error}
+            retry={() => {
+              if (modelLookup?.error) void modelLookup.refetch();
+              if (definitions.error) void definitions.refetch();
+            }}
           />
           <div className="grid gap-5">
             <FormField label={t("Review model")}>
               <SearchPicker
-                disabled={readOnly}
+                disabled={readOnly || !definitions.data}
                 label={t("Review model")}
                 placeholder={t("Choose a model…")}
                 emptyMessage={t(
@@ -306,10 +321,15 @@ export function ReviewerSettings({
                 groups={[
                   {
                     label: t("Available models"),
-                    options: models.map((model) => ({
-                      value: model.key,
-                      label: model.name,
-                    })),
+                    options: models
+                      .filter(
+                        (model) => accepts(model) || model.key === value.model,
+                      )
+                      .map((model) => ({
+                        disabled: !accepts(model),
+                        value: model.key,
+                        label: model.name,
+                      })),
                   },
                 ]}
               />

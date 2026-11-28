@@ -191,3 +191,19 @@ async def test_local_notification_waits_for_commit_and_ignores_rollback_and_syst
             async with transaction(service.runtime.storage) as session:
                 mailbox.notify(session, SimpleNamespace(thread_id="thread", kind=kind, delivery=delivery))
             assert not ready.is_set()
+
+
+async def test_retained_tool_notice_wakes_realtime_but_not_ordinary_input(service, monkeypatch):
+    mailbox = service.runtime.mailbox
+
+    async def no_remote_input(thread_ids, *, realtime=False):
+        return set()
+
+    monkeypatch.setattr(mailbox, "_pending", no_remote_input)
+    entry = SimpleNamespace(thread_id="thread", kind="tool_result", delivery="steer")
+    async with mailbox.listen("thread") as ordinary, mailbox.listen("thread", realtime=True) as realtime:
+        async with transaction(service.runtime.storage) as session:
+            mailbox.notify(session, entry)
+            assert not realtime.is_set()
+        assert realtime.is_set()
+        assert not ordinary.is_set()

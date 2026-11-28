@@ -115,7 +115,7 @@ permissions = ToolPermissionsCapability(
 
 ## 处理审批与输出上限
 
-- **人工审批：** 工具内部也可读取 `ctx.deps.tool_approval` 或抛出 `ApprovalRequired`。挂起后使用 `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` 恢复运行（见[人机协作](human-in-the-loop.md)）。
+- **人工审批：** 工具内部也可读取 `ctx.deps.tool_approval` 或抛出 `ApprovalRequired`。写入数据、发送有副作用的请求或启动收费任务之前，应先申请审批。审批通过后，框架可能重新调用工具函数。挂起后使用 `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` 恢复运行（见[人机协作](human-in-the-loop.md)）。
 - **输出截断与落盘（`ToolOutputPolicy`）：** 支持 `overflow="spill"`（默认，在存在可写环境挂载时将脱敏后的完整输出写入 `.a13n/tmp/tool-results/`）、`"truncate"` 或 `"fail"`。
 
 ### 无人值守运行

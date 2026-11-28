@@ -30,6 +30,7 @@ from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamOb
 from a13n_stream_protocol.fragments import CustomEventAssembler, FragmentState
 from a13n_stream_protocol.memory import MemorySource, memory_sources
 from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT, AguiEventProcessor, ObserverContinuation
+from a13n_stream_protocol.realtime import REALTIME_TRANSCRIPT_EVENT
 
 type ItemKind = Literal["text_message", "reasoning_message", "tool_call", "observation"]
 type ItemState = Literal["in_progress", "completed", "interrupted", "failed"]
@@ -522,6 +523,19 @@ class DisplayFold:
                 key, "tool_call", previous.state, {**previous.content, "acp": details}, at=_occurred(payload)
             )
         input_event = value.get("event") if isinstance(value, dict) else None
+        if assembled.get("name") == REALTIME_TRANSCRIPT_EVENT and isinstance(input_event, dict):
+            message_id = str(input_event["message_id"])
+            scope = assembled.get("subagentRunId")
+            key = item_id(self.run_id, "text_message", f"{scope}:{message_id}" if scope else message_id)
+            text = str(input_event["text"])
+            if not text.strip() and key not in self.items:
+                return None
+            content: dict[str, JsonValue] = {"messageId": message_id, "role": input_event["role"], "speech": True}
+            if isinstance(scope, str):
+                content["subagentRunId"] = scope
+            self._bounded(content, "text", text)
+            state = "completed" if input_event["final"] else "in_progress"
+            return self._put(key, "text_message", state, content, at=_occurred(assembled))
         lifecycle = input_event.get("payload") if isinstance(input_event, dict) else None
         if (
             assembled.get("name") == "a13n.harness.lifecycle"

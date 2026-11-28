@@ -92,25 +92,38 @@ async def test_a_steer_a_recovered_attempt_cannot_read_fails_alone(service, scri
 
 async def test_a_steer_joins_with_the_default_options_or_the_runs_own(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Acceptance freezes a run's options with their pins resolved; a steer names them as submitted, or none."""
+    from .test_agents import create_skill
+    from .test_realtime import create_voice_agent
+
     service = skill_service
-    agent = await runs_kit.delegating(service, scripted_model, "inline", **runs_kit.LOOKUP)
+    agent = await create_voice_agent(service, runs_kit)
+    text_model = await runs_kit.create_model(service, scripted_model)
+    skill = await create_skill(service)
     gate = asyncio.Event()
     for _ in range(3):
-        scripted_model.say("Done", gate=gate, to="Role: coordinator")
-    revision = await service.client.get(f"{service.api}/agents/{agent['id']}/revisions/{agent['default_revision_id']}")
-    helper = revision.json()["config"]["subagents"]["named"]["helper"]
-    options = {
-        "labels": {"team": "a"},
-        "overrides": {
-            "subagents": {"mode": "inline", "named": {"helper": {**helper, "description": "Overridden helper"}}}
-        },
-    }
+        scripted_model.say("Done", gate=gate)
+    options = {"labels": {"team": "a"}, "overrides": {"model": text_model, "skills": [{"skill_id": skill["id"]}]}}
     submitted = await runs_kit.start_thread(service, agent, "look around", options=options)
     thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
+    assert submitted["run"]["options"]["overrides"]["skills"] == [
+        {"skill_id": skill["id"], "revision_id": skill["default_revision_id"]}
+    ]
+    new_revision = await service.client.post(
+        f"{service.api}/agents/{agent['id']}/revisions",
+        json={"config": {"model": "voice", "instructions": "New default"}},
+        headers=runs_kit.if_match(agent),
+    )
+    assert new_revision.status_code == 201, new_revision.text
+    other_revision = await runs_kit.submit(
+        service, thread_id, runs_kit.message(agent, "start voice", agent_revision_id=new_revision.json()["id"])
+    )
+    assert other_revision.status_code == 400 and "realtime conversation" in other_revision.text
     running = await runs_kit.attempt(service)
     await scripted_model.request()
     # A client such as the Console steers with no options; another names the run's options as submitted.
     plain = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "also count"))
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["entry"]["options"]["overrides"] is None
     assert "also count" in str(runs_kit.user_texts(await scripted_model.request()))
     same = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "and list", options=options))
     assert "and list" in str(runs_kit.user_texts(await scripted_model.request()))

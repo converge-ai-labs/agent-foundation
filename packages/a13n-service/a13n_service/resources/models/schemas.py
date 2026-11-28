@@ -117,6 +117,7 @@ class ModelPage(BaseModel):
 class CatalogModel(BaseModel):
     """A catalog model, with the characteristics and pricing a model created from it starts with."""
 
+    model_api: str | None = None
     ref: CatalogRef
     # Shared by the copies of one model on every channel, such as `anthropic/claude-opus-5`; `name` is its name.
     identity: str

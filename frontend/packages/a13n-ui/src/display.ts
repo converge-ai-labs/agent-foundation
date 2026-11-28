@@ -357,7 +357,16 @@ export class DisplayNormalizer {
       } else this.bounded(content, "result", String(event.content ?? ""));
     }
     if (type === "CUSTOM") {
-      if (
+      if (name === "a13n.realtime.transcript") {
+        content = {
+          messageId: source.message_id,
+          role: source.role,
+          speech: true,
+        };
+        if ("subagentRunId" in event)
+          content.subagentRunId = event.subagentRunId;
+        this.bounded(content, "text", String(source.text));
+      } else if (
         name === "a13n.input.user" ||
         name === "a13n.input.steering" ||
         (name === "a13n.input.media" &&

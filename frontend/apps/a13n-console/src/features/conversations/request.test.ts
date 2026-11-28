@@ -212,3 +212,14 @@ it("only enables interaction for the matching Console session and a human-driven
     isInteractive(fixtureThread({ purpose: "memory_organization" }), session),
   ).toBe(false);
 });
+
+it("treats a realtime start as session metadata, without an Inbox entry", () => {
+  expect(
+    runRequest(
+      run({
+        trigger: "realtime" as const,
+        input: null,
+      }),
+    ),
+  ).toEqual({ kind: "realtime_session", text: "" });
+});

@@ -65,8 +65,16 @@ export function CatalogPicker({
     [entries, channels],
   );
   const groups = useMemo(
-    () => groupCatalog(compatible ? entries : native),
-    [compatible, entries, native],
+    () =>
+      groupCatalog(
+        compatible
+          ? entries.filter(
+              (entry) =>
+                !entry.model_api || channels.includes(entry.ref.provider),
+            )
+          : native,
+      ),
+    [compatible, entries, native, channels],
   );
   const search = query.trim().toLocaleLowerCase();
   const matches = useMemo(

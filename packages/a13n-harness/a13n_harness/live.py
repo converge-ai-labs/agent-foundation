@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
+import json
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
+import anyio
+from a13n_logging import get_logger
 from pydantic import TypeAdapter
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapperCapability
@@ -22,6 +26,7 @@ from pydantic_ai.messages import (
     PartEndEvent,
     PartStartEvent,
     RealtimeSessionReconnectEvent,
+    RealtimeTurnCompleteEvent,
     RetryPromptPart,
     SpeechPart,
     SpeechPartDelta,
@@ -34,6 +39,7 @@ from pydantic_ai.realtime import (
     AudioRetention,
     RealtimeModel,
     RealtimeModelSettings,
+    RealtimeProviderSession,
     RealtimeSession,
     RealtimeSessionInput,
 )
@@ -65,6 +71,23 @@ if TYPE_CHECKING:
     from a13n_harness.execution import ExecutableAgent
 
 
+_WEBRTC_HANGUP_SECONDS = 5
+
+
+@dataclass(frozen=True, slots=True)
+class LiveWebRTC:
+    """Host callbacks for signaling and durable provider-call tracking.
+
+    When supplied, record_call saves the call ID before the answer is delivered. After a
+    successful hangup it receives None. Hosts that retry cleanup handle transient storage
+    errors there. Raising from the callback signals that the Run cannot safely finish.
+    """
+
+    offer: str
+    deliver_answer: Callable[[str], Awaitable[None]]
+    record_call: Callable[[str | None], Awaitable[None]] | None = None
+
+
 def _semantic_event(event: Any) -> Any | None:
     """Keep media on native playback, never in the Harness observation channel."""
     if isinstance(event, PartDeltaEvent) and isinstance(event.delta, SpeechPartDelta):
@@ -80,8 +103,13 @@ def _semantic_event(event: Any) -> Any | None:
 class _LiveCapability(AbstractCapability[AgentContext]):
     def __init__(self, stream: HarnessLiveStream) -> None:
         self.stream = stream
+        self.spoken: dict[asyncio.Task[ModelContextProjection], tuple[int, str]] = {}
+        self.recall_bytes_sent = 0
+        self.recall_lock = asyncio.Lock()
+        self.turn = 0
         self.initial = ModelContextProjection()
         self._initial_instructions: str | None = None
+        self.prepare_dispatcher = True
         self.delivered = ModelContextProjection()
         self.pending: dict[str, ModelContextProjection] = {}
         self.ambiguous: set[tuple[str, str | None]] = set()
@@ -146,25 +174,82 @@ class _LiveCapability(AbstractCapability[AgentContext]):
             ctx.cancel()
         # Native realtime re-resolves instructions before tool results. Keep the
         # connection baseline and its dispatcher adapter stable across refreshes.
+        if self.prepare_dispatcher:
+            manager = ctx.tool_manager
+            assert manager is not None and manager.root_capability is not None
+            # Run-step managers retain the wrapper installed on the live dispatcher.
+            manager.root_capability = _LiveDeferredResults(manager.root_capability, self)
+            self.prepare_dispatcher = False
         if self._initial_instructions is not None:
             return self._initial_instructions
-        manager = ctx.tool_manager
-        assert manager is not None and manager.root_capability is not None
-        # Decorate only the prepared native tool dispatcher, not the Agent's
-        # registered capability tree. This stateless adapter adds no lifecycle,
-        # tools, or ordering requirements; run-step managers retain the wrapper.
-        if not isinstance(manager.root_capability, _LiveDeferredResults):
-            manager.root_capability = _LiveDeferredResults(manager.root_capability, self)
         projection = await _project_model_context(
             ctx,
             ModelContextProjectionRequest(
                 kind=ModelContextRequestKind.INPUT,
-                input_origin=ModelContextInputOrigin.USER,
+                input_origin=ModelContextInputOrigin.REALTIME_SESSION,
             ),
         )
         self.initial = projection
-        self._initial_instructions = "\n\n".join(block.content for block in projection.blocks)
+        self._initial_instructions = "\n\n".join(
+            block.content for block in projection.blocks if block.memory_mount is None
+        )
         return self._initial_instructions
+
+    async def retrieve(self, text: str) -> ModelContextProjection:
+        ctx = self.stream._native_context
+        if ctx is None or not text.strip():
+            return ModelContextProjection()
+        return await _project_model_context(
+            ctx,
+            ModelContextProjectionRequest(
+                kind=ModelContextRequestKind.INPUT,
+                input_origin=ModelContextInputOrigin.REALTIME_TURN,
+                realtime_text=text,
+                history=self.history,
+            ),
+        )
+
+    def start_recall(self, text: str) -> None:
+        self.turn += 1
+        if len(self.spoken) < 4:
+            query = text[:2048]
+            self.spoken[asyncio.create_task(self.retrieve(query))] = self.turn, query
+
+    async def flush_recall(self) -> None:
+        for task in tuple(self.spoken):
+            if task.done() and (origin := self.spoken.pop(task, None)) is not None:
+                turn, query = origin
+                await self.inject(task.result(), turn=turn, query=query)
+
+    async def inject(self, projection: ModelContextProjection, *, turn: int | None = None, query: str = "") -> None:
+        # Typed input and a completed spoken turn can reach delivery concurrently.
+        async with self.recall_lock:
+            confirmed = []
+            for block in projection.blocks:
+                if block.memory_mount is None or self.history.contains(block):
+                    continue
+                text = (
+                    block.content
+                    if turn is None
+                    else json.dumps(
+                        {
+                            "trust": "untrusted",
+                            "mount": block.memory_mount,
+                            "query": query,
+                            "turn": turn,
+                            "content": block.content,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                size = len(text.encode())
+                if self.recall_bytes_sent + size > self.stream._memory_context_bytes:
+                    continue
+                await self.stream._send_context(text)
+                self.recall_bytes_sent += size
+                self.delivered = ModelContextProjection((*self.delivered.blocks, block))
+                confirmed.append(block)
+            projection._confirm(tuple(confirmed))
 
     async def wrap_tool_execute(
         self,
@@ -263,6 +348,8 @@ class HarnessLiveStream(HarnessRunStream[None]):
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
         audio_retention: AudioRetention = "transcript_only",
+        memory_context_bytes: int = 32768,
+        webrtc: LiveWebRTC | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> None:
@@ -270,6 +357,10 @@ class HarnessLiveStream(HarnessRunStream[None]):
             raise TypeError("live model must be a native RealtimeModel instance")
         if audio_retention not in {"transcript_only", "input_audio", "output_audio", "all"}:
             raise ValueError("audio_retention must be a native AudioRetention value")
+        if webrtc is not None and (audio_retention != "transcript_only" or not model.profile.get("supports_webrtc")):
+            raise RunError(
+                "WebRTC requires a compatible model and transcript-only retention.", code="live_webrtc_unsupported"
+            )
         super().__init__(
             executable=executable,
             environment=environment,
@@ -284,9 +375,15 @@ class HarnessLiveStream(HarnessRunStream[None]):
         self._live_model = model
         self._live_model_settings = deepcopy(model_settings)
         self._audio_retention: AudioRetention = audio_retention
+        self._playback_part: int | None = None
+        self._muted_part: int | None = None
+        self._part_audio: Callable[[bytes], None] | None = None
+        self._memory_context_bytes = memory_context_bytes
+        self._webrtc = webrtc
         self._result_output_adapter = TypeAdapter(type(None))
         self._session: RealtimeSession | None = None
         self._native_context: RunContext[AgentContext] | None = None
+        self._bridge: _LiveCapability | None = None
         self._session_ready = asyncio.Event()
         self._response_records: dict[int, ModelUsageRecord] = {}
         self._usage_refusal: UsageLimitExceeded | None = None
@@ -328,7 +425,26 @@ class HarnessLiveStream(HarnessRunStream[None]):
         *,
         respond: bool | None = None,
     ) -> None:
-        await self._active_session().send(content, respond=respond)
+        session = self._active_session()
+        if respond is not False and isinstance(content, str):
+            await self.recall(content)
+        await session.send(content, respond=respond)
+
+    async def recall(self, text: str) -> None:
+        if self._bridge is not None:
+            await self._bridge.flush_recall()
+            await self._bridge.inject(await self._bridge.retrieve(text))
+
+    async def _send_context(self, text: str) -> None:
+        from a13n_harness.providers.model.realtime import context_chunks
+
+        session = self._active_session()
+        for chunk in context_chunks(self._live_model, text):
+            await session.send(chunk, respond=False)
+
+    def enqueue_notice(self, content: Sequence[TextContent]) -> str | None:
+        """Queue trusted host text at the next idle turn boundary with its source metadata."""
+        return self._active_session().enqueue(*content, priority="when_idle")
 
     async def send_audio(self, data: bytes | AsyncIterable[bytes]) -> None:
         await self._active_session().send_audio(data)
@@ -344,6 +460,32 @@ class HarnessLiveStream(HarnessRunStream[None]):
 
     async def create_response(self) -> None:
         await self._active_session().create_response()
+
+    @property
+    def supports_interruption(self) -> bool:
+        return bool(self._live_model.profile.get("supports_interruption"))
+
+    def relay_part_audio(self, sink: Callable[[bytes], None]) -> bool:
+        """Relay PCM with native speech-part boundaries for adapters without playback truncation."""
+        if self._live_model.profile.get("supports_output_truncation"):
+            return False
+        self._part_audio = sink
+        return True
+
+    async def wait_for_reply(self) -> None:
+        """Wait for the current exchange, returning immediately if it already ended."""
+        await self._active_session().wait_for_reply()
+
+    async def barge_in(self, *, played_bytes: int | None = None) -> bool:
+        profile = self._live_model.profile
+        self._muted_part = self._playback_part
+        if self.supports_interruption:
+            if played_bytes is not None and profile.get("supports_output_truncation"):
+                await self.interrupt(played_bytes=played_bytes)
+            else:
+                await self.interrupt()
+            return True
+        return False
 
     async def interrupt(self, *, played_ms: int | None = None, played_bytes: int | None = None) -> bool | None:
         """Interrupt speech without undoing tools; native playback accounting applies."""
@@ -441,27 +583,85 @@ class HarnessLiveStream(HarnessRunStream[None]):
             raise RunError("Live plugin input must be text.", code="live_input_unsupported")
         self.context.usage_attribution.model_usage_coverage = "responses_only"
         self._latest_messages = await self.context._storage.resolve_messages(self._initial_history)
-        bridge = _LiveCapability(self)
+        bridge = self._bridge = _LiveCapability(self)
         status = "completed"
         try:
-            async with self._executable._agent.realtime(
-                self._live_model,
-                deps=self.context,
-                model_settings=self._live_model_settings,
-                instructions=self._executable._system_prompt,
-                capabilities=(bridge, *self._bindings.capabilities),
-                usage=self._usage,
-                usage_limits=self._usage_limits,
-                run_id=self.run_id,
-                conversation_id=self.thread_id,
-                message_history=list(self._latest_messages),
-            ).session(audio_retention=self._audio_retention) as session:
+            async with AsyncExitStack() as transport:
+                native = self._executable._agent.realtime(
+                    self._live_model,
+                    deps=self.context,
+                    model_settings=self._live_model_settings,
+                    instructions=self._executable._system_prompt,
+                    capabilities=(bridge, *self._bindings.capabilities),
+                    usage=self._usage,
+                    usage_limits=self._usage_limits,
+                    run_id=self.run_id,
+                    conversation_id=self.thread_id,
+                    message_history=list(self._latest_messages),
+                )
+                provider_session: RealtimeProviderSession | None = None
+                if self._webrtc is not None:
+                    # Signaling resolves instructions and tool definitions. The sideband gets its own dispatcher.
+                    bridge.prepare_dispatcher = False
+                    answer = await native.answer_webrtc_offer(self._webrtc.offer)
+                    provider_session = answer.session
+
+                    registered = False
+
+                    async def hang_up() -> None:
+                        try:
+                            with anyio.fail_after(_WEBRTC_HANGUP_SECONDS, shield=True):
+                                await native.hang_up(answer.session)
+                        except Exception as error:
+                            if not registered:
+                                raise
+                            get_logger(__name__).warning(
+                                "Provider hangup deferred to host", extra={"error_type": type(error).__name__}
+                            )
+                            return
+                        if self._webrtc and self._webrtc.record_call:
+                            with anyio.move_on_after(_WEBRTC_HANGUP_SECONDS, shield=True) as cleanup:
+                                await self._webrtc.record_call(None)
+                            if cleanup.cancelled_caught:
+                                get_logger(__name__).warning("Timed out clearing the provider hangup record")
+
+                    transport.push_async_callback(hang_up)
+                    if self._webrtc.record_call:
+                        await self._webrtc.record_call(answer.session.session_id)
+                        registered = True
+                    await self._webrtc.deliver_answer(answer.sdp)
+                    bridge.prepare_dispatcher = True
+                session = await transport.enter_async_context(
+                    native.session(audio_retention=self._audio_retention, provider_session=provider_session)
+                )
                 self._session = session
+                for block in bridge.initial.blocks:
+                    if block.memory_mount is not None:
+                        await self._send_context(block.content)
                 bridge.connected()
                 self._session_ready.set()
                 if initial_input is not None:
-                    await session.send(initial_input)
+                    await self.send(initial_input)
                 async for event in session:
+                    if (
+                        self._part_audio is not None
+                        and isinstance(event, PartDeltaEvent)
+                        and isinstance(event.delta, SpeechPartDelta)
+                        and event.delta.speaker == "assistant"
+                        and event.delta.audio_chunk
+                    ):
+                        self._playback_part = event.index
+                        if event.index != self._muted_part:
+                            self._part_audio(event.delta.audio_chunk)
+                    if (
+                        isinstance(event, PartEndEvent)
+                        and isinstance(event.part, SpeechPart)
+                        and event.part.speaker == "user"
+                        and event.part.transcript
+                    ):
+                        bridge.start_recall(event.part.transcript)
+                    if isinstance(event, RealtimeTurnCompleteEvent):
+                        await bridge.flush_recall()
                     # Native session result events follow wire send. Capability
                     # observations and prepared results are not delivery receipts.
                     if isinstance(event, RealtimeSessionReconnectEvent):
@@ -483,6 +683,9 @@ class HarnessLiveStream(HarnessRunStream[None]):
         except UsageLimitExceeded:
             status = "failed"
         finally:
+            for task in bridge.spoken:
+                task.cancel()
+            await asyncio.gather(*bridge.spoken, return_exceptions=True)
             # Native context exit settles interrupted tool returns and speech.
             # Capture the settled state before constructing any terminal result.
             self._refresh_live_messages()
@@ -503,4 +706,4 @@ class HarnessLiveStream(HarnessRunStream[None]):
         )
 
 
-__all__ = ["HarnessLiveStream"]
+__all__ = ["HarnessLiveStream", "LiveWebRTC"]

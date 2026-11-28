@@ -95,7 +95,16 @@ class _Execution:
 class ChildRuns(SubagentOperator):
     """The operator of one async agent of the attempt's graph; `edges` are that agent's subagents by name."""
 
-    def __init__(self, runtime: Runtime, lease: Lease, control: AttemptControl, edges: Mapping[str, ResolvedSubagent]):
+    def __init__(
+        self,
+        runtime: Runtime,
+        lease: Lease,
+        control: AttemptControl,
+        edges: Mapping[str, ResolvedSubagent],
+        *,
+        include_output: bool = False,
+    ):
+        self.include_output = include_output
         self.runtime, self.lease, self.control, self.edges = runtime, lease, control, edges
 
     async def delegate(
@@ -246,7 +255,7 @@ class ChildRuns(SubagentOperator):
                 request.execution_id, request.execution_offset, request.execution_limit
             )
         return SubagentInfoResult(
-            executions=tuple(_full(item) for item in executions),
+            executions=tuple(_full(item, include_output=self.include_output) for item in executions),
             execution_offset=request.execution_offset,
             total=total,
             next_offset=_next(request.execution_offset, len(executions), total),
@@ -279,7 +288,7 @@ class ChildRuns(SubagentOperator):
             if any(item.run.status != statuses[item.run.id] for item in executions):
                 executions = await self._reread(executions)
         return SubagentWaitResult(
-            executions=tuple(_full(item) for item in executions),
+            executions=tuple(_full(item, include_output=self.include_output) for item in executions),
             execution_offset=request.execution_offset,
             total=total,
             next_offset=_next(request.execution_offset, len(executions), total),
@@ -473,8 +482,12 @@ def _view(execution: _Execution) -> AsyncExecutionView:
     )
 
 
-def _full(execution: _Execution) -> SubagentExecutionView:
-    return SubagentExecutionView(**_view(execution).model_dump(), input=execution.input)
+def _full(execution: _Execution, *, include_output: bool) -> SubagentExecutionView:
+    return SubagentExecutionView(
+        **_view(execution).model_dump(),
+        input=execution.input,
+        output=execution.run.output if include_output and execution.run.status == "completed" else None,
+    )
 
 
 def _payload(value: RunInputValue, fallback: str) -> MessagePayload:

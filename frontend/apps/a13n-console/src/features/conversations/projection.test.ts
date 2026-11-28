@@ -190,3 +190,14 @@ it("keeps missing or oversized source references out of the author batch", () =>
     ).toBeUndefined();
   }
 });
+
+it.each(["expired", "interrupted"])(
+  "preserves the terminal tool outcome %s",
+  (outcome) => {
+    expect(
+      presentItem(
+        item({ kind: "tool_call", state: "interrupted", content: { outcome } }),
+      ).state,
+    ).toBe(outcome);
+  },
+);

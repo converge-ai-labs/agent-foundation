@@ -107,6 +107,7 @@ class ProviderType(BaseModel):
     # Model types: the calling APIs a model may select, the default first, with their display names and native
     # settings schemas; and the model catalog channels that list the type's own model IDs.
     model_apis: list[str] | None = None
+    realtime_model_apis: list[str] | None = None
     default_model_api: str | None = None
     model_api_labels: dict[str, str] | None = None
     settings_schemas: dict[str, dict[str, JsonValue]] | None = None

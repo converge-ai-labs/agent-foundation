@@ -22,6 +22,8 @@ from fastapi.dependencies.models import Dependant
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute, APIRouter
 from redis.asyncio import Redis
+from redis.asyncio.retry import Retry
+from redis.backoff import NoBackoff
 from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -224,6 +226,19 @@ async def open_runtime(
         decode_responses=True,
     )
     stack.push_async_callback(redis.aclose)
+    from a13n_service.runs.realtime_transport import Bridge
+
+    realtime_redis = Redis.from_url(
+        config.redis.url.get_secret_value(),
+        socket_timeout=config.redis.timeout,
+        socket_connect_timeout=config.redis.timeout,
+        decode_responses=False,
+        max_connections=32,
+        retry=Retry(NoBackoff(), 0),
+    )
+    stack.push_async_callback(realtime_redis.aclose)
+    bridge = Bridge(realtime_redis)
+    stack.push_async_callback(bridge.close)
     client_routing = Routing(config.redis, config.client_environments)
     stack.push_async_callback(client_routing.close)
     telemetry = config.telemetry
@@ -292,6 +307,7 @@ async def open_runtime(
         instrumentation=instrumentation,
         # Backends hold no connection between queries, so the query side needs no lifecycle.
         traces=telemetry.trace_config(),
+        realtime_bridge=bridge,
     )
     runtime = replace(runtime, metrics_proxy=Proxy(runtime))
     for app in apps:
@@ -532,6 +548,12 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        from a13n_service.runs.realtime import CONNECT_PATH
+        from a13n_service.runs.realtime import connect as connect_realtime
+        from a13n_service.runs.realtime import router as realtime_router
+
+        app.include_router(realtime_router)
+        app.add_api_websocket_route(CONNECT_PATH, connect_realtime)
         from a13n_service.runs.browsers.tables import BrowserRow
         from a13n_service.runs.browsers.viewer import relay as browser_viewer_relay
         from a13n_service.runs.devices.tables import DeviceRow

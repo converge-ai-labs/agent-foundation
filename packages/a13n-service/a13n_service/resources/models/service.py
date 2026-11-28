@@ -25,6 +25,7 @@ from a13n_service.infra.errors import disabled, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import KEY_MAX_LENGTH, new_object_id
 from a13n_service.providers.model_settings import check_request_headers, effective_settings
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.models.schemas import (
     Model,
@@ -104,7 +105,13 @@ async def resolve_media_model(
     return model
 
 
+def require_request_model(model: ResolvedModel, *, field: str) -> None:
+    if model.config.model_api in PROTOCOLS:
+        raise invalid(field, "This selection requires a non-realtime model")
+
+
 def require_understanding(model: ResolvedModel, kind: NativeInputMediaKind) -> None:
+    require_request_model(model, field=f"media_understanding.{kind}")
     if ModelCapability(f"{kind}_understanding") not in model.config.characteristics.capabilities:
         raise invalid("model", f"does not declare {kind}_understanding")
 
@@ -273,6 +280,13 @@ def model_settings(
 ) -> ModelSettings:
     """Compose and check the settings of one live Model/Provider, without revealing any secrets."""
     definition = registry.get("model", provider.type)
+    if (protocol := PROTOCOLS.get(config.model_api)) is not None:
+        if protocol.provider != definition.type:
+            raise invalid("config.model_api", f"{config.model_api} requires a {protocol.provider} provider")
+        return cast(
+            ModelSettings,
+            registry.check_model_settings(config.model_api, {**config.defaults(), **settings}, field=field),
+        )
     _check_api(definition, config)
     effective = registry.check_model_settings(
         config.model_api, effective_settings(config.model_api, config.defaults(), settings), field=field

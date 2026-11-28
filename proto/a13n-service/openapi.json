@@ -4128,6 +4128,17 @@
             "title": "Identity",
             "type": "string"
           },
+          "model_api": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Api"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -20453,6 +20464,20 @@
             ],
             "title": "Operations"
           },
+          "realtime_model_apis": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realtime Model Apis"
+          },
           "settings_schemas": {
             "anyOf": [
               {
@@ -20811,6 +20836,205 @@
           "compact"
         ],
         "type": "string"
+      },
+      "RealtimeAvailability": {
+        "properties": {
+          "accepts_text": {
+            "default": false,
+            "title": "Accepts Text",
+            "type": "boolean"
+          },
+          "can_start": {
+            "default": false,
+            "title": "Can Start",
+            "type": "boolean"
+          },
+          "realtime": {
+            "default": false,
+            "title": "Realtime",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "transports": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Transport"
+            },
+            "title": "Transports",
+            "type": "array"
+          }
+        },
+        "title": "RealtimeAvailability",
+        "type": "object"
+      },
+      "RealtimeSessionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_revision_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
+          },
+          "audio": {
+            "default": true,
+            "title": "Audio",
+            "type": "boolean"
+          },
+          "draft": {
+            "default": "",
+            "maxLength": 8192,
+            "title": "Draft",
+            "type": "string"
+          },
+          "environments": {
+            "$ref": "#/components/schemas/InitialMounts",
+            "default": []
+          },
+          "fork_run_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fork Run Id"
+          },
+          "fresh_environments": {
+            "default": false,
+            "title": "Fresh Environments",
+            "type": "boolean"
+          },
+          "max_usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memories": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MemoryMount"
+            },
+            "maxItems": 32,
+            "title": "Memories",
+            "type": "array"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionMemorySettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "options": {
+            "$ref": "#/components/schemas/RunOptions-Input"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "transport": {
+            "$ref": "#/components/schemas/Transport",
+            "default": "websocket"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "RealtimeSessionCreate",
+        "type": "object"
+      },
+      "RealtimeSessionTicket": {
+        "properties": {
+          "expires_in": {
+            "description": "Ticket lifetime in seconds.",
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "subprotocol": {
+            "const": "a13n.realtime.v1",
+            "description": "Offer this protocol first and the ticket second.",
+            "title": "Subprotocol",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "ticket": {
+            "description": "Single-use connection credential. Pass it as the second WebSocket subprotocol.",
+            "title": "Ticket",
+            "type": "string"
+          },
+          "websocket_path": {
+            "description": "WebSocket path relative to the Service origin.",
+            "title": "Websocket Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "thread_id",
+          "session_id",
+          "websocket_path",
+          "subprotocol",
+          "ticket",
+          "expires_in"
+        ],
+        "title": "RealtimeSessionTicket",
+        "type": "object"
       },
       "RecipeOverrides": {
         "additionalProperties": false,
@@ -29342,8 +29566,16 @@
         "title": "TraceSearchPage",
         "type": "object"
       },
+      "Transport": {
+        "enum": [
+          "websocket",
+          "webrtc"
+        ],
+        "type": "string"
+      },
       "Trigger": {
         "enum": [
+          "realtime",
           "input",
           "queued",
           "resume",
@@ -51399,6 +51631,192 @@
           "providers"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/realtime": {
+      "get": {
+        "description": "Report realtime input for the selected Agent and Thread.",
+        "operationId": "realtime_availability",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent_revision_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Revision Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fork_run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fork Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealtimeAvailability"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Realtime Availability"
+      }
+    },
+    "/api/v1/realtime/sessions": {
+      "post": {
+        "description": "Issue a one-use WebSocket ticket for the selected Agent and optional Thread.",
+        "operationId": "create_realtime_session",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RealtimeSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealtimeSessionTicket"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create Realtime Session"
       }
     },
     "/api/v1/runs": {

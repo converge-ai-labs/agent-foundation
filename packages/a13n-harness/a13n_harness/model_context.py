@@ -66,6 +66,8 @@ class ModelContextInputOrigin(StrEnum):
 
     USER = "user"
     ENQUEUE = "enqueue"
+    REALTIME_SESSION = "realtime_session"
+    REALTIME_TURN = "realtime_turn"
 
 
 class ModelContextPlacement(StrEnum):
@@ -206,6 +208,7 @@ class ModelContextProjectionRequest:
 
     kind: ModelContextRequestKind
     input_origin: ModelContextInputOrigin | None = None
+    realtime_text: str | None = field(default=None, kw_only=True)
     tool_call_ids: tuple[str, ...] = ()
     history: ModelContextHistory = field(default_factory=ModelContextHistory)
     _notices: _NoticeBoundary = field(default_factory=_NoticeBoundary, repr=False, compare=False)

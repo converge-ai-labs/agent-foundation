@@ -20,6 +20,7 @@ from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from pydantic_core import PydanticOmit, core_schema
 
 from a13n_service.infra.errors import invalid
+from a13n_service.providers.realtime import PROTOCOLS
 
 # Bedrock's settings name boto3 request shapes that exist only for type checking; they are JSON objects.
 _TYPE_CHECKING_ONLY: dict[str, object] = dict.fromkeys(
@@ -167,6 +168,25 @@ class _PortableSchema(GenerateJsonSchema):
 @cache
 def settings_schema(model_api: str) -> dict[str, JsonValue]:
     """Derive the schema. This imports the API's SDK, so the registry does it when it is assembled."""
+    if model_api in PROTOCOLS:
+        native = PROTOCOLS[model_api].settings
+        # Only offer inference and voice settings. Instructions, tools, account and transport are Service-owned.
+        allowed = {
+            "max_tokens",
+            "parallel_tool_calls",
+            "async_tool_calls",
+            "thinking",
+            "turn_detection",
+            "openai_voice",
+            "openai_input_noise_reduction",
+            "openai_output_speed",
+            "openai_live_turn_silence_ms",
+            "xai_voice",
+        }
+        fields = {name: (hint, None) for name, hint in native.__annotations__.items() if name in allowed}
+        return create_model(
+            native.__name__, __module__=native.__module__, __config__=ConfigDict(extra="forbid"), **fields
+        ).model_json_schema()
     native = MODEL_APIS[model_api].settings_type
     fields: dict[str, Any] = {
         name: (hint, None)

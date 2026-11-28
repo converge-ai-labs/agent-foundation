@@ -26,8 +26,8 @@ At execution, accepted input distinguishes message content from a deferred-resul
 - A **session** groups related threads. Its `last_run_id` names the most recently accepted run of any of its threads.
 - A **thread** advances one history at a time. It has an inbox, desired environment and memory mounts ([06](06-environments.md#mounts), [11](11-memory.md#mounts)) and caller headers ([04](04-resources.md#caller-headers)).
 - An **entry** is one queued input: a `message`, `child_result`, `child_message`, `tool_result`, `browser_handback` or `desktop_handback`. Only a pending `message` can be edited.
-- A **run** starts from one source, either an entry or the answers that resume a waiting run. It freezes an agent revision, options and an execution identity, and may incorporate further compatible entries. Its initial history never changes.
-- An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
+- A **run** starts from one source: an inbox entry, the answers that resume a waiting run, or redemption of a realtime session ticket. It freezes an agent revision, options and an execution identity, and may incorporate further compatible entries. Its initial history never changes.
+- An **attempt** executes a run under a renewable lease. Ordinary run recovery and handoff replace the attempt while preserving the run and its assigned inputs. A realtime run has at most one attempt.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
 
 [Schedules](13-schedules.md#objects-and-ownership) select a mutable Session/Thread target, create new Threads or queue messages in a fixed Thread. Their trigger Entry and waiting/resume Run associations are owned by that contract; ordinary input and Run lifecycles remain unchanged.
@@ -50,7 +50,7 @@ A Session optionally carries a caller-owned `title` and structured `origin`, ind
 
 ## Execution queries
 
-Read-only JSON queries expose Session and Thread lists/details, inbox lists/entries, Thread Runs, Run details, a Run's agent, display items and saved content, lineage, Attempt lists/details, traces and Findings through the HTTP API and explicitly admitted MCP operations. Live output streams and execution commands remain outside internal platform admission.
+Read-only JSON queries expose Session and Thread lists/details, inbox lists/entries, Thread Runs, Run details, a Run's agent, display items and saved content, lineage, Attempt lists/details, traces and Findings through the HTTP API and explicitly admitted MCP operations. The client-only realtime availability query checks whether the caller can open a voice connection for its current selection. Live output streams and execution commands remain outside internal platform admission.
 
 `GET /runs` searches within the selected workspace independently of Session IDs. Optional `agent_id`, `session_id`, `thread_id`, `principal_id` and `status` filters combine with timezone-aware `created_after` (inclusive) and `created_before` (exclusive) bounds on Run creation time. Results use newest-first `(created_at, id)` keyset pagination; cursors are bound to workspace and filters. Time bounds must be ordered. This finds historical failures, unlike Session filters based on each Session's latest Run.
 
@@ -160,6 +160,13 @@ inbox_entries
   UNIQUE (workspace_id, principal_id, request_key) WHERE request_key IS NOT NULL
   UNIQUE (child_run_id) WHERE kind = 'child_result'
 
+realtime_tickets
+  digest PRIMARY KEY  workspace_id  expires_at  request
+  INDEX (workspace_id, expires_at)
+
+realtime_calls
+  run_id PRIMARY KEY  transport  credential  provider_session NULL  hangup_retry_at NULL
+
 runs
   id  organization_id  workspace_id  session_id  thread_id  agent_id  agent_revision_id
   revision_selection  principal_id  authority  options  options_digest  mcp_headers  environment_mounts
@@ -172,11 +179,11 @@ runs
   checkpoint NULL  tail NULL  output NULL  failure NULL  usage_at_seal NULL
   labels  started_at NULL  sealed_at NULL  version  created_at  updated_at
   revision_selection IN ('pinned', 'default', 'inherited', 'snapshot')
-  trigger IN ('input', 'queued', 'resume', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')
+  trigger IN ('input', 'queued', 'resume', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned', 'realtime')
   lineage IN ('root', 'continue', 'fork')
   status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')
   wait_reason IN ('approval', 'call', 'multiple')
-  CHECK ((source_entry_id IS NULL) <> (resume IS NULL))
+  CHECK ((source_entry_id IS NULL) = (trigger IN ('resume', 'realtime')))
   CHECK ((resume IS NULL) = (resumed_by_id IS NULL))
   CHECK ((request_key IS NULL) = (request_digest IS NULL))
   CHECK (request_key IS NULL OR resume IS NOT NULL)
@@ -290,9 +297,9 @@ Every waiting run requires an explicit resume, including a wait containing only 
 1. Checks that the workspace is not archived (`disabled`).
 2. Chooses the parent: the thread's last sealed run (`continue`), otherwise a fork thread's origin run (`fork`), otherwise none (`root`).
 3. Freezes the environment mount set ([06](06-environments.md#mounts)) and the memory mount set, which at the thread's first acceptance first takes the agent's default memory mounts ([11](11-memory.md#mounts)), checks that each asset of a message source still reaches the model under the selected revision, frozen overrides and frozen mounts ([files](#how-files-reach-the-model)), and asks the admission policy ([09](09-runtime.md#extension-points)) to accept the run.
-4. Inserts the accepted run with the thread's `mcp_headers` frozen into `runs.mcp_headers` and its parent's memory cursors for the memories still mounted under the same name, assigns the source entry, sets `threads.current_run_id` and the session's `last_run_id`, stages `run.accepted` webhooks ([07](07-facts-and-delivery.md#lifecycle-webhooks)) and registers the after-commit claim wakeup ([09](09-runtime.md#worker-claim-wakeups)).
+4. Inserts the accepted run with the thread's `mcp_headers` frozen into `runs.mcp_headers` and its parent's memory cursors for the memories still mounted under the same name, assigns the source entry when present, sets `threads.current_run_id` and the session's `last_run_id`, stages `run.accepted` webhooks ([07](07-facts-and-delivery.md#lifecycle-webhooks)) and registers the after-commit claim wakeup ([09](09-runtime.md#worker-claim-wakeups)).
 
-The trigger records why the run started: `input` (the submission's own entry), `queued` (an earlier entry), `resume`, the kind of the internal entry that started it, or `spawned` (a child's first run).
+The trigger records why the run started: `input` (the submission's own entry), `queued` (an earlier entry), `resume`, the kind of the internal entry that started it, `spawned` (a child's first run), or `realtime` (a redeemed voice session ticket).
 
 ### Editing queued input
 
@@ -355,6 +362,8 @@ A direct `POST /threads` with `browser_binding`, or a fresh-Thread Schedule disp
 A worker scans every `worker.scan_seconds` and wakes early on a Redis marker ([09](09-runtime.md#worker-claim-wakeups)). With free capacity among its `worker.slots`, it selects due accepted runs with `FOR UPDATE SKIP LOCKED` and, in one transaction per batch, inserts a `leased` attempt with a fresh token and a lease of `worker.lease_seconds`, sets the run `running` and stages `run.running` and `run_attempt.leased` webhooks. `start_reason` is `initial` for the first attempt, `handoff` after a yielded attempt and `recovery` otherwise. Every attempt except a handoff's successor increments `runs.attempts`, so `attempts` counts charged attempts and the attempt list holds one more row per handoff. The attempt becomes `running` and records `harness_run_id` when the Harness run starts (`run_attempt.running`).
 
 Claim takes run → attempt → execution context and never the Thread row; archive and interrupt take thread → run, so the run lock arbitrates between them. A Thread's execution context colocates overlapping attempts and retained Environment work on one worker. Existing unexpired attempt and retained-execution leases maintain this affinity; an idle context has no independent lease or heartbeat. Claim filters another live owner before applying the batch limit. Once no live lease remains, a successor claims the context and advances its ownership generation. Claim does not recheck cancellation or archive: interrupt and archive seal an accepted run at once, so an accepted run never carries a cancellation request. A run is claimable only when the checkpoint it continues from (its own, or before its first commit its parent's) has a format no newer than the worker's, so a newer format waits for a worker that reads it; supported older formats are read and upgraded at the next checkpoint, while unsupported older formats are claimed and fail with `checkpoint_incompatible`.
+
+The final primary model uses a realtime API exactly when the Run trigger is `realtime`. This trigger starts directly from ticket redemption, has no source Inbox entry or resume payload, and uses a dedicated realtime Worker slot. A lost realtime Attempt seals its Run at lease expiry. Realtime Runs end on handoff or other recovery instead of creating a successor Attempt. A new connection can continue the Thread from its committed history. [Realtime conversations](09-runtime.md#realtime-conversations) owns the transport and startup deadline.
 
 A claim batch is atomic: attempt creation, run updates, lifecycle deliveries and takeover cleanup intents commit together. Any failure, including a deferred constraint failure at commit, rolls back the entire batch; there is no per-run fallback. Leases and successful-claim observations are published only after commit. A failed claim is logged and retried after one scan interval without disturbing running attempts.
 

@@ -25,6 +25,7 @@ from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
+    ModelContextInputOrigin,
     ModelContextNext,
     ModelContextPlacement,
     ModelContextProjection,
@@ -277,6 +278,9 @@ class _FileMemoryRun(FileMemoryCapability):
         request: ModelContextProjectionRequest,
         handler: ModelContextNext,
     ) -> ModelContextProjection:
+        if request.input_origin is ModelContextInputOrigin.REALTIME_SESSION and ctx.run_id == self._context.run_id:
+            projection = await handler(request)
+            return ModelContextProjection(blocks=(*projection.blocks, *await self._deliver(ctx)))
         return await self._first_input.project(ctx, request, handler)
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
@@ -703,15 +707,21 @@ class _RecordMemoryRun(RecordMemoryCapability):
         request: ModelContextProjectionRequest,
         handler: ModelContextNext,
     ) -> ModelContextProjection:
+        if request.input_origin is ModelContextInputOrigin.REALTIME_TURN and ctx.run_id == self._context.run_id:
+            projection = await handler(request)
+            blocks = await self._recall(ctx, query=request.realtime_text)
+            return ModelContextProjection(blocks=(*projection.blocks, *blocks))
         return await self._first_input.project(ctx, request, handler)
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
         if isinstance(event, ContextRestoredEvent) and self._first_input.is_own(ctx):
             self._first_input.forget()
 
-    async def _recall(self, ctx: RunContext[AgentContext]) -> tuple[ModelContextBlock, ...]:
+    async def _recall(
+        self, ctx: RunContext[AgentContext], *, query: str | None = None
+    ) -> tuple[ModelContextBlock, ...]:
         mounts = [mount for mount in self.mounts if mount.recall]
-        query = _input_text(ctx.prompt)
+        query = _input_text(ctx.prompt if query is None else query)
         if not mounts or not query:
             return ()
         async with asyncio.TaskGroup() as group:
