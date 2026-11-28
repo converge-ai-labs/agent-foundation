@@ -38,4 +38,6 @@ Local previews serve the deployment artifact, so sitemap URLs retain the product
 
 ## Documentation entry redirects
 
-`public/_redirects` restores known documentation URLs that omit `/docs/` with permanent redirects to their existing canonical pages. Each mapping names a concrete destination; unknown URLs, API examples, and local file paths keep the site's not-found response. Cloudflare Pages applies these rules after deployment; the Vite preview does not emulate them. Check redirect destinations against the assembled `dist/docs/` export when changing a mapping.
+`public/_redirects` restores documentation URLs that omit `/docs/` with permanent redirects. Crawlers read such paths from the navigation data embedded in every documentation page, so each documentation section has a rule that adds the prefix; a path that names no page still ends at the documentation's not-found response. The mappings listed first name a concrete destination and reach the canonical trailing-slash page in one step. Retired pages redirect to the page that replaced them. Add a section rule when the documentation gains a top-level section. Cloudflare Pages applies these rules after deployment; the Vite preview does not emulate them. Check redirect destinations against the assembled `dist/docs/` export when changing a mapping.
+
+`public/robots.txt` disallows `/api/`: the API paths quoted in the documentation are examples, and no page is published under that path.

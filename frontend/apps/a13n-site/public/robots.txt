@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+# API paths quoted in the documentation are examples, not pages.
+Disallow: /api/
 
 Sitemap: https://a13n.dev/sitemap.xml
