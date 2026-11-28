@@ -41,6 +41,10 @@ async def delete_provider(
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await find_row(session, actor, row_type, scope, provider_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
+        if isinstance(row, ConnectorProviderRow) and (
+            row.event_webhook_id is not None or row.event_operation is not None
+        ):
+            raise conflict(row.KIND, row.id, "event_webhook_in_use")
         if row_type is WebProviderRow:
             # Overrides can nest subagents. Match provider IDs at any depth, including disabled selections.
             for owner, config in (

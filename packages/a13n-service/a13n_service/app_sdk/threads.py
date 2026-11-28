@@ -52,7 +52,7 @@ async def prepare_admission(
     scope = await app_workspace(session, runtime, workspace_id, app_id)
     actor = await run_actor(session, runtime, scope, principal_id)
     native = submit.AppSubmission(session, runtime, workspace_id, actor, AppProvenance(app_id, app_context))
-    session.info["a13n.app_submission"] = native
+    session.info["a13n.submission"] = native
     return Admission(native)
 
 

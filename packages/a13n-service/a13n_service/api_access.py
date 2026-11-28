@@ -1,5 +1,6 @@
 """HTTP operation admission and audit context from the request's authenticated credential."""
 
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -28,6 +29,12 @@ def credential_context(credential: Authenticated, scope: Scope) -> Iterator[None
         yield
 
 
+def connector_callback(scope: Scope) -> bool:
+    return (
+        scope.get("method") == "POST" and re.fullmatch(r"/api/v1/connector-webhooks/[^/]+", scope["path"]) is not None
+    )
+
+
 class CredentialAccess:
     def __init__(self, app: ASGIApp):
         self.app = app
@@ -38,7 +45,8 @@ class CredentialAccess:
             return
         request = Request(scope)
         # MCP authenticates at its own mount after removing browser cookies. Third-party App webhooks verify
-        # their own sender credentials and signatures under `/api/v1/app-webhooks/`. Login sessions continue to
+        # their own sender credentials and signatures under `/api/v1/app-webhooks/`; the exact Connector
+        # callback POST likewise uses its Provider signature instead of Service credentials. Login sessions continue to
         # authenticate through route dependencies, including their Origin/CSRF checks.
         if (
             "authorization" not in request.headers
@@ -50,6 +58,7 @@ class CredentialAccess:
                 "/api/v1/platform-tools/",
             }
             or scope["path"].startswith("/api/v1/app-webhooks/")
+            or connector_callback(scope)
         ):
             await self.app(scope, receive, send)
             return

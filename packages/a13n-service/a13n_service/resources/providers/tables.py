@@ -70,6 +70,12 @@ class ConnectorProviderRow(ProviderRow):
     KIND: ClassVar[str] = "connector_provider"
     ID_PREFIX = "cprov"
 
+    # Shared event delivery identity and secret are independent of tool configuration.
+    event_webhook_id: Mapped[str | None] = mapped_column(String(256), unique=True)
+    event_secret: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    event_config: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    event_operation: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+
 
 class WebProviderRow(ProviderRow):
     __tablename__ = "web_providers"

@@ -14,13 +14,16 @@ type Application = Callable[[Message, Receive, Send], Awaitable[None]]
 
 
 class BodyLimit:
-    def __init__(self, app: Application, *, max_bytes: int, timeout: float):
-        self.app, self.max_bytes, self.timeout = app, max_bytes, timeout
+    def __init__(
+        self, app: Application, *, max_bytes: int, timeout: float, limit_for: Callable[[Message], int] | None = None
+    ):
+        self.app, self.max_bytes, self.timeout, self.limit_for = app, max_bytes, timeout, limit_for
 
     async def __call__(self, scope: Message, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        max_bytes = min(self.max_bytes, self.limit_for(scope)) if self.limit_for else self.max_bytes
         body = bytearray()
         try:
             async with asyncio.timeout(self.timeout):
@@ -29,8 +32,8 @@ class BodyLimit:
                     if message["type"] == "http.disconnect":
                         return
                     chunk = message.get("body", b"")
-                    if len(body) + len(chunk) > self.max_bytes:
-                        limit = {"limit": self.max_bytes}
+                    if len(body) + len(chunk) > max_bytes:
+                        limit = {"limit": max_bytes}
                         await error_response(
                             ServiceError("payload_too_large", "Request body exceeds its byte limit", limit),
                             request_id(scope),

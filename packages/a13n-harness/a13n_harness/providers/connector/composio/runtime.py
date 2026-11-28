@@ -30,6 +30,7 @@ from ..validation import (
 )
 from .catalog import TOOLKIT_VERSION, ComposioCatalog, ComposioToolCatalog
 from .configuration import COMPOSIO_CONNECT_ENDPOINT, COMPOSIO_ENDPOINT
+from .events import ComposioEvents
 
 
 class ComposioProvider:
@@ -38,6 +39,7 @@ class ComposioProvider:
         # The Provider boundary is the one place the API key is revealed for outbound requests.
         self._api_key = credentials.api_key.get_secret_value()
         self._catalog = ComposioCatalog(http, self._api_key)
+        self.events = ComposioEvents(http, self._api_key)
 
     def connect(self, binding: ConnectionBinding) -> ComposioConnection:
         return ComposioConnection(self._http, self._api_key, binding)

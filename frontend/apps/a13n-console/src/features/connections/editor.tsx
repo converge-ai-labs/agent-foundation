@@ -34,6 +34,7 @@ import {
 import { CopyableId, IconTile } from "../../shared/identity";
 import { Panel } from "../../shared/page";
 import { ConnectionSetup } from "../connectors/setup";
+import { ConnectorEvents } from "../connectors/events";
 import { MCPAuthorization } from "../mcp/authorization";
 import { McpAuthorityRow, type McpAuthority } from "../mcp/authority";
 import { MCPTools } from "../mcp/tools";
@@ -84,8 +85,8 @@ export function ConnectionDetails({
   const manage = can("write");
   const mcp = connection?.type === "mcp";
   const tabNames = manage
-    ? ["details", "setup", ...(mcp ? ["tools"] : [])]
-    : ["details"];
+    ? ["details", "setup", ...(mcp ? ["tools"] : ["events"])]
+    : ["details", ...(mcp ? [] : ["events"])];
   const [tab, setTab] = useState<string>();
   const active =
     tab && tabNames.includes(tab)
@@ -139,8 +140,9 @@ export function ConnectionDetails({
           >
             <TabsList variant="underline" aria-label={t("Connection details")}>
               <TabsTab value="details">{t("Details")}</TabsTab>
-              <TabsTab value="setup">{t("Authorization")}</TabsTab>
+              {manage && <TabsTab value="setup">{t("Authorization")}</TabsTab>}
               {mcp && <TabsTab value="tools">{t("Tools")}</TabsTab>}
+              {!mcp && <TabsTab value="events">{t("Events")}</TabsTab>}
             </TabsList>
           </Tabs>
         ) : undefined
@@ -153,7 +155,9 @@ export function ConnectionDetails({
       ) : (
         connection && (
           <div className={styles.panelBody} key={generation}>
-            {!manage ? (
+            {active === "events" ? (
+              <ConnectorEvents connection={connection} />
+            ) : !manage ? (
               <ConnectionSettings connection={connection} reload={reload} />
             ) : (
               <>

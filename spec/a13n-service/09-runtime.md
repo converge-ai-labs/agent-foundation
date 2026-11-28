@@ -406,3 +406,7 @@ The built-in distribution installs no admission policy. Its built-in limits are 
 - Duplicate routes, tables, settings sections, roles and provider types, and a second authenticator or admission policy, fail assembly or settings loading.
 - Every operational limit is a finite setting or a fixed bound in code, and nested bounds are validated at load.
 - Every creation path passes `accept`; every paid attempt dispatch passes `proceed` with a `call_id` its usage records share. Direct App tool actions pass `proceed_app` when admission is installed.
+
+## Connector event maintenance
+
+Control/all receives [Connector callbacks](16-connector-events.md) and runs bounded event delivery/retention and remote-operation recovery sweeps. `connector_events` settings own HTTPS callback origin, body/backlog bounds, retry budgets and retention; `providers` settings continue to bound external HTTP operations. Worker executes ordinary admitted Runs.

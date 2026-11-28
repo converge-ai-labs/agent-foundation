@@ -17,6 +17,7 @@ from a13n_harness.http import outbound_tls_verify
 from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
 from .contracts import ConnectorProviderRuntime, JsonObject
+from .events import VerifyEvent
 from .http import ConnectorHttpClient
 
 
@@ -26,6 +27,7 @@ class ConnectorProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition
 
     setup_validator: Callable[[C, str, object], JsonObject]
     open_provider: Callable[[C, K | None, ConnectorHttpClient], AbstractAsyncContextManager[ConnectorProviderRuntime]]
+    verify_event: VerifyEvent | None = None
 
     def validate_setup(self, value: object, *, connector_key: str, configuration: JsonObject) -> JsonObject:
         return self.setup_validator(self.configuration_model.model_validate(configuration), connector_key, value)

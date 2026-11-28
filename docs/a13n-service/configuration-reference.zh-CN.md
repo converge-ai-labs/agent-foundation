@@ -313,6 +313,21 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `providers.chatgpt_client_id`             | `A13N_PROVIDERS__CHATGPT_CLIENT_ID`             | 字符串或 null | minLength=1; maxLength=256; default=null                      |
 | `providers.chatgpt_redirect_uri`          | `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`          | 字符串        | maxLength=2048; default="http://127.0.0.1:1456/auth/callback" |
 
+## `connector_events`
+
+| Setting                                   | Environment variable                            | 类型 / 选项    | 约束和默认值                                  |
+| ----------------------------------------- | ----------------------------------------------- | -------------- | --------------------------------------------- |
+| `connector_events.public_url`             | `A13N_CONNECTOR_EVENTS__PUBLIC_URL`             | string or null | maxLength=2048; default=null                  |
+| `connector_events.body_bytes`             | `A13N_CONNECTOR_EVENTS__BODY_BYTES`             | integer        | minimum=1024; maximum=1048576; default=262144 |
+| `connector_events.pending_per_provider`   | `A13N_CONNECTOR_EVENTS__PENDING_PER_PROVIDER`   | integer        | minimum=1; maximum=1000000; default=10000     |
+| `connector_events.unmatched_per_provider` | `A13N_CONNECTOR_EVENTS__UNMATCHED_PER_PROVIDER` | integer        | minimum=1; maximum=10000; default=100         |
+| `connector_events.unmatched_seconds`      | `A13N_CONNECTOR_EVENTS__UNMATCHED_SECONDS`      | integer        | minimum=30; maximum=3600; default=300         |
+| `connector_events.scan_seconds`           | `A13N_CONNECTOR_EVENTS__SCAN_SECONDS`           | number         | maximum=60; exclusiveMinimum=0; default=1     |
+| `connector_events.batch`                  | `A13N_CONNECTOR_EVENTS__BATCH`                  | integer        | minimum=1; maximum=256; default=32            |
+| `connector_events.max_attempts`           | `A13N_CONNECTOR_EVENTS__MAX_ATTEMPTS`           | integer        | minimum=1; maximum=100; default=10            |
+| `connector_events.payload_days`           | `A13N_CONNECTOR_EVENTS__PAYLOAD_DAYS`           | integer        | minimum=1; maximum=365; default=7             |
+| `connector_events.retention_days`         | `A13N_CONNECTOR_EVENTS__RETENTION_DAYS`         | integer        | minimum=1; maximum=3650; default=30           |
+
 ## `plugins`
 
 | 设置                             | 环境变量                               | 类型 / 选项 | 约束与默认值 |

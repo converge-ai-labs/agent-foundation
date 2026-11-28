@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from .composio.configuration import ComposioConfiguration, validate_setup
+from .composio.events import verify_event
 from .configuration import ApiKeyCredentials
 from .definition import ConnectorProviderDefinition
 from .http import ConnectorHttpClient
@@ -24,6 +25,7 @@ COMPOSIO = ConnectorProviderDefinition(
     credential_model=ApiKeyCredentials,
     setup_validator=validate_setup,
     open_provider=_open,
+    verify_event=verify_event,
     setup_url="https://platform.composio.dev/",
     setup_label="Composio dashboard",
 )

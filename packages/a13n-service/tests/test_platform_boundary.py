@@ -25,13 +25,18 @@ async def test_run_credentials_admit_only_internal_platform_transport(service, s
     async with client(service, {"secret": token}) as http:
         assert (await rpc(http, "tools/list")).status_code == 200
         assert (await external_rpc(http, "tools/list")).status_code == 401
-        # Every documented direct operation must reject before routing, validation or effects.
+        # Direct Service operations reject before routing, validation or effects.
+        # The exact signed callback ignores Service credentials and authenticates its sender separately.
         for template, operations in service.app.openapi()["paths"].items():
             path = re.sub(r"\{[^}]+\}", "unavailable", template)
             for method in operations.keys() & {"get", "post", "put", "patch", "delete", "head", "options"}:
                 response = await http.request(method, path)
-                assert response.status_code == 403, (method, path, response.text)
-        for path in ("/healthz", "/api/v1/openapi.json"):
+                if (method, template) == ("post", "/api/v1/connector-webhooks/{provider_id}"):
+                    assert response.status_code == 404, response.text  # Provider lookup, not Run authority.
+                else:
+                    assert response.status_code == 403, (method, path, response.text)
+        assert (await http.post("/api/v1/connector-webhooks/unavailable/extra")).status_code == 403
+        for path in ("/healthz", "/api/v1/openapi.json", "/api/v1/connector-webhooks/unavailable"):
             assert (await http.get(path)).status_code == 403
     async with client(service, await key(service)) as http:
         assert (await external_rpc(http, "tools/list")).status_code == 200

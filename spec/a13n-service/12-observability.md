@@ -146,3 +146,7 @@ The Service adds no spans of its own. HTTP, database and delivery failures are l
 - Every metric label has a value set fixed in code; no metric names a tenant or an object.
 - A scrape reads only the process's memory, never PostgreSQL or Redis.
 - A request's records lead to the runs it accepted, and a run's records to its attempts' traces, through IDs the records carry.
+
+## Connector event signals
+
+`connector_events.accepted` counts durable receipts by initial `state`; `connector_events.duplicates` counts identical redeliveries; `connector_events.rejected` counts signature/payload or source-ID conflict failures by `reason`. `connector_events.deliveries` counts handoff outcomes by `state`, and `connector_events.delivery_seconds` measures receipt-to-Inbox latency. Provider, Trigger, Event and Thread IDs belong in structured logs, not metric labels. [Connector events](16-connector-events.md) owns the delivery semantics.

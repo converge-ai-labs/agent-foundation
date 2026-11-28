@@ -65,3 +65,5 @@ curl --fail-with-body -sS "$A13N_URL/api/v1/runs/$RUN_ID" \
 ```
 
 Confirm the inbox entry is `consumed` by that `RUN_ID`, and send follow-ups to `POST /api/v1/threads/$THREAD_ID/inbox` with a new `Idempotency-Key`. To receive live progress events, subscribe to [session SSE streams](stream-and-read-results.md#follow-a-session-stream) (`$SESSION_ID`) or [webhooks](webhooks.md).
+
+Use built-in [Connector events](connector-events.md) to receive Composio account events and start Agent conversations directly.

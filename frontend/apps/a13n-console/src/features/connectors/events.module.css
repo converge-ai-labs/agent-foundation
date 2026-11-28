@@ -1,0 +1,87 @@
+.stack,
+.form {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.form {
+  padding: 16px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+}
+.heading,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.heading h3,
+.stack h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+.stack p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.url {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.list {
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.list > p {
+  padding: 16px;
+}
+.subscription {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.subscription:last-child {
+  border-bottom: 0;
+}
+.identity {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 120px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--a13n-text);
+}
+.identity strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.identity span,
+.note,
+.subscription > span {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+.event {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  min-width: 0;
+}
+.event summary {
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 8px;
+}

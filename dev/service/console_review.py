@@ -90,6 +90,8 @@ timeout = 1
 active_key_id = "fixture"
 [encryption.keys]
 fixture = {json.dumps(encryption_key)}
+[connector_events]
+public_url = "https://events.example.com"
 [providers]
 http_origins = {json.dumps([*origins, console])}
 return_urls = [{json.dumps(f"{console}/workspace/{workspace_id}/connections")}]

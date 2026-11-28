@@ -30,6 +30,7 @@
     "---定时调度与运行排障---",
     "agents-and-runs",
     "schedules",
+    "connector-events",
     "inspect-runs",
     "---生产部署与平台治理---",
     "forward-deployed",

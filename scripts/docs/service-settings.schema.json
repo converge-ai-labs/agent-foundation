@@ -541,6 +541,90 @@
       "title": "Configuration",
       "type": "object"
     },
+    "ConnectorEvents": {
+      "additionalProperties": false,
+      "description": "Signed ingress bounds and durable event maintenance, owned by control.",
+      "properties": {
+        "public_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Url"
+        },
+        "body_bytes": {
+          "default": 262144,
+          "maximum": 1048576,
+          "minimum": 1024,
+          "title": "Body Bytes",
+          "type": "integer"
+        },
+        "pending_per_provider": {
+          "default": 10000,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Pending Per Provider",
+          "type": "integer"
+        },
+        "unmatched_per_provider": {
+          "default": 100,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Unmatched Per Provider",
+          "type": "integer"
+        },
+        "unmatched_seconds": {
+          "default": 300,
+          "maximum": 3600,
+          "minimum": 30,
+          "title": "Unmatched Seconds",
+          "type": "integer"
+        },
+        "scan_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Scan Seconds",
+          "type": "number"
+        },
+        "batch": {
+          "default": 32,
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Batch",
+          "type": "integer"
+        },
+        "max_attempts": {
+          "default": 10,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "payload_days": {
+          "default": 7,
+          "maximum": 365,
+          "minimum": 1,
+          "title": "Payload Days",
+          "type": "integer"
+        },
+        "retention_days": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Retention Days",
+          "type": "integer"
+        }
+      },
+      "title": "ConnectorEvents",
+      "type": "object"
+    },
     "Control": {
       "additionalProperties": false,
       "properties": {
@@ -2826,6 +2910,9 @@
     },
     "providers": {
       "$ref": "#/$defs/Providers"
+    },
+    "connector_events": {
+      "$ref": "#/$defs/ConnectorEvents"
     },
     "plugins": {
       "$ref": "#/$defs/Plugins"

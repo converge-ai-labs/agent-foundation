@@ -11,7 +11,9 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 
+import anyio
 from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.connector.events import HasEvents
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
@@ -32,6 +34,8 @@ from a13n_service.providers.browser.definition import BrowserProviderDefinition
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Registry, web_operations
+from a13n_service.providers.tools.connectors import open_connector
+from a13n_service.providers.tools.discovery import unavailable
 from a13n_service.resources.providers.probe import probe, supports_probe
 from a13n_service.resources.providers.schemas import (
     Credential,
@@ -44,6 +48,7 @@ from a13n_service.resources.providers.schemas import (
     ProviderUpdate,
 )
 from a13n_service.resources.providers.tables import (
+    ConnectorProviderRow,
     EnvironmentProviderRow,
     ModelProviderOAuthRow,
     ModelProviderRow,
@@ -208,12 +213,59 @@ async def update_provider[R: ProviderRow](
     if_match: str | None,
     registry: Registry,
     keys: KeyRing,
+    policy: EndpointPolicy | None = None,
+    settings: Providers | None = None,
 ) -> Provider:
     replaces_credential = "credential" in body.model_fields_set
+    verified_version = None
+    provider = None
+    binding = None
+    if row_type is ConnectorProviderRow and (replaces_credential or body.config is not None):
+        async with short_session(storage) as session:
+            scope = await workspace_scope(session, actor, workspace_id, "write")
+            row = await find_row(session, actor, row_type, scope, provider_id, "write")
+            require_match(if_match, row.id, row.version)
+            if row.event_webhook_id is not None:
+                await workspace_scope(session, actor, workspace_id, "admin")
+                if policy is None or settings is None:
+                    raise conflict(row.KIND, row.id, "event_binding_verification_required")
+                provider = await _resolve_row(session, row)
+                binding = row.event_webhook_id, (row.event_config or {}).get("url")
+                verified_version = row.version
+        if verified_version is not None:
+            assert policy is not None and settings is not None and provider is not None
+            config = provider.config if body.config is None else body.config
+            credential = provider.reveal_credential(keys) if not replaces_credential else (body.credential)
+            try:
+                with anyio.fail_after(settings.tool_call_seconds):
+                    async with open_connector(
+                        registry.get("connector", provider.type),
+                        config,
+                        credential,
+                        policy=policy,
+                        timeout=settings.operation_seconds,
+                        max_bytes=settings.response_bytes,
+                    ) as opened:
+                        webhook = await opened.events.webhook() if isinstance(opened, HasEvents) else None
+            except Exception as error:
+                raise unavailable(f"connector:{provider.type}", error) from None
+            if webhook is None or (webhook.id, webhook.url) != binding:
+                raise conflict("connector_provider", provider_id, "event_project_changed")
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await find_row(session, actor, row_type, scope, provider_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
+        if verified_version is not None and row.version != verified_version:
+            raise conflict(row.KIND, row.id, "provider_changed")
+        if isinstance(row, ConnectorProviderRow) and row.event_operation is not None:
+            raise conflict(row.KIND, row.id, "event_operation_in_progress")
+        if (
+            isinstance(row, ConnectorProviderRow)
+            and row.event_webhook_id is not None
+            and (replaces_credential or body.config is not None)
+            and verified_version is None
+        ):
+            raise conflict(row.KIND, row.id, "provider_changed")
         managed = None
         if isinstance(row, EnvironmentProviderRow) and row.type == "cloudflare":
             managed = await session.scalar(select(DeploymentRow.status).where(DeploymentRow.provider_id == row.id))

@@ -700,6 +700,31 @@ class Composer(Section):
     models: tuple[str, ...] = ("gpt-5.6-luna", "claude-sonnet-5", "deepseek-v4.1-flash", "gemini-3.8-flash")
 
 
+class ConnectorEvents(Section):
+    """Signed ingress bounds and durable event maintenance, owned by control."""
+
+    public_url: str | None = Field(default=None, max_length=2048)
+    body_bytes: int = Field(default=262144, ge=1024, le=1048576)
+    pending_per_provider: int = Field(default=10000, ge=1, le=1000000)
+    unmatched_per_provider: int = Field(default=100, ge=1, le=10000)
+    unmatched_seconds: int = Field(default=300, ge=30, le=3600)
+    scan_seconds: float = Field(default=1, gt=0, le=60)
+    batch: int = Field(default=32, ge=1, le=256)
+    max_attempts: int = Field(default=10, ge=1, le=100)
+    payload_days: int = Field(default=7, ge=1, le=365)
+    retention_days: int = Field(default=30, ge=1, le=3650)
+
+    @model_validator(mode="after")
+    def validate_events(self) -> "ConnectorEvents":
+        if self.retention_days < self.payload_days:
+            raise ValueError("connector_events.retention_days must cover payload_days")
+        if self.public_url is not None:
+            url = urlsplit(self.public_url)
+            if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
+                raise ValueError("connector_events.public_url must be an HTTPS base URL")
+        return self
+
+
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
@@ -898,6 +923,7 @@ class Settings(Section):
     provisioning: Provisioning = Field(default_factory=Provisioning)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     providers: Providers = Field(default_factory=Providers)
+    connector_events: ConnectorEvents = Field(default_factory=ConnectorEvents)
     plugins: Plugins = Field(default_factory=Plugins)
     composer: Composer = Field(default_factory=Composer)
     telemetry: Telemetry = Field(default_factory=Telemetry)

@@ -58,7 +58,9 @@ Every route requires a credential except the health routes, the OpenAPI document
 
 A missing or dead credential is 401 `unauthenticated`. Every authenticated response, a route's own response and an error after authentication included, carries `Cache-Control: no-store` (stored content keeps its own `private, no-store`, [representations](#representations)) and any renewed login cookie.
 
-On API-serving roles, an explicitly supplied `Authorization` header is authenticated before HTTP route admission, including public paths. Public paths remain accessible without a credential; supplying an invalid credential yields 401. A Run credential also requires explicit operation admission even on a public path.
+On API-serving roles, Service-authenticated paths validate an explicitly supplied `Authorization` header before HTTP route admission, including public paths. Those public paths remain accessible without a credential; supplying an invalid credential yields 401. A Run credential also requires explicit operation admission even on those public paths.
+
+[Connector signature callbacks](16-connector-events.md#durable-receipt) and third-party App webhooks instead authenticate their sender through their own protocol. They ignore Service credentials, including Run credentials; those credentials cannot replace a valid sender signature.
 
 While the distribution keeps the local authenticator, the OpenAPI document declares these credentials as the security schemes `apiKey` (bearer), `loginSession` (the cookie) and `csrf` (the `X-CSRF-Token` header). Every authenticated operation accepts `apiKey` or `loginSession`, the latter together with `csrf` on methods other than GET, HEAD and OPTIONS; the public operations declare no scheme.
 
@@ -476,3 +478,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 - `thread-stream.schema.json`, the JSON Schema of each thread-stream frame's `data`, keyed by SSE event name (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 `make service-contract-generate` exports both and regenerates the Console's typed client; `make service-contract-check` fails when either export or the client differs from the code. A change to a route, schema or frame updates these exports in the same change.
+
+## Connector event routes
+
+[Connector events](16-connector-events.md#http-surface) owns event directory, callback setup, subscriptions and history routes. Only the exact `POST /connector-webhooks/{provider_id}` uses provider signatures in place of Service credentials; other paths keep ordinary authentication.
