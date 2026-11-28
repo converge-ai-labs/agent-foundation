@@ -218,16 +218,21 @@ class Pipe:
             if frame.startswith(b"commit:"):
                 self.segment += 1
             self.control_sent += 1
-            async with self.redis.pipeline(transaction=True) as batch:
+            first = self.control_sent == 1
+            # Create the stream and its TTL atomically. Later appends must not recreate it.
+            async with self.redis.pipeline(transaction=first) as batch:
                 batch.xadd(
                     self.outbox,
                     {b"seq": self.control_sent, b"fence": self.fence, b"frame": frame},
                     maxlen=_STREAM_LIMIT,
                     approximate=False,
+                    nomkstream=not first,
                 )
-                batch.expire(self.outbox, ATTACH_SECONDS * 2)
+                if first:
+                    batch.expire(self.outbox, ATTACH_SECONDS * 2)  # Heartbeats renew the stream TTL.
                 batch.publish(f"a13n:rt:{self.peer}:control", self.outbox.encode())
-                await batch.execute()
+                if (await batch.execute())[0] is None:
+                    raise unavailable()
         except RedisError:
             raise unavailable() from None
 
@@ -241,7 +246,13 @@ class Pipe:
                 periodic = clock - self.last_check >= HEARTBEAT_SECONDS
                 if self.scan or periodic:
                     self.scan = False
-                    close, alive = await self.redis.mget(self.inbox + ":close", self.outbox + ":alive")
+                    async with self.redis.pipeline(transaction=False) as batch:
+                        batch.mget(self.inbox + ":close", self.outbox + ":alive")
+                        batch.xread({self.inbox: self.cursor}, count=_STREAM_LIMIT)
+                        markers, rows = await batch.execute(raise_on_error=False)
+                    if isinstance(markers, RedisError):
+                        raise markers
+                    close, alive = markers
                     if close == self.fence or (self.side == "worker" and close == self.control_id.encode() + b"/"):
                         return b"closed"
                     if periodic:
@@ -252,7 +263,9 @@ class Pipe:
                             and alive != self.fence
                         ):
                             raise unavailable()
-                    rows = await self.redis.xread({self.inbox: self.cursor}, count=_STREAM_LIMIT)
+                    # Check stream command errors only after applying the close and heartbeat markers.
+                    if isinstance(rows, RedisError):
+                        raise rows
                     for _, entries in cast(list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]], rows):
                         for cursor, fields in entries:
                             self.cursor = cursor
