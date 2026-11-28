@@ -22,6 +22,7 @@
     "---Integrate Applications---",
     "connect-application",
     "stream-and-read-results",
+    "realtime",
     "sdks",
     "files-and-webhooks",
     "webhooks",

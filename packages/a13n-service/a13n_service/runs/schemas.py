@@ -447,10 +447,14 @@ class HistoricalDesktopPending(_Frozen):
     desktop_control_id: str
 
 
+type RealtimeCompletionReason = Literal["duration_limit", "idle_timeout"]
+
+
 class Outcome(_Frozen):
     """How a run ends. A worker commits a completed or waiting outcome in its final checkpoint before sealing."""
 
     status: Sealed
+    reason: RealtimeCompletionReason | None = None
     output: JsonValue = None
     pending: Pending | None = None
     failure: Failure | None = None
@@ -461,8 +465,8 @@ class Outcome(_Frozen):
             raise ValueError("Only a waiting outcome carries pending requests, and it requires them")
         if (self.status in {"failed", "cancelled"}) != (self.failure is not None):
             raise ValueError("Failed and cancelled outcomes require failure details; other outcomes cannot carry them")
-        if self.status != "completed" and self.output is not None:
-            raise ValueError("Only a completed outcome carries output")
+        if self.status != "completed" and (self.output is not None or self.reason is not None):
+            raise ValueError("Only a completed outcome carries output or a completion reason")
         return self
 
     @classmethod

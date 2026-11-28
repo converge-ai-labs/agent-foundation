@@ -1,5 +1,4 @@
 class RealtimeCapture extends AudioWorkletProcessor {
-  frame = new Int16Array(480);
   position = 0;
   weight = 0;
   sum = 0;
@@ -11,14 +10,16 @@ class RealtimeCapture extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.pcm = options.processorOptions.pcm;
+    this.inputHz = options.processorOptions.inputHz;
+    this.frame = new Int16Array(this.inputHz / 50);
   }
 
   process(inputs) {
     const input = inputs[0]?.[0];
     if (input) {
-      // Average input over each 24 kHz output interval, carrying fractions across worklet blocks.
+      // Average input over each negotiated sample interval, carrying fractions across worklet blocks.
       for (const inputSample of input) {
-        let remaining = 24000;
+        let remaining = this.inputHz;
         while (remaining > 0) {
           const weight = Math.min(remaining, sampleRate - this.weight);
           this.sum += inputSample * weight;
@@ -45,7 +46,7 @@ class RealtimeCapture extends AudioWorkletProcessor {
             }
             if (this.pcm) {
               this.port.postMessage(this.frame.buffer, [this.frame.buffer]);
-              this.frame = new Int16Array(480);
+              this.frame = new Int16Array(this.inputHz / 50);
             }
             this.energy = 0;
             this.position = 0;

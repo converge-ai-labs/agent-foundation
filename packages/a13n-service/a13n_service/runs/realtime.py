@@ -47,6 +47,7 @@ from a13n_service.runs.realtime_transport import (
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     InitialMounts,
+    RealtimeCompletionReason,
     RunOptions,
     SessionCreate,
     SessionOrigin,
@@ -70,7 +71,9 @@ CONNECT_PATH = "/api/v1/workspaces/{workspace_id}/realtime"
 type Frame = bytes | dict[str, str | int | bool]
 type Transport = Literal["websocket", "webrtc"]
 type HandshakeResult = Literal["ready", "timeout", "failed", "abandoned"]
-type CallEnd = Literal["completed", "client_disconnected", "draining", "transport_error", "failed"]
+type LimitReason = RealtimeCompletionReason | Literal["usage_limit_exceeded"]
+LIMIT_REASONS = frozenset(("duration_limit", "idle_timeout", "usage_limit_exceeded"))
+type CallEnd = Literal["completed", "client_disconnected", "draining", "transport_error", "failed", "limit_exceeded"]
 
 ACTIVE_CONNECTIONS = meter.create_up_down_counter(
     "a13n.realtime.connections.active", unit="{connection}", description="Open realtime signaling WebSockets"
@@ -130,6 +133,12 @@ class Channel:
     approvals: dict[str, asyncio.Future[bool]] = field(default_factory=dict)
     webrtc_offer: str | None = None
     transcript_window: float = 0
+    max_duration_seconds: int | None = None
+    end_reason: LimitReason | None = field(default=None, init=False)
+    draining: bool = field(default=False, init=False)
+    foreground: set[str] = field(default_factory=set, init=False)
+    last_activity: float = field(default=0, init=False)
+    activity: asyncio.Event = field(default_factory=asyncio.Event, init=False)
     _transcripts: dict[tuple[str, str], SpeechTranscript] = field(default_factory=dict, init=False)
     _transcript_timer: asyncio.TimerHandle | None = field(default=None, init=False)
 
@@ -185,11 +194,35 @@ class Channel:
         self.failed = True
         self.closed.set()
 
-    def finish(self, run_id: str, status: str) -> None:
+    def touch(self) -> None:
+        self.last_activity = asyncio.get_running_loop().time()
+        self.activity.set()
+
+    def end_for_limit(self, reason: LimitReason) -> None:
+        closing = self.closed.is_set()
+        # A charged turn can be refused while the channel is already closing. Keep that verdict for the seal.
+        if not closing or reason == "usage_limit_exceeded":
+            self.end_reason = reason
+        if not closing:
+            self.emit({"type": "ending", "reason": reason})
+            # Keep the outbound lane open so the Worker can deliver the committed seal.
+            self.closed.set()
+
+    def finish(self, run_id: str, status: str, failure_code: str | None = None) -> None:
         self.flush_transcripts()
+        reason = failure_code or (self.end_reason if status == "completed" else None)
+        if reason in {"forbidden", "unauthenticated"}:
+            reason = "authority_revoked"
+        if reason is None and self.draining:
+            reason = "worker_draining"
         if status == "failed" and self.outgoing.qsize() + 2 <= self.outgoing.maxsize:
-            self._enqueue({"type": "error", "message": "The realtime run failed"})
-        self.emit({"type": "sealed", "run_id": run_id, "status": status})
+            self._enqueue(
+                {"type": "error", "code": reason or "realtime_unavailable", "message": "The realtime run failed"}
+            )
+        frame: dict[str, str | int | bool] = {"type": "sealed", "run_id": run_id, "status": status}
+        if reason is not None:
+            frame["reason"] = reason
+        self.emit(frame)
         self.finished.set()
 
     async def approve(self, call_id: str, name: str, arguments: str) -> bool | None:
@@ -232,6 +265,7 @@ class RealtimeSessionCreate(BaseModel):
     memories: MemoryMounts = ()
     environments: InitialMounts = ()
     draft: str = Field(default="", max_length=8192)
+    max_duration_seconds: int | None = Field(default=None, ge=30)
 
     @model_validator(mode="after")
     def require_webrtc_audio(self) -> RealtimeSessionCreate:
@@ -260,7 +294,18 @@ class ConnectionTicket(BaseModel):
     credential: Authenticated
 
 
+class IceServer(BaseModel):
+    urls: str | tuple[str, ...]
+    username: str | None = None
+    credential: str | None = Field(default=None, repr=False)
+
+
 class RealtimeSessionTicket(BaseModel):
+    maturity: Literal["alpha"] = "alpha"
+    audio_input_hz: int
+    audio_output_hz: int
+    max_duration_seconds: int
+    ice_servers: tuple[IceServer, ...] = ()
     run_id: str
     thread_id: str
     session_id: str
@@ -303,7 +348,14 @@ _OUTPUT = TypeAdapter(dict[str, str | int | bool])
 class RealtimeAvailability(BaseModel):
     realtime: bool = False
     can_start: bool = False
+    maturity: Literal["alpha"] = "alpha"
     accepts_text: bool = False
+    accepts_images: bool = False
+    supported_image_types: tuple[str, ...] = ()
+    audio_input_hz: int | None = None
+    audio_output_hz: int | None = None
+    supports_interruption: bool = False
+    max_duration_seconds: int | None = None
     reason: str | None = None
     transports: tuple[Transport, ...] = ()
 
@@ -319,7 +371,7 @@ def _unavailable_reason(runtime: Runtime) -> str | None:
     return None
 
 
-@router.get("/api/v1/realtime")
+@router.get("/api/v1/realtime", summary="Check Realtime availability (Alpha)")
 async def realtime_availability(
     runtime: CurrentRuntime,
     actor: Actor,
@@ -330,7 +382,7 @@ async def realtime_availability(
     fork_run_id: ObjectId | None = None,
     model: Key | None = None,
 ) -> RealtimeAvailability:
-    """Report realtime input for the selected Agent and Thread."""
+    """Report Alpha native live API capabilities for the selected Agent and Thread."""
     if thread_id and fork_run_id:
         raise invalid("fork_run_id", "Choose an existing Thread or a Run to fork")
     if fork_run_id and model is not None:
@@ -395,6 +447,7 @@ async def _inspect(
     protocol = PROTOCOLS.get(model.config.model_api)
     if protocol is None:
         return RealtimeAvailability(), authority
+    protocol = protocol.for_model(model.config.model_name)
     reason = _unavailable_reason(runtime)
     if reason is None and start.thread_id and thread is not None and not eligible(thread, last):
         reason = "Wait until this Thread is open and idle"
@@ -402,16 +455,20 @@ async def _inspect(
         realtime=True,
         can_start=reason is None,
         accepts_text=True,
+        audio_input_hz=protocol.audio_input_hz,
+        audio_output_hz=protocol.audio_output_hz,
+        supports_interruption=protocol.supports_interruption,
+        max_duration_seconds=runtime.settings.worker.realtime_max_duration_seconds,
         reason=reason,
         transports=("websocket", "webrtc") if protocol.webrtc else ("websocket",),
     ), authority
 
 
-@router.post("/api/v1/realtime/sessions", status_code=201)
+@router.post("/api/v1/realtime/sessions", status_code=201, summary="Create a Realtime session ticket (Alpha)")
 async def create_realtime_session(
     runtime: CurrentRuntime, credential: Credential, workspace_id: WorkspaceId, body: RealtimeSessionCreate
 ) -> RealtimeSessionTicket:
-    """Issue a one-use WebSocket ticket for the selected Agent and optional Thread."""
+    """Issue a single-use ticket for the Alpha Realtime WebSocket at `/api/v1/workspaces/{workspace_id}/realtime`."""
     if credential.platform is not None:
         raise ServiceError("forbidden", "Run platform credentials cannot open realtime conversations")
     if type(credential) is not Authenticated:
@@ -426,6 +483,11 @@ async def create_realtime_session(
         raise invalid("transport", "The Agent's primary model does not support WebRTC; use websocket")
     if availability.reason is not None:
         raise ServiceError("conflict", availability.reason)
+    ceiling = runtime.settings.worker.realtime_max_duration_seconds
+    max_duration = body.max_duration_seconds or ceiling
+    if max_duration > ceiling:
+        raise invalid("max_duration_seconds", f"The configured maximum is {ceiling} seconds")
+    body = body.model_copy(update={"max_duration_seconds": max_duration})
     token = token_urlsafe(32)
     async with transaction(runtime.storage) as session:
         await session.get_one(WorkspaceRow, workspace_id, with_for_update={"key_share": True})
@@ -464,7 +526,21 @@ async def create_realtime_session(
                 request=value.model_dump(mode="json", exclude_unset=True),
             )
         )
+    assert availability.audio_input_hz is not None and availability.audio_output_hz is not None
     return RealtimeSessionTicket(
+        audio_input_hz=availability.audio_input_hz,
+        audio_output_hz=availability.audio_output_hz,
+        max_duration_seconds=max_duration,
+        ice_servers=tuple(
+            IceServer(
+                urls=server.urls,
+                username=server.username,
+                credential=server.credential.get_secret_value() if server.credential is not None else None,
+            )
+            for server in runtime.settings.control.realtime_ice_servers
+        )
+        if body.transport == "webrtc"
+        else (),
         websocket_path=CONNECT_PATH.format(workspace_id=workspace_id),
         subprotocol=SUBPROTOCOL,
         ticket=token,
@@ -643,7 +719,20 @@ async def _connection_principal(runtime: Runtime, credential: Authenticated, wor
         return principal
 
 
+def _error_code(error: RedisError | ServiceError | ValidationError | TimeoutError) -> str:
+    if isinstance(error, (RedisError, TransportError, TimeoutError)):
+        return "realtime_transport_failed"
+    if isinstance(error, ValidationError):
+        return "invalid_argument"
+    if error.code in {"forbidden", "unauthenticated", "not_found"}:
+        return "authority_revoked"
+    if error.code == "unavailable":
+        return "realtime_unavailable"
+    return error.code
+
+
 async def connect(socket: WebSocket, workspace_id: str) -> None:
+    """Redeem a ticket and relay Alpha Realtime frames."""
     runtime: Runtime = socket.app.state.runtime
     bridge = runtime.realtime_bridge
     protocols = socket.scope.get("subprotocols", [])
@@ -700,6 +789,7 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
                     principal_id=ticket.credential.principal.id,
                     workspace_id=workspace_id,
                     audio=start.audio,
+                    max_duration_seconds=start.max_duration_seconds,
                 )
             )
             await socket.send_json(
@@ -726,7 +816,7 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
         message = error.message if isinstance(error, ServiceError) else "The realtime request could not be accepted."
         if socket.client_state == socket.application_state == WebSocketState.CONNECTED:
             try:
-                await socket.send_json({"type": "error", "message": message})
+                await socket.send_json({"type": "error", "code": _error_code(error), "message": message})
                 await socket.close(code=1008)
             except (WebSocketDisconnect, OSError):
                 pass
@@ -895,12 +985,22 @@ async def relay(
                         observation.handshake("ready")
                     if kind == "draining":
                         observation.terminal_reason = "draining"
+                    elif kind == "ending" and event.get("reason") in LIMIT_REASONS:
+                        observation.terminal_reason = "limit_exceeded"
                     if kind == "sealed":
                         # The seal follows the commit. Its delivery can race the bridge's separate finish marker.
                         if observation.terminal_reason == "draining":
                             observation.handshake("abandoned")
                         else:
-                            observation.terminal_reason = "failed" if event.get("status") == "failed" else "completed"
+                            reason = event.get("reason")
+                            if reason in LIMIT_REASONS:
+                                observation.terminal_reason = "limit_exceeded"
+                            elif reason == "realtime_transport_failed":
+                                observation.terminal_reason = "transport_error"
+                            else:
+                                observation.terminal_reason = (
+                                    "failed" if event.get("status") == "failed" else "completed"
+                                )
                             observation.handshake("failed")
                     if kind == "interrupted":
                         acknowledged_epoch += 1
@@ -968,6 +1068,7 @@ async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channe
             audio=offer.audio,
             webrtc_offer=start[1:].decode() or None,
             transcript_window=runtime.settings.worker.stream_coalesce_seconds,
+            max_duration_seconds=offer.max_duration_seconds,
         )
 
         async def verify_dispatch(call_id: str) -> bool:
@@ -989,6 +1090,8 @@ async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channe
             if call_id in channel.dispatched or not channel.decisions.get(call_id, True):
                 raise ServiceError("conflict", "This tool call was already decided")
             channel.dispatched.add(call_id)
+            channel.foreground.add(call_id)
+            channel.touch()
             return True
 
         channel.verify_dispatch = verify_dispatch
@@ -1006,7 +1109,7 @@ async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
                 raw = await pipe.receive()
                 if raw in {b"closed", b"stop"}:
                     return
-                if raw == b"ping":
+                if raw == b"ping" or channel.closed.is_set():
                     continue
                 if raw == b"commit":
                     channel.incoming.put_nowait(Media(type="audio_commit"))
@@ -1023,6 +1126,7 @@ async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
                 if isinstance(command, Approval):
                     answer = channel.approvals.get(command.call_id)
                     if answer is not None and not answer.done():
+                        channel.touch()
                         answer.set_result(command.approve)
                 elif isinstance(command, Media):
                     if command.type == "interrupt":
@@ -1031,6 +1135,7 @@ async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
                             channel.pcm.get_nowait()
                     channel.incoming.put_nowait(command)
                 elif command.text.strip():
+                    channel.touch()
                     channel.incoming.put_nowait(command.text)
         except asyncio.QueueFull:
             channel._overflow()

@@ -11646,6 +11646,51 @@
         "minItems": 1,
         "type": "array"
       },
+      "IceServer": {
+        "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential"
+          },
+          "urls": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Urls"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "title": "IceServer",
+        "type": "object"
+      },
       "ImageInputPolicy": {
         "additionalProperties": false,
         "description": "Preparation limits for one model's image input, not native ModelSettings.",
@@ -20839,15 +20884,59 @@
       },
       "RealtimeAvailability": {
         "properties": {
+          "accepts_images": {
+            "default": false,
+            "title": "Accepts Images",
+            "type": "boolean"
+          },
           "accepts_text": {
             "default": false,
             "title": "Accepts Text",
             "type": "boolean"
           },
+          "audio_input_hz": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Input Hz"
+          },
+          "audio_output_hz": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Output Hz"
+          },
           "can_start": {
             "default": false,
             "title": "Can Start",
             "type": "boolean"
+          },
+          "maturity": {
+            "const": "alpha",
+            "default": "alpha",
+            "title": "Maturity",
+            "type": "string"
+          },
+          "max_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Duration Seconds"
           },
           "realtime": {
             "default": false,
@@ -20864,6 +20953,19 @@
               }
             ],
             "title": "Reason"
+          },
+          "supported_image_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Image Types",
+            "type": "array"
+          },
+          "supports_interruption": {
+            "default": false,
+            "title": "Supports Interruption",
+            "type": "boolean"
           },
           "transports": {
             "default": [],
@@ -20932,6 +21034,18 @@
             "title": "Fresh Environments",
             "type": "boolean"
           },
+          "max_duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 30.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Duration Seconds"
+          },
           "max_usage": {
             "anyOf": [
               {
@@ -20990,9 +21104,35 @@
       },
       "RealtimeSessionTicket": {
         "properties": {
+          "audio_input_hz": {
+            "title": "Audio Input Hz",
+            "type": "integer"
+          },
+          "audio_output_hz": {
+            "title": "Audio Output Hz",
+            "type": "integer"
+          },
           "expires_in": {
             "description": "Ticket lifetime in seconds.",
             "title": "Expires In",
+            "type": "integer"
+          },
+          "ice_servers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IceServer"
+            },
+            "title": "Ice Servers",
+            "type": "array"
+          },
+          "maturity": {
+            "const": "alpha",
+            "default": "alpha",
+            "title": "Maturity",
+            "type": "string"
+          },
+          "max_duration_seconds": {
+            "title": "Max Duration Seconds",
             "type": "integer"
           },
           "run_id": {
@@ -21025,6 +21165,9 @@
           }
         },
         "required": [
+          "audio_input_hz",
+          "audio_output_hz",
+          "max_duration_seconds",
           "run_id",
           "thread_id",
           "session_id",
@@ -51635,7 +51778,7 @@
     },
     "/api/v1/realtime": {
       "get": {
-        "description": "Report realtime input for the selected Agent and Thread.",
+        "description": "Report Alpha native live API capabilities for the selected Agent and Thread.",
         "operationId": "realtime_availability",
         "parameters": [
           {
@@ -51759,12 +51902,12 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "summary": "Realtime Availability"
+        "summary": "Check Realtime availability (Alpha)"
       }
     },
     "/api/v1/realtime/sessions": {
       "post": {
-        "description": "Issue a one-use WebSocket ticket for the selected Agent and optional Thread.",
+        "description": "Issue a single-use ticket for the Alpha Realtime WebSocket at `/api/v1/workspaces/{workspace_id}/realtime`.",
         "operationId": "create_realtime_session",
         "parameters": [
           {
@@ -51816,7 +51959,7 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "summary": "Create Realtime Session"
+        "summary": "Create a Realtime session ticket (Alpha)"
       }
     },
     "/api/v1/runs": {

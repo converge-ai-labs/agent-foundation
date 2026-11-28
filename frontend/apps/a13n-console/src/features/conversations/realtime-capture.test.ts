@@ -5,13 +5,14 @@ import { expect, it, vi } from "vitest";
 import processorSource from "./realtime-capture.js?raw";
 
 it.each([
-  [true, 24000],
-  [true, 44100],
-  [true, 48000],
-  [false, 48000],
+  [true, 24000, 24000],
+  [true, 44100, 24000],
+  [true, 48000, 24000],
+  [true, 48000, 16000],
+  [false, 48000, 24000],
 ] as const)(
   "detects sustained local speech with PCM forwarding %s",
-  (pcm, sampleRate) => {
+  (pcm, sampleRate, inputHz) => {
     const postMessage = vi.fn();
     let processor!: { process(inputs: Float32Array[][]): boolean };
     runInNewContext(processorSource, {
@@ -23,7 +24,7 @@ it.each([
         _name: string,
         Processor: new (settings: object) => typeof processor,
       ) => {
-        processor = new Processor({ processorOptions: { pcm } });
+        processor = new Processor({ processorOptions: { pcm, inputHz } });
       },
     });
     const feed = (level: number, frames: number) => {
@@ -44,6 +45,12 @@ it.each([
     feed(0, 10);
     feed(0.2, 2);
     expect(onsets()).toBe(2);
-    expect(postMessage.mock.calls.length - onsets()).toBe(pcm ? 23 : 0);
+    const frames = postMessage.mock.calls
+      .map(([value]) => value)
+      .filter((value) => value !== "speech");
+    expect(frames).toHaveLength(pcm ? 23 : 0);
+    expect(
+      frames.every((frame) => frame.byteLength === (inputHz / 50) * 2),
+    ).toBe(true);
   },
 );

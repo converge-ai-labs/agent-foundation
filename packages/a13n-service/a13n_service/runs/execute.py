@@ -14,7 +14,7 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, replace
 from functools import partial
@@ -59,16 +59,23 @@ from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import HandleDeferredToolCalls
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     EnqueuedMessagesEvent,
+    FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
+    PartDeltaEvent,
+    PartEndEvent,
+    PartStartEvent,
     RealtimeInputSpeechStartEvent,
     RealtimeOutputSpeechStartEvent,
     RealtimeResponseInterruptedEvent,
     RealtimeSessionReconnectEvent,
     RealtimeTurnCompleteEvent,
+    SpeechPart,
+    SpeechPartDelta,
     TextContent,
     ToolReturnPart,
     UserContent,
@@ -90,7 +97,12 @@ from a13n_service.resources.agents import stored
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, definitions, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
-from a13n_service.runs.admission import CallContext, requires_model_reservation
+from a13n_service.runs.admission import (
+    CallContext,
+    RealtimeBudgetContext,
+    RealtimeBudgetPolicy,
+    requires_model_reservation,
+)
 from a13n_service.runs.agent import ResolvedAgent
 from a13n_service.runs.attachments import Recipient
 from a13n_service.runs.attempts import (
@@ -124,7 +136,7 @@ from a13n_service.runs.notices import StaleNotice, require_notices
 from a13n_service.runs.realtime import BUDGET_RESTRICTION, INBOX_METADATA, Channel, Media, worker_channel
 from a13n_service.runs.realtime_cleanup import provider_call
 from a13n_service.runs.realtime_transcript import LiveTranscripts
-from a13n_service.runs.realtime_transport import TransportError
+from a13n_service.runs.realtime_transport import ATTACH_SECONDS, TransportError
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
@@ -212,14 +224,56 @@ async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> No
             else:
                 await seal_attempt(runtime, lease, outcome)
             if channel is not None and outcome is not None:
-                channel.finish(lease.run_id, outcome.status)
+                channel.finish(lease.run_id, outcome.status, outcome.failure.code if outcome.failure else None)
             return
         await _Attempt(runtime, lease, control, plan, channel=channel).run()
         if channel is not None:
             async with short_session(runtime.storage) as session:
                 row = await session.get(RunRow, lease.run_id)
-                if row is not None and row.status in {"completed", "cancelled", "failed", "waiting"}:
-                    channel.finish(row.id, row.status)
+                if row is None or row.status not in {"completed", "cancelled", "failed", "waiting"}:
+                    return
+                run_id, status = row.id, row.status
+                code = Failure.model_validate(row.failure).code if row.failure is not None else None
+            channel.finish(run_id, status, code)
+
+
+def _realtime_activity(channel: Channel, event: object) -> None:
+    if isinstance(event, FunctionToolCallEvent):
+        channel.foreground.add(event.part.tool_call_id)
+    elif isinstance(event, FunctionToolResultEvent):
+        channel.foreground.discard(event.part.tool_call_id)
+    elif not (
+        isinstance(event, (RealtimeInputSpeechStartEvent, RealtimeOutputSpeechStartEvent))
+        or (isinstance(event, PartDeltaEvent) and isinstance(event.delta, SpeechPartDelta))
+        or (isinstance(event, (PartStartEvent, PartEndEvent)) and isinstance(event.part, SpeechPart))
+    ):
+        return
+    channel.touch()
+
+
+async def _watch_realtime_limits(channel: Channel, start: float, duration: int, idle: int) -> None:
+    """Watch wall-clock and semantic idle deadlines independently of media traffic."""
+    loop = asyncio.get_running_loop()
+    expires = start + duration
+    warn_at = expires - 60 if duration > 60 else None
+    while not channel.closed.is_set():
+        channel.activity.clear()
+        now = loop.time()
+        if now >= expires:
+            channel.end_for_limit("duration_limit")
+            return
+        idle_at = channel.last_activity + idle if idle and not (channel.foreground or channel.approvals) else expires
+        if now >= idle_at:
+            channel.end_for_limit("idle_timeout")
+            return
+        if warn_at is not None and now >= warn_at:
+            channel.emit({"type": "limit_warning", "reason": "duration_limit", "remaining_seconds": 60})
+            warn_at = None
+        try:
+            async with asyncio.timeout_at(min(expires, idle_at, warn_at if warn_at is not None else expires)):
+                await channel.activity.wait()
+        except TimeoutError:
+            pass
 
 
 # Provider failures that a later attempt may not repeat; the others need a changed mount or configuration.
@@ -279,6 +333,8 @@ def _deterministic(error: Exception) -> Outcome | None:
         return Outcome.failed(error.code, error.message)
     if isinstance(error, AuthorityRevoked):
         return error.outcome
+    if isinstance(error, TransportError):
+        return Outcome.failed("realtime_transport_failed", error.message)
     if isinstance(error, ServiceError):
         return None if error.code == "unavailable" else Outcome.refused(error)
     if isinstance(error, EndpointPolicyError):
@@ -691,7 +747,12 @@ class _Attempt:
                     await inbox.fail_assigned(session, run.id, error.entry_id, Failure.of(error), at=current)
                 await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
                 return
-            outcome = self._refusal() or _failure(self.lease, error)
+            if isinstance(error, AuthorityRevoked):
+                outcome = _failure(self.lease, error)
+            elif self.channel is not None and self.channel.end_reason == "usage_limit_exceeded":
+                outcome = self._budget_failure()
+            else:
+                outcome = self._refusal() or _failure(self.lease, error)
             if outcome is None and self.channel is not None:
                 outcome = Outcome.failed("realtime_unavailable", "The realtime attempt ended before completing")
             if outcome is None:
@@ -922,6 +983,8 @@ class _Attempt:
             )
         )
         self.boundaries.before_dispatch = channel.verify_dispatch
+        duration = self.runtime.settings.worker.realtime_max_duration_seconds
+        duration = min(duration, channel.max_duration_seconds or duration)
         async with (
             agent.open_realtime(
                 self.runtime,
@@ -940,31 +1003,43 @@ class _Attempt:
             await stack.enter_async_context(
                 self.boundaries.process(partial(self._boundary, stream=stream, output=output))
             )
-            await stack.enter_async_context(stream)
+            try:
+                async with asyncio.timeout(ATTACH_SECONDS):
+                    await stack.enter_async_context(stream)
+                    self.offers.requested = True
+                    part_audio = webrtc is None and stream.relay_part_audio(channel.emit)
+                    pcm = stream.stream_audio() if webrtc is None and not part_audio else None
+                    opening = await self._realtime_notices(stream, channel)
+                    opening_id = None
+                    if opening:
+                        if channel.draft:
+                            await stream.recall(channel.draft)
+                            opening.append(
+                                TextContent(channel.draft, metadata={"a13n.steering-source": "user", "display": False})
+                            )
+                        opening_id = stream.enqueue_notice(opening)
+                    elif channel.draft:
+                        await stream.send(channel.draft, respond=True)
+                    if channel.draft:
+                        output.realtime_input(channel.draft)
+            except TimeoutError:
+                raise TransportError("The realtime provider did not become ready") from None
             tasks = await stack.enter_async_context(asyncio.TaskGroup())
-            self.offers.requested = True
-            part_audio = webrtc is None and stream.relay_part_audio(channel.emit)
-            pcm = stream.stream_audio() if webrtc is None and not part_audio else None
-            opening = await self._realtime_notices(stream, channel)
-            opening_id = None
-            if opening:
-                if channel.draft:
-                    await stream.recall(channel.draft)
-                    opening.append(
-                        TextContent(channel.draft, metadata={"a13n.steering-source": "user", "display": False})
-                    )
-                opening_id = stream.enqueue_notice(opening)
-            elif channel.draft:
-                await stream.send(channel.draft, respond=True)
-            if channel.draft:
-                output.realtime_input(channel.draft)
+            started = asyncio.get_running_loop().time()
+            channel.touch()
+            limits = tasks.create_task(
+                _watch_realtime_limits(channel, started, duration, self.runtime.settings.worker.realtime_idle_seconds)
+            )
+            profile = protocol.for_model(self.plan.agent.model.config.model_name)
             ready: dict[str, str | int | bool] = {
                 "type": "ready",
                 "accepts_text": True,
                 "supports_interruption": stream.supports_interruption,
+                "audio_input_hz": profile.audio_input_hz,
+                "audio_output_hz": profile.audio_output_hz,
             }
             if webrtc is None:
-                ready["audio_hz"] = 24000
+                ready["audio_hz"] = profile.audio_output_hz
             else:
                 ready["transport"] = "webrtc"
 
@@ -972,17 +1047,20 @@ class _Attempt:
 
             def start_input() -> asyncio.Task[None]:
                 nonlocal audio
+                channel.touch()
                 channel.emit(ready)
                 if pcm is not None:
                     audio = tasks.create_task(self._realtime_audio(pcm, channel))
                 return tasks.create_task(self._realtime_input(stream, channel, output, tasks))
 
-            receive = start_input() if opening_id is None else None
-            stop = tasks.create_task(self._close_realtime(stream, channel))
+            receive = start_input() if opening_id is None and not channel.closed.is_set() else None
+            stop = tasks.create_task(self._close_realtime(stream, channel, lambda: receive))
             notices = tasks.create_task(self._receive_realtime_notices(stream, channel))
             interrupted_approvals: set[str] = set()
             try:
                 async for item in stream:
+                    if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
+                        _realtime_activity(channel, item.event)
                     await self._observe(item, output)
                     if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
                         if (
@@ -1022,11 +1100,14 @@ class _Attempt:
                             channel.flush_transcripts()
                         if isinstance(item.event, (RealtimeTurnCompleteEvent, EnqueuedMessagesEvent)):
                             await self.boundaries.stage_live(stream.export_state)
+                        if isinstance(item.event, RealtimeTurnCompleteEvent):
+                            await self._check_realtime_budget(channel)
                         if not channel.closed.is_set() and (transcript := transcripts.observe(item)) is not None:
                             channel.transcript(transcript)
             finally:
                 if receive is not None:
                     receive.cancel()
+                limits.cancel()
                 stop.cancel()
                 notices.cancel()
                 if audio is not None and channel.closed.is_set():
@@ -1034,9 +1115,26 @@ class _Attempt:
                 # Overflow already marks the channel failed. Keep any cancellation or lease loss in flight.
                 with suppress(TransportError):
                     channel.flush_transcripts()
-        if channel.failed or stream.result is None:
+        if (channel.failed and channel.end_reason != "usage_limit_exceeded") or stream.result is None:
+            if channel.failed:
+                raise TransportError("The realtime connection failed")
             raise ServiceError("unavailable", "The realtime run ended before it completed")
         return stream.result
+
+    async def _check_realtime_budget(self, channel: Channel) -> None:
+        policy = self.runtime.admission
+        if channel.end_reason == "usage_limit_exceeded" or not isinstance(policy, RealtimeBudgetPolicy):
+            return
+        # Harness attributes the native turn before publishing its event; reports may be retried by flush.
+        await self.usage_reporter.flush()
+        context = RealtimeBudgetContext(
+            self.lease.organization_id, self.lease.workspace_id, self.lease.run_id, self.lease.attempt_id
+        )
+        try:
+            async with transaction(self.runtime.storage) as session:
+                await policy.check_realtime_budget(session, context)
+        except (ServiceError, UsageLimitExceeded):
+            channel.end_for_limit("usage_limit_exceeded")
 
     async def _receive_realtime_notices(self, stream: HarnessLiveStream, channel: Channel) -> None:
         """Assign durable completion notices and consume them only after native delivery."""
@@ -1111,6 +1209,8 @@ class _Attempt:
         resume: asyncio.Task[None] | None = None
         while True:
             payload = await channel.incoming.get()
+            if channel.closed.is_set():
+                return
             if isinstance(payload, bytes):
                 if channel.audio:
                     await stream.send_audio(payload)
@@ -1140,18 +1240,24 @@ class _Attempt:
             if not channel.closed.is_set():
                 channel.emit(chunk)
 
-    async def _close_realtime(self, stream: HarnessLiveStream, channel: Channel) -> None:
+    async def _close_realtime(
+        self, stream: HarnessLiveStream, channel: Channel, receiving: Callable[[], asyncio.Task[None] | None]
+    ) -> None:
         stopped = asyncio.create_task(self.control.stopped.wait())
         handoff = asyncio.create_task(self.control.handoff.wait())
         closed = asyncio.create_task(channel.closed.wait())
         signals = (stopped, handoff, closed)
         try:
             await asyncio.wait(signals, return_when=asyncio.FIRST_COMPLETED)
+            if (receive := receiving()) is not None:
+                receive.cancel()
+                await asyncio.gather(receive, return_exceptions=True)
             if self.control.stopped.is_set():
                 stream.cancel()
             else:
                 if self.control.handoff.is_set():
-                    channel.emit({"type": "draining"})
+                    channel.draining = True
+                    channel.emit({"type": "draining", "code": "worker_draining"})
                 async with asyncio.timeout(self.runtime.settings.worker.drain_seconds):
                     await stream.close()
         finally:
@@ -1487,8 +1593,19 @@ class _Attempt:
         await self.control.stopped.wait()
         stream.cancel()
 
+    def _budget_failure(self) -> Outcome:
+        refusal = self._refusal()
+        if self.control.outcome.failure is not None and self.control.outcome.failure.code == "authority_revoked":
+            return self.control.outcome
+        return refusal or Outcome.failed("usage_limit_exceeded", "The realtime usage budget was exceeded")
+
     async def _end(self, result: HarnessRunResult) -> None:
         self.usage.add(result.usage_records)
+        reason = self.channel.end_reason if self.channel is not None else None
+        if reason == "usage_limit_exceeded" and result.status != "completed":
+            await self._record_usage()
+            await self._seal_interrupted(self._budget_failure())
+            return
         if result.status == "failed":
             assert result.failure is not None
             failed = Outcome.failed(
@@ -1523,7 +1640,11 @@ class _Attempt:
         snapshot = self._snapshot(terminal=True)
         if result.status == "completed":
             require_output_size(result.output, self.runtime.settings.worker.output_bytes)
-            outcome = Outcome(status="completed", output=result.output)
+            outcome = (
+                self._budget_failure()
+                if reason == "usage_limit_exceeded"
+                else Outcome(status="completed", output=result.output, reason=reason)
+            )
             await self._commit(result.state, cursors=self.cursors.snapshot(), snapshot=snapshot, outcome=outcome)
         else:
             assert result.deferred is not None

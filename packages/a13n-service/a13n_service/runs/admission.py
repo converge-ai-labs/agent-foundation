@@ -5,7 +5,7 @@ dispatch. Both are SQL-only, short and idempotent; a policy can only refuse what
 """
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +51,21 @@ class AdmissionPolicy(Protocol):
     async def accept(self, session: AsyncSession, intent: AcceptedIntent) -> None: ...
 
     async def proceed(self, session: AsyncSession, call: CallContext) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RealtimeBudgetContext:
+    organization_id: str
+    workspace_id: str
+    run_id: str
+    run_attempt_id: str
+
+
+@runtime_checkable
+class RealtimeBudgetPolicy(Protocol):
+    """Optional post-turn limit. Query committed usage in the caller's short SQL transaction."""
+
+    async def check_realtime_budget(self, session: AsyncSession, call: RealtimeBudgetContext) -> None: ...
 
 
 def requires_model_reservation(policy: AdmissionPolicy | None) -> bool:

@@ -22,6 +22,7 @@
     "---业务应用接入---",
     "connect-application",
     "stream-and-read-results",
+    "realtime",
     "sdks",
     "files-and-webhooks",
     "webhooks",

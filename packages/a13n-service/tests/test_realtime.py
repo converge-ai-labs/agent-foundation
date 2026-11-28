@@ -13,7 +13,9 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness import HarnessEvent, RunBindings, RunConfiguration
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_harness.providers.model.azure_openai import DEFINITION as AZURE
+from a13n_harness.providers.model.google_gemini import DEFINITION as GOOGLE
 from a13n_harness.providers.model.openai import DEFINITION as OPENAI
 from a13n_harness.providers.model.xai import DEFINITION as XAI
 from a13n_service.infra.crypto import KeyRing, SecretLocation
@@ -34,6 +36,7 @@ from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import BinaryAudio, ModelMessage, RealtimeSessionReconnectEvent, RealtimeTurnCompleteEvent
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.realtime import RealtimeModelSettings, WebRTCAnswer, WebRTCSession
+from pydantic_ai.realtime.azure import AzureRealtimeModel
 from pydantic_ai.realtime.codec import (
     AudioDelta,
     OutputTranscript,
@@ -45,6 +48,7 @@ from pydantic_ai.realtime.codec import (
     ToolResult,
     TruncateOutput,
 )
+from pydantic_ai.realtime.google import GoogleRealtimeModel
 from pydantic_ai.realtime.lifecycle import InferredLifecycle, LifecycleEvent, RealtimeFrame
 from pydantic_ai.realtime.openai import OpenAIRealtimeModel
 from pydantic_ai.realtime.openai_live import OpenAILiveModel
@@ -69,11 +73,14 @@ async def create_voice_agent(service, runs_kit, model_api="openai.realtime"):
     provider_type, model_name = {
         "openai.realtime": ("openai", "gpt-realtime-2.1"),
         "openai.live": ("openai", "gpt-live-1"),
+        "azure.realtime": ("azure_openai", "azure-deployment"),
+        "google.realtime": ("google_gemini", "gemini-3.1-flash-live-preview"),
         "xai.realtime": ("xai", "grok-voice-latest"),
     }[model_api]
+    config = {"resource_endpoint": "https://resource.openai.azure.com"} if model_api == "azure.realtime" else {}
     provider = await service.client.post(
         f"{service.api}/model-providers",
-        json={"type": provider_type, "name": "Realtime", "config": {}, "credential": {"api_key": "test-key"}},
+        json={"type": provider_type, "name": "Realtime", "config": config, "credential": {"api_key": "test-key"}},
     )
     assert provider.status_code == 201, provider.text
     model = await service.client.post(
@@ -159,7 +166,17 @@ async def test_failed_plan_finishes_an_accepted_realtime_connection(settings, se
             async with connect(socket_url, subprotocols=[ticket["subprotocol"], ticket["ticket"]]) as socket:
                 accepted = json.loads(await socket.recv())
                 assert accepted["type"] == "accepted"
-                assert json.loads(await socket.recv()) == {"type": "error", "message": "The realtime run failed"}
+                assert json.loads(await socket.recv()) == {
+                    "type": "error",
+                    "code": "authority_revoked",
+                    "message": "The realtime run failed",
+                }
+                assert json.loads(await socket.recv()) == {
+                    "type": "sealed",
+                    "status": "failed",
+                    "run_id": ticket["run_id"],
+                    "reason": "authority_revoked",
+                }
         assert (await runs_kit.get_run(service, accepted["run_id"]))["status"] == "failed"
 
 
@@ -168,17 +185,19 @@ async def test_failed_plan_finishes_an_accepted_realtime_connection(settings, se
     [
         ("openai", "openai.realtime", "gpt-realtime-2.1", OpenAIRealtimeModel),
         ("openai", "openai.live", "gpt-live-1", OpenAILiveModel),
+        ("azure_openai", "azure.realtime", "azure-deployment", AzureRealtimeModel),
+        ("google_gemini", "google.realtime", "gemini-3.1-flash-live-preview", GoogleRealtimeModel),
         ("xai", "xai.realtime", "grok-voice-latest", XaiRealtimeModel),
     ],
 )
-async def test_primary_model_selects_its_realtime_adapter(provider_type, api, name, adapter):
+async def test_primary_model_selects_its_realtime_adapter(provider_type, api, name, adapter, monkeypatch):
     location = SecretLocation("org_test", "model_providers", "credential", "mp_test")
     keys = KeyRing(active_key_id="test", keys={"test": SecretStr(base64.b64encode(bytes(32)).decode())})
     provider = ResolvedProvider(
         id="mp_test",
         version=1,
         type=provider_type,
-        config={},
+        config={"resource_endpoint": "https://resource.openai.azure.com"} if api == "azure.realtime" else {},
         enabled=True,
         credential=keys.protect(b'{"api_key":"test-key"}', location),
         extra_headers={},
@@ -192,20 +211,67 @@ async def test_primary_model_selects_its_realtime_adapter(provider_type, api, na
         pricing=None,
         provider=provider,
     )
-    registry = Registry.of((OPENAI, XAI))
+    registry = Registry.of((OPENAI, XAI, AZURE, GOOGLE))
     options = {"registry": registry, "keys": keys, "settings": Providers()}
     async with open_realtime_model(model, policy=EndpointPolicy(), **options) as native:
         assert type(native) is adapter and native.model_name == name
+        assert native.profile["audio_input_sample_rate"] == (16000 if api == "google.realtime" else 24000)
+        assert native.profile["audio_output_sample_rate"] == 24000
+        if api in {"azure.realtime", "google.realtime"}:
+            assert native.profile["supports_image_input"]
+        if isinstance(native, AzureRealtimeModel):
+            assert native.profile["azure_realtime_apis"] == frozenset(("azure_openai",))
+        if isinstance(native, GoogleRealtimeModel):
+            socket = AsyncMock()
+            socket.recv.return_value = b'{"setupComplete":{"sessionId":"session"}}'
+
+            @asynccontextmanager
+            async def mock_connect(url, *, additional_headers, **options):
+                assert url == (
+                    "wss://generativelanguage.googleapis.com/ws/"
+                    "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+                )
+                assert additional_headers["x-goog-api-key"] == "test-key"
+                yield socket
+
+            monkeypatch.setattr("google.genai.live.ws_connect", mock_connect)
+            async with native.client.aio.live.connect(model=name) as session:
+                assert session.session_id == "session"
+            socket.send.assert_awaited_once()
 
     restricted = EndpointPolicy().for_run(RunConfiguration(allowed_hosts=frozenset()))
     with pytest.raises(ServiceError, match="outbound policy"):
         async with open_realtime_model(model, policy=restricted, **options):
             pytest.fail("a disabled destination was accepted")
 
-    custom = replace(model, provider=replace(provider, config={"base_url": "https://gateway.example/v1"}))
+    custom = replace(
+        model, provider=replace(provider, config={**provider.config, "base_url": "https://gateway.example/v1"})
+    )
     with pytest.raises(ServiceError, match="official API endpoint"):
         async with open_realtime_model(custom, policy=EndpointPolicy(), **options):
             pytest.fail("a custom realtime destination was accepted")
+
+    assert provider.credential is not None
+    for header in ("x-gateway", "Authorization", "Sec-WebSocket-Protocol"):
+        with_headers = replace(model, provider=replace(provider, extra_headers={header: provider.credential}))
+        with pytest.raises(ServiceError, match="without custom headers"):
+            async with open_realtime_model(with_headers, policy=EndpointPolicy(), **options):
+                pytest.fail("an unsupported realtime header was accepted")
+
+    attempts = []
+    validate = EndpointPolicy.validate
+
+    async def deny_upgrade(policy, endpoint):
+        attempts.append(endpoint)
+        if len(attempts) == 2:
+            raise EndpointPolicyError("WebSocket blocked")
+        return await validate(policy, endpoint)
+
+    monkeypatch.setattr(EndpointPolicy, "validate", deny_upgrade)
+    with pytest.raises(ServiceError, match="outbound policy"):
+        async with open_realtime_model(model, policy=EndpointPolicy(), **options):
+            pytest.fail("a denied WebSocket destination was accepted")
+    assert len(attempts) == 2 and attempts[1].startswith(attempts[0].rstrip("/") + "/")
 
 
 class ScriptedConnection(RealtimeConnection):
@@ -282,6 +348,8 @@ class ScriptedWebRTCProvider(ScriptedRealtimeProvider):
         ("openai.realtime", "webrtc", OpenAIRealtimeModel, False),
         ("openai.live", "webrtc", OpenAILiveModel, True),
         ("openai.live", "websocket", OpenAILiveModel, False),
+        ("azure.realtime", "webrtc", AzureRealtimeModel, False),
+        ("google.realtime", "websocket", GoogleRealtimeModel, False),
         ("xai.realtime", "websocket", XaiRealtimeModel, True),
     ],
 )
@@ -289,6 +357,20 @@ async def test_app_opens_realtime_over_http_and_websocket(
     settings, serve, service_app, runs_kit, monkeypatch, api, transport, adapter, split
 ):
     audio_enabled = (api, transport) != ("openai.live", "websocket")
+    input_hz = 16000 if api == "google.realtime" else 24000
+    interruption = api not in {"openai.live", "google.realtime"}
+    settings = settings.model_copy(
+        update={
+            "control": type(settings.control).model_validate(
+                {
+                    **settings.control.model_dump(),
+                    "realtime_ice_servers": [
+                        {"urls": ["turn:relay.example.org:3478"], "username": "voice", "credential": "fake-turn"}
+                    ],
+                }
+            )
+        }
+    )
     provider = ScriptedWebRTCProvider()
     monkeypatch.setattr(adapter, "connect", provider.connect)
     calls = []
@@ -332,11 +414,17 @@ async def test_app_opens_realtime_over_http_and_websocket(
                 await stack.enter_async_context(worker.router.lifespan_context(worker))
         agent_view = await create_voice_agent(service, runs_kit, api)
         bearer = await runs_kit.bearer(service)
-        if api == "xai.realtime":
-            available = await service.client.get(
-                f"{service.api}/realtime", headers=bearer, params={"agent_id": agent_view["id"]}
-            )
-            assert available.json()["transports"] == ["websocket"]
+        available = await service.client.get(
+            f"{service.api}/realtime", headers=bearer, params={"agent_id": agent_view["id"]}
+        )
+        checks = available.json()
+        assert checks["maturity"] == "alpha" and checks["can_start"]
+        assert (checks["audio_input_hz"], checks["audio_output_hz"]) == (input_hz, 24000)
+        assert checks["supports_interruption"] is interruption
+        assert checks["max_duration_seconds"] == settings.worker.realtime_max_duration_seconds
+        assert not checks["accepts_images"] and checks["supported_image_types"] == []
+        if api in {"xai.realtime", "google.realtime"}:
+            assert checks["transports"] == ["websocket"]
             unsupported = await service.client.post(
                 f"{service.api}/realtime/sessions",
                 headers=bearer,
@@ -345,10 +433,7 @@ async def test_app_opens_realtime_over_http_and_websocket(
             assert unsupported.status_code == 400
             assert unsupported.json()["error"]["details"]["field"] == "transport"
         if transport == "webrtc":
-            available = await service.client.get(
-                f"{service.api}/realtime", headers=bearer, params={"agent_id": agent_view["id"]}
-            )
-            assert available.json()["transports"] == ["websocket", "webrtc"]
+            assert checks["transports"] == ["websocket", "webrtc"]
         response = await service.client.post(
             f"{service.api}/realtime/sessions",
             headers=bearer,
@@ -363,6 +448,14 @@ async def test_app_opens_realtime_over_http_and_websocket(
         assert response.status_code == 201, response.text
         assert response.headers["cache-control"] == "no-store"
         ticket = response.json()
+        assert ticket["maturity"] == "alpha"
+        assert (ticket["audio_input_hz"], ticket["audio_output_hz"]) == (input_hz, 24000)
+        assert ticket["max_duration_seconds"] == settings.worker.realtime_max_duration_seconds
+        assert ticket["ice_servers"] == (
+            [{"urls": ["turn:relay.example.org:3478"], "username": "voice", "credential": "fake-turn"}]
+            if transport == "webrtc"
+            else []
+        )
         assert (await service.client.get(f"{service.api}/threads")).json()["items"] == []
         async with serve_http(ingress, lifespan="off") as url, asyncio.timeout(15):
             socket_url = url.replace("http://", "ws://", 1) + ticket["websocket_path"]
@@ -379,7 +472,9 @@ async def test_app_opens_realtime_over_http_and_websocket(
                         "type": "ready",
                         "transport": "webrtc",
                         "accepts_text": True,
-                        "supports_interruption": api != "openai.live",
+                        "audio_input_hz": input_hz,
+                        "audio_output_hz": 24000,
+                        "supports_interruption": interruption,
                     }
                     assert "lookup_order" in provider.offer_tools & provider.tools
                 else:
@@ -387,7 +482,9 @@ async def test_app_opens_realtime_over_http_and_websocket(
                         "type": "ready",
                         "audio_hz": 24000,
                         "accepts_text": True,
-                        "supports_interruption": api != "openai.live",
+                        "audio_input_hz": input_hz,
+                        "audio_output_hz": 24000,
+                        "supports_interruption": interruption,
                     }
                 if api == "openai.live":
                     assert provider.settings.get("openai_live_idle_audio", False) is (not audio_enabled)
@@ -610,6 +707,7 @@ async def test_split_realtime_reconnects_after_peer_loss(
                                 "type": "sealed",
                                 "run_id": accepted["run_id"],
                                 "status": "failed",
+                                "reason": "realtime_transport_failed",
                             }
                         else:
                             with pytest.raises(ConnectionClosedError):
@@ -704,14 +802,17 @@ async def test_provider_call_defers_only_cleanup_errors(monkeypatch):
         await realtime_cleanup.provider_call(runtime, lease, model, None)
 
 
-async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs_kit, monkeypatch):
+@pytest.mark.parametrize(
+    ("api", "adapter"), [("openai.realtime", OpenAIRealtimeModel), ("azure.realtime", AzureRealtimeModel)]
+)
+async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs_kit, monkeypatch, api, adapter):
     outcomes = Mock()
     monkeypatch.setattr(realtime_cleanup, "ORPHAN_HANGUPS", outcomes)
     service = executing
     await runs_kit.pause_sweeps(service)
     provider = ScriptedWebRTCProvider()
     monkeypatch.setattr("a13n_harness.live._WEBRTC_HANGUP_SECONDS", 0)
-    monkeypatch.setattr(OpenAIRealtimeModel, "answer_webrtc_offer", provider.answer)
+    monkeypatch.setattr(adapter, "answer_webrtc_offer", provider.answer)
 
     @asynccontextmanager
     async def attach(model, session, **kwargs):
@@ -725,10 +826,10 @@ async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs
     async def stalled_hangup(session):
         await asyncio.Event().wait()
 
-    monkeypatch.setattr(OpenAIRealtimeModel, "connect_webrtc", attach)
+    monkeypatch.setattr(adapter, "connect_webrtc", attach)
     hangup = AsyncMock(side_effect=stalled_hangup)
-    monkeypatch.setattr(OpenAIRealtimeModel, "hang_up", hangup)
-    voice = await create_voice_agent(service, runs_kit)
+    monkeypatch.setattr(adapter, "hang_up", hangup)
+    voice = await create_voice_agent(service, runs_kit, api)
     response = await service.client.post(
         f"{service.api}/realtime/sessions", json={"agent_id": voice["id"], "transport": "webrtc"}
     )
@@ -758,7 +859,10 @@ async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs
     changed = await service.client.patch(
         provider_url,
         headers={"if-match": saved.headers["etag"]},
-        json={"config": {"session_affinity_header": "x-thread"}, "extra_headers": {"x-inference": "enabled"}},
+        json={
+            "config": {**saved.json()["config"], "session_affinity_header": "x-thread"},
+            "extra_headers": {"x-inference": "enabled"},
+        },
     )
     assert changed.status_code == 200, changed.text
 

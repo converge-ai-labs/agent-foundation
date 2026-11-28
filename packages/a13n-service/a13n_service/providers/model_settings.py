@@ -182,6 +182,7 @@ def settings_schema(model_api: str) -> dict[str, JsonValue]:
             "openai_output_speed",
             "openai_live_turn_silence_ms",
             "xai_voice",
+            "google_voice",
         }
         fields = {name: (hint, None) for name, hint in native.__annotations__.items() if name in allowed}
         return create_model(

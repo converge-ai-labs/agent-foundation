@@ -598,7 +598,7 @@ async def test_control_records_handshake_and_connection_lifetime(monkeypatch, tr
     if scenario == "attach_timeout":
         control.attach_deadline = asyncio.get_running_loop().time() - 1
 
-    start = SimpleNamespace(transport=transport, audio=True, draft="")
+    start = SimpleNamespace(transport=transport, audio=True, draft="", max_duration_seconds=90)
     credential = SimpleNamespace(principal=SimpleNamespace(id="actor"))
     ticket = SimpleNamespace(start=start, run_id="run", session_id="session", thread_id="thread", credential=credential)
     runtime = SimpleNamespace(
@@ -659,5 +659,5 @@ async def test_control_records_handshake_and_connection_lifetime(monkeypatch, tr
             if scenario == "attach_timeout"
             else "The realtime request could not be accepted."
         )
-        socket.send_json.assert_awaited_with({"type": "error", "message": message})
+        socket.send_json.assert_awaited_with({"type": "error", "code": "realtime_transport_failed", "message": message})
         socket.close.assert_awaited_once_with(code=1008)

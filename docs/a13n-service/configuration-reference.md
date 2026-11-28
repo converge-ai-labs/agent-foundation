@@ -114,25 +114,26 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 ## `control`
 
-| Setting                               | Environment variable                        | Type / choices | Constraints and default                         |
-| ------------------------------------- | ------------------------------------------- | -------------- | ----------------------------------------------- |
-| `control.update_notices_enabled`      | `A13N_CONTROL__UPDATE_NOTICES_ENABLED`      | boolean        | default=true                                    |
-| `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | number         | maximum=60; exclusiveMinimum=0; default=1       |
-| `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | integer        | minimum=1; maximum=10000; default=100           |
-| `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | integer        | minimum=1; maximum=10000; default=128           |
-| `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | integer        | minimum=1024; maximum=16777216; default=2097152 |
-| `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | integer        | minimum=1; default=60                           |
-| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | integer        | minimum=1; maximum=31536000; default=3600       |
-| `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | integer        | minimum=1; default=300                          |
-| `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | integer        | minimum=60; maximum=604800; default=86400       |
-| `control.desktop_control_min_seconds` | `A13N_CONTROL__DESKTOP_CONTROL_MIN_SECONDS` | integer        | minimum=1; default=60                           |
-| `control.desktop_control_max_seconds` | `A13N_CONTROL__DESKTOP_CONTROL_MAX_SECONDS` | integer        | minimum=1; maximum=31536000; default=3600       |
-| `control.desktop_control_seconds`     | `A13N_CONTROL__DESKTOP_CONTROL_SECONDS`     | integer        | minimum=1; default=300                          |
-| `control.desktop_notice_seconds`      | `A13N_CONTROL__DESKTOP_NOTICE_SECONDS`      | integer        | minimum=60; maximum=604800; default=86400       |
-| `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | integer        | minimum=1; maximum=1000; default=32             |
-| `control.webhook_timeout`             | `A13N_CONTROL__WEBHOOK_TIMEOUT`             | number         | maximum=30; exclusiveMinimum=0; default=10      |
-| `control.import_timeout`              | `A13N_CONTROL__IMPORT_TIMEOUT`              | number         | maximum=120; exclusiveMinimum=0; default=30     |
-| `control.stream_refresh_seconds`      | `A13N_CONTROL__STREAM_REFRESH_SECONDS`      | number         | maximum=60; exclusiveMinimum=0; default=2       |
+| Setting                               | Environment variable                        | Type / choices  | Constraints and default                         |
+| ------------------------------------- | ------------------------------------------- | --------------- | ----------------------------------------------- |
+| `control.realtime_ice_servers`        | `A13N_CONTROL__REALTIME_ICE_SERVERS`        | array of object | default=[]                                      |
+| `control.update_notices_enabled`      | `A13N_CONTROL__UPDATE_NOTICES_ENABLED`      | boolean         | default=true                                    |
+| `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | number          | maximum=60; exclusiveMinimum=0; default=1       |
+| `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | integer         | minimum=1; maximum=10000; default=100           |
+| `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | integer         | minimum=1; maximum=10000; default=128           |
+| `control.inbox_bytes`                 | `A13N_CONTROL__INBOX_BYTES`                 | integer         | minimum=1024; maximum=16777216; default=2097152 |
+| `control.browser_control_min_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MIN_SECONDS` | integer         | minimum=1; default=60                           |
+| `control.browser_control_max_seconds` | `A13N_CONTROL__BROWSER_CONTROL_MAX_SECONDS` | integer         | minimum=1; maximum=31536000; default=3600       |
+| `control.browser_control_seconds`     | `A13N_CONTROL__BROWSER_CONTROL_SECONDS`     | integer         | minimum=1; default=300                          |
+| `control.browser_notice_seconds`      | `A13N_CONTROL__BROWSER_NOTICE_SECONDS`      | integer         | minimum=60; maximum=604800; default=86400       |
+| `control.desktop_control_min_seconds` | `A13N_CONTROL__DESKTOP_CONTROL_MIN_SECONDS` | integer         | minimum=1; default=60                           |
+| `control.desktop_control_max_seconds` | `A13N_CONTROL__DESKTOP_CONTROL_MAX_SECONDS` | integer         | minimum=1; maximum=31536000; default=3600       |
+| `control.desktop_control_seconds`     | `A13N_CONTROL__DESKTOP_CONTROL_SECONDS`     | integer         | minimum=1; default=300                          |
+| `control.desktop_notice_seconds`      | `A13N_CONTROL__DESKTOP_NOTICE_SECONDS`      | integer         | minimum=60; maximum=604800; default=86400       |
+| `control.subscriptions`               | `A13N_CONTROL__SUBSCRIPTIONS`               | integer         | minimum=1; maximum=1000; default=32             |
+| `control.webhook_timeout`             | `A13N_CONTROL__WEBHOOK_TIMEOUT`             | number          | maximum=30; exclusiveMinimum=0; default=10      |
+| `control.import_timeout`              | `A13N_CONTROL__IMPORT_TIMEOUT`              | number          | maximum=120; exclusiveMinimum=0; default=30     |
+| `control.stream_refresh_seconds`      | `A13N_CONTROL__STREAM_REFRESH_SECONDS`      | number          | maximum=60; exclusiveMinimum=0; default=2       |
 
 ## `schedules`
 
@@ -163,34 +164,36 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 ## `worker`
 
-| Setting                          | Environment variable                   | Type / choices | Constraints and default                          |
-| -------------------------------- | -------------------------------------- | -------------- | ------------------------------------------------ |
-| `worker.realtime_slots`          | `A13N_WORKER__REALTIME_SLOTS`          | integer        | minimum=1; maximum=1024; default=8               |
-| `worker.realtime_call_limit`     | `A13N_WORKER__REALTIME_CALL_LIMIT`     | integer        | minimum=1; default=32                            |
-| `worker.realtime_pcm_limit`      | `A13N_WORKER__REALTIME_PCM_LIMIT`      | integer        | minimum=1; default=8                             |
-| `worker.realtime_accepted_limit` | `A13N_WORKER__REALTIME_ACCEPTED_LIMIT` | integer        | minimum=1; default=16                            |
-| `worker.realtime_ticket_limit`   | `A13N_WORKER__REALTIME_TICKET_LIMIT`   | integer        | minimum=1; default=128                           |
-| `worker.slots`                   | `A13N_WORKER__SLOTS`                   | integer        | minimum=1; maximum=1024; default=128             |
-| `worker.max_attempts`            | `A13N_WORKER__MAX_ATTEMPTS`            | integer        | minimum=1; maximum=20; default=3                 |
-| `worker.lease_seconds`           | `A13N_WORKER__LEASE_SECONDS`           | integer        | minimum=3; maximum=300; default=30               |
-| `worker.scan_seconds`            | `A13N_WORKER__SCAN_SECONDS`            | number         | maximum=30; exclusiveMinimum=0; default=1        |
-| `worker.authority_seconds`       | `A13N_WORKER__AUTHORITY_SECONDS`       | number         | maximum=30; exclusiveMinimum=0; default=1        |
-| `worker.drain_seconds`           | `A13N_WORKER__DRAIN_SECONDS`           | number         | maximum=300; exclusiveMinimum=0; default=10      |
-| `worker.post_run_concurrency`    | `A13N_WORKER__POST_RUN_CONCURRENCY`    | integer        | minimum=1; maximum=1024; default=16              |
-| `worker.post_run_seconds`        | `A13N_WORKER__POST_RUN_SECONDS`        | number         | maximum=300; exclusiveMinimum=0; default=30      |
-| `worker.delivery_count`          | `A13N_WORKER__DELIVERY_COUNT`          | integer        | minimum=1; maximum=128; default=8                |
-| `worker.delivery_bytes`          | `A13N_WORKER__DELIVERY_BYTES`          | integer        | minimum=1024; maximum=16777216; default=262144   |
-| `worker.output_bytes`            | `A13N_WORKER__OUTPUT_BYTES`            | integer        | minimum=1024; maximum=16777216; default=1048576  |
-| `worker.page_items`              | `A13N_WORKER__PAGE_ITEMS`              | integer        | minimum=16; maximum=4096; default=256            |
-| `worker.page_bytes`              | `A13N_WORKER__PAGE_BYTES`              | integer        | minimum=65536; maximum=16777216; default=1048576 |
-| `worker.content_bytes`           | `A13N_WORKER__CONTENT_BYTES`           | integer        | minimum=1024; maximum=16777216; default=65536    |
-| `worker.compression_level`       | `A13N_WORKER__COMPRESSION_LEVEL`       | integer        | minimum=1; maximum=19; default=3                 |
-| `worker.stream_length`           | `A13N_WORKER__STREAM_LENGTH`           | integer        | minimum=16; maximum=100000; default=10000        |
-| `worker.stream_ttl`              | `A13N_WORKER__STREAM_TTL`              | integer        | minimum=1; maximum=86400; default=600            |
-| `worker.stream_coalesce_seconds` | `A13N_WORKER__STREAM_COALESCE_SECONDS` | number         | minimum=0; maximum=1; default=0.1                |
-| `worker.stream_trim_seconds`     | `A13N_WORKER__STREAM_TRIM_SECONDS`     | number         | minimum=0; maximum=600; default=10               |
-| `worker.child_depth`             | `A13N_WORKER__CHILD_DEPTH`             | integer        | minimum=0; maximum=16; default=4                 |
-| `worker.child_count`             | `A13N_WORKER__CHILD_COUNT`             | integer        | minimum=0; maximum=256; default=16               |
+| Setting                                | Environment variable                         | Type / choices | Constraints and default                          |
+| -------------------------------------- | -------------------------------------------- | -------------- | ------------------------------------------------ |
+| `worker.realtime_slots`                | `A13N_WORKER__REALTIME_SLOTS`                | integer        | minimum=1; maximum=1024; default=8               |
+| `worker.realtime_max_duration_seconds` | `A13N_WORKER__REALTIME_MAX_DURATION_SECONDS` | integer        | minimum=30; maximum=14400; default=1800          |
+| `worker.realtime_idle_seconds`         | `A13N_WORKER__REALTIME_IDLE_SECONDS`         | integer        | minimum=0; maximum=3600; default=300             |
+| `worker.realtime_call_limit`           | `A13N_WORKER__REALTIME_CALL_LIMIT`           | integer        | minimum=1; default=32                            |
+| `worker.realtime_pcm_limit`            | `A13N_WORKER__REALTIME_PCM_LIMIT`            | integer        | minimum=1; default=8                             |
+| `worker.realtime_accepted_limit`       | `A13N_WORKER__REALTIME_ACCEPTED_LIMIT`       | integer        | minimum=1; default=16                            |
+| `worker.realtime_ticket_limit`         | `A13N_WORKER__REALTIME_TICKET_LIMIT`         | integer        | minimum=1; default=128                           |
+| `worker.slots`                         | `A13N_WORKER__SLOTS`                         | integer        | minimum=1; maximum=1024; default=128             |
+| `worker.max_attempts`                  | `A13N_WORKER__MAX_ATTEMPTS`                  | integer        | minimum=1; maximum=20; default=3                 |
+| `worker.lease_seconds`                 | `A13N_WORKER__LEASE_SECONDS`                 | integer        | minimum=3; maximum=300; default=30               |
+| `worker.scan_seconds`                  | `A13N_WORKER__SCAN_SECONDS`                  | number         | maximum=30; exclusiveMinimum=0; default=1        |
+| `worker.authority_seconds`             | `A13N_WORKER__AUTHORITY_SECONDS`             | number         | maximum=30; exclusiveMinimum=0; default=1        |
+| `worker.drain_seconds`                 | `A13N_WORKER__DRAIN_SECONDS`                 | number         | maximum=300; exclusiveMinimum=0; default=10      |
+| `worker.post_run_concurrency`          | `A13N_WORKER__POST_RUN_CONCURRENCY`          | integer        | minimum=1; maximum=1024; default=16              |
+| `worker.post_run_seconds`              | `A13N_WORKER__POST_RUN_SECONDS`              | number         | maximum=300; exclusiveMinimum=0; default=30      |
+| `worker.delivery_count`                | `A13N_WORKER__DELIVERY_COUNT`                | integer        | minimum=1; maximum=128; default=8                |
+| `worker.delivery_bytes`                | `A13N_WORKER__DELIVERY_BYTES`                | integer        | minimum=1024; maximum=16777216; default=262144   |
+| `worker.output_bytes`                  | `A13N_WORKER__OUTPUT_BYTES`                  | integer        | minimum=1024; maximum=16777216; default=1048576  |
+| `worker.page_items`                    | `A13N_WORKER__PAGE_ITEMS`                    | integer        | minimum=16; maximum=4096; default=256            |
+| `worker.page_bytes`                    | `A13N_WORKER__PAGE_BYTES`                    | integer        | minimum=65536; maximum=16777216; default=1048576 |
+| `worker.content_bytes`                 | `A13N_WORKER__CONTENT_BYTES`                 | integer        | minimum=1024; maximum=16777216; default=65536    |
+| `worker.compression_level`             | `A13N_WORKER__COMPRESSION_LEVEL`             | integer        | minimum=1; maximum=19; default=3                 |
+| `worker.stream_length`                 | `A13N_WORKER__STREAM_LENGTH`                 | integer        | minimum=16; maximum=100000; default=10000        |
+| `worker.stream_ttl`                    | `A13N_WORKER__STREAM_TTL`                    | integer        | minimum=1; maximum=86400; default=600            |
+| `worker.stream_coalesce_seconds`       | `A13N_WORKER__STREAM_COALESCE_SECONDS`       | number         | minimum=0; maximum=1; default=0.1                |
+| `worker.stream_trim_seconds`           | `A13N_WORKER__STREAM_TRIM_SECONDS`           | number         | minimum=0; maximum=600; default=10               |
+| `worker.child_depth`                   | `A13N_WORKER__CHILD_DEPTH`                   | integer        | minimum=0; maximum=16; default=4                 |
+| `worker.child_count`                   | `A13N_WORKER__CHILD_COUNT`                   | integer        | minimum=0; maximum=256; default=16               |
 
 ## `tool_executions`
 

@@ -378,7 +378,14 @@ class Encryption(Section):
         return self.active_key_id is not None or self.key_file is not None
 
 
+class IceServerConfig(Section):
+    urls: str | tuple[str, ...]
+    username: str | None = None
+    credential: SecretStr | None = None
+
+
 class Control(Section):
+    realtime_ice_servers: tuple[IceServerConfig, ...] = ()
     update_notices_enabled: bool = True
     scan_seconds: float = Field(default=1, gt=0, le=60)
     sweep_batch: int = Field(default=100, ge=1, le=10000)
@@ -480,6 +487,8 @@ class ToolExecutions(Section):
 
 class Worker(Section):
     realtime_slots: int = Field(default=8, ge=1, le=1024)
+    realtime_max_duration_seconds: int = Field(default=1800, ge=30, le=14400)
+    realtime_idle_seconds: int = Field(default=300, ge=0, le=3600)
     realtime_call_limit: int = Field(default=32, ge=1)
     realtime_pcm_limit: int = Field(default=8, ge=1)
     realtime_accepted_limit: int = Field(default=16, ge=1)

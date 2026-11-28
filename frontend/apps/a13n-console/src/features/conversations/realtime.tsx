@@ -116,7 +116,15 @@ type Event =
     }
   | { type: "playback_position"; offset: number }
   | { type: "answer"; sdp: string }
-  | { type: "ready"; accepts_text: boolean; supports_interruption: boolean }
+  | {
+      type: "ready";
+      accepts_text: boolean;
+      supports_interruption: boolean;
+      audio_input_hz?: number;
+      audio_output_hz?: number;
+      audio_hz?: number;
+    }
+  | { type: "ending"; reason: string }
   | { type: "error"; message: string };
 
 interface CallOptions extends Selection {
@@ -202,6 +210,8 @@ function useRealtimeCall() {
     let connection: WebSocket | undefined;
     let ready = false;
     let serverReady: Extract<Event, { type: "ready" }> | undefined;
+    let audioInputHz = 24000;
+    let audioOutputHz = 24000;
     let sealed = false;
     let interrupting = false;
     let playedBytes = 0;
@@ -234,7 +244,7 @@ function useRealtimeCall() {
       for (const [source, chunk] of playing) {
         const samples = Math.min(
           chunk.samples,
-          Math.max(0, Math.floor((playedUntil - chunk.start) * 24000)),
+          Math.max(0, Math.floor((playedUntil - chunk.start) * audioOutputHz)),
         );
         if (samples) playedBytes = chunk.offset + samples * 2;
         source.onended = null;
@@ -302,6 +312,38 @@ function useRealtimeCall() {
         connection?.readyState !== WebSocket.OPEN
       )
         return;
+      audioInputHz = serverReady.audio_input_hz ?? audioInputHz;
+      audioOutputHz =
+        serverReady.audio_output_hz ?? serverReady.audio_hz ?? audioOutputHz;
+      try {
+        capture = new AudioWorkletNode(context, "realtime-capture", {
+          processorOptions: { pcm: !useWebRTC, inputHz: audioInputHz },
+        });
+        context.createMediaStreamSource(input!).connect(capture);
+        capture.connect(context.destination);
+        capture.port.onmessage = ({
+          data,
+        }: MessageEvent<ArrayBuffer | "speech">) => {
+          if (
+            ready &&
+            !mediaStopped &&
+            connection?.readyState === WebSocket.OPEN
+          ) {
+            if (data === "speech") {
+              if (hasPlayback()) interrupt();
+              return;
+            }
+            if (connection.bufferedAmount >= 64 * 1024) {
+              failMedia(t("Realtime connection failed"));
+              return;
+            }
+            connection.send(data);
+          }
+        };
+      } catch {
+        failMedia(t("Realtime connection failed"));
+        return;
+      }
       ready = true;
       clearTimeout(startupTimer);
       if (peer) {
@@ -344,30 +386,6 @@ function useRealtimeCall() {
       }
       await context.audioWorklet.addModule(captureModule);
       if (disposed) return false;
-      capture = new AudioWorkletNode(context, "realtime-capture", {
-        processorOptions: { pcm: !useWebRTC },
-      });
-      context.createMediaStreamSource(input).connect(capture);
-      capture.connect(context.destination);
-      capture.port.onmessage = ({
-        data,
-      }: MessageEvent<ArrayBuffer | "speech">) => {
-        if (
-          ready &&
-          !mediaStopped &&
-          connection?.readyState === WebSocket.OPEN
-        ) {
-          if (data === "speech") {
-            if (hasPlayback()) interrupt();
-            return;
-          }
-          if (connection.bufferedAmount >= 64 * 1024) {
-            failMedia(t("Realtime connection failed"));
-            return;
-          }
-          connection.send(data);
-        }
-      };
       if (useWebRTC) {
         const rtc = new RTCPeerConnection();
         peer = rtc;
@@ -427,6 +445,8 @@ function useRealtimeCall() {
         })
         .then(data);
       if (disposed) return false;
+      audioInputHz = ticket.audio_input_hz ?? audioInputHz;
+      audioOutputHz = ticket.audio_output_hz ?? audioOutputHz;
       receipt = {
         session_id: ticket.session_id,
         thread_id: ticket.thread_id,
@@ -459,7 +479,7 @@ function useRealtimeCall() {
           nextOffset += data.byteLength;
           if (useWebRTC || mediaStopped || interrupting || !serverReady) return;
           const pcm = new Int16Array(data);
-          const buffer = context.createBuffer(1, pcm.length, 24000);
+          const buffer = context.createBuffer(1, pcm.length, audioOutputHz);
           const samples = buffer.getChannelData(0);
           for (let i = 0; i < pcm.length; i++) samples[i] = pcm[i]! / 32768;
           const playback = context.createBufferSource();
@@ -468,7 +488,8 @@ function useRealtimeCall() {
           next = Math.max(next, context.currentTime + 0.02);
           const playedUntil = playbackTime();
           for (const [source, chunk] of playing) {
-            if (chunk.start + chunk.samples / 24000 > playedUntil) break;
+            if (chunk.start + chunk.samples / audioOutputHz > playedUntil)
+              break;
             playedBytes = chunk.offset + chunk.samples * 2;
             playing.delete(source);
           }
@@ -492,7 +513,10 @@ function useRealtimeCall() {
         ) {
           speaker.muted = false;
         }
-        if (event.type === "draining") stopMedia.current?.();
+        if (event.type === "draining" || event.type === "ending") {
+          stopMedia.current?.();
+          setPhase("ending");
+        }
         if (event.type === "input_discontinuity")
           setError(t("Voice input was interrupted. Please repeat that part."));
         if (event.type === "accepted") {
