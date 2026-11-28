@@ -85,6 +85,24 @@
 .status[data-connected="true"]::before {
   background: var(--a13n-success);
 }
+.status[data-warning="true"],
+.usageWarning {
+  color: var(--warning-foreground);
+}
+.status[data-warning="true"]::before {
+  display: none;
+}
+.allowance {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+}
+.lastKnown {
+  padding-inline: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-variant-numeric: tabular-nums;
+}
 .balanceSummary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -479,6 +497,24 @@
   font-weight: 500;
 }
 @media (max-width: 600px) {
+  .accountHeader[data-recovery="true"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px 4px;
+  }
+  .accountHeader[data-recovery="true"] .cardActions {
+    display: contents;
+  }
+  .accountHeader[data-recovery="true"] .identity {
+    grid-area: 1 / 1;
+  }
+  .accountHeader[data-recovery="true"] .cardActions > button {
+    grid-row: 1;
+  }
+  .accountHeader[data-recovery="true"] .allowance {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
   .listToolbar {
     gap: 12px;
   }

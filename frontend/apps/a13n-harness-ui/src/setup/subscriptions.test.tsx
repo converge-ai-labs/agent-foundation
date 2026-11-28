@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { i18n } from "../i18n";
 import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
+import { quotaTime } from "./subscription-usage";
 import { createTransport, type Schema } from "../transport/client";
 import { TransportContext } from "../transport/context";
 
@@ -60,6 +61,8 @@ function mount({
   failResetOnce = false,
   groups = false,
   usable = true,
+  requiredAction = "none" as Schema<"AccountProjection">["required_action"],
+  snapshot = { usage: null } as Schema<"UsageSnapshot">,
   provider = "codex",
 } = {}) {
   const selectedAccount = { ...account, provider };
@@ -75,6 +78,14 @@ function mount({
           method: request.method,
           body: body ? JSON.parse(body) : null,
         });
+        if (path.endsWith("/refresh")) {
+          snapshot = {
+            ...snapshot,
+            observed_at: 3000,
+            error: null,
+            required_action: null,
+          };
+        }
         if (path.endsWith("/reset") && failResetOnce) {
           failResetOnce = false;
           return new Response(JSON.stringify({ detail: "Outcome unknown" }), {
@@ -95,8 +106,12 @@ function mount({
           accounts: [
             {
               account: selectedAccount,
-              authentication: { availability: "available", usable },
-              usage: { account_id: account.id, usage: null },
+              authentication: {
+                availability: "available",
+                usable,
+                required_action: requiredAction,
+              },
+              usage: snapshot,
             },
           ],
           groups: [group],
@@ -186,6 +201,60 @@ it("offers sign-in without empty usage details and performs no automatic writes"
   expect(await screen.findByText("Login target: acct-work")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Usage for Work" })).toBeNull();
   expect(writes).toEqual([]);
+});
+
+const lastUsage: Schema<"UsageSnapshot"> = {
+  observed_at: 1000,
+  checked_at: 2000,
+  error: "Last usage refresh failed",
+  usage: {
+    account_id: "upstream-work",
+    plan_type: "pro",
+    rate_limit: {
+      allowed: true,
+      limit_reached: false,
+      primary_window: {
+        used_percent: 86,
+        limit_window_seconds: 604800,
+        reset_at: 10000,
+      },
+    },
+  },
+};
+
+it("shows the rejected grant and last observed allowance before opening details", async () => {
+  const writes = mount({
+    usable: false,
+    requiredAction: "reauthenticate",
+    snapshot: lastUsage,
+  });
+  expect(await screen.findByText("Reauthentication required")).toBeTruthy();
+  expect(screen.getByText("Weekly 14% left")).toBeTruthy();
+  expect(
+    screen.getByText(`Last known · ${quotaTime(1000_000, true)}`),
+  ).toBeTruthy();
+  expect(screen.queryByText("Connected")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry refresh" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+  expect(await screen.findByText("Login target: acct-work")).toBeTruthy();
+  expect(writes).toEqual([]);
+});
+
+it("retries only usage and clears the historical label on a successful refresh", async () => {
+  const writes = mount({ snapshot: lastUsage });
+  expect(await screen.findByText("Usage refresh failed")).toBeTruthy();
+  expect(screen.getByText("Connected")).toBeTruthy();
+  expect(
+    screen.getByText(`Last known · ${quotaTime(1000_000, true)}`),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry refresh" }));
+  await waitFor(() =>
+    expect(screen.queryByText("Usage refresh failed")).toBeNull(),
+  );
+  expect(screen.queryByText(/Last known/)).toBeNull();
+  expect(writes.map(({ method, path }) => [method, path])).toEqual([
+    ["POST", "/api/subscriptions/accounts/acct-work/refresh"],
+  ]);
 });
 
 it("refreshes the selected account and opens login for the newly created native identity", async () => {

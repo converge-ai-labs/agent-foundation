@@ -139,8 +139,9 @@ async def transcribe_subscription(
     *,
     configuration: RunConfiguration,
 ) -> DictationResult:
-    from a13n_harness.models.codex import CodexRequestModel
     from a13n_harness.models.codex_dictation import CodexDictationError, transcribe
+
+    from a13n_harness_ui.model_accounts.codex_transport import SubscriptionCodexModel
 
     def credentials(account: SubscriptionAccount) -> BoundCodexCredentialSource:
         store = accounts.store(account)
@@ -179,7 +180,7 @@ async def transcribe_subscription(
                         await client.aclose()
 
                 clients.push_async_callback(close_client)
-                return CodexRequestModel(
+                return SubscriptionCodexModel(
                     model_name,
                     credential_source=credentials(account),
                     http_client=client,

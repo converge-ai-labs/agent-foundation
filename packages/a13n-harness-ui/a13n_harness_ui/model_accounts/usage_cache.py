@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import replace
+from typing import Literal
 
 import httpx2
 from a13n_harness.http import outbound_tls_verify
@@ -21,9 +23,9 @@ from .codex import CodexAccountStore
 from .coordination import store_lock
 from .grok import GrokAccountStore
 from .managed import SubscriptionAccount, SubscriptionAccounts
-from .models import AccountStoreError
+from .models import AccountProjection, AccountStoreError, RequiredAction
 from .provider_usage import GrokUsage, read_grok_usage
-from .usage import CodexUsage, CodexUsageClient, PaidCredits, UsageLimits, UsageWindow
+from .usage import CodexUsage, CodexUsageClient, PaidCredits, UsageLimits, UsageSignInRequired, UsageWindow
 
 POLL_SECONDS = 600
 REQUEST_REFRESH_SECONDS = 60
@@ -39,6 +41,9 @@ class UsageSnapshot(BaseModel):
     observed_at: float = 0
     usage: CodexUsage | GrokUsage | PluginUsageSnapshot | None = None
     error: str | None = None
+    required_action: Literal["reauthenticate", "refresh"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     # A rejected request suppresses this model briefly, not unrelated model buckets.
     rejected: dict[str, float] = Field(default_factory=dict)
 
@@ -67,9 +72,34 @@ class SubscriptionUsage:
             value = UsageSnapshot.model_validate(raw.document or {})
         except ValidationError:
             value = UsageSnapshot()
-        if (value.login_revision, value.login_generation) != (account.login_revision, account.login_generation):
-            return UsageSnapshot(login_revision=account.login_revision, login_generation=account.login_generation)
-        return value
+        if (value.login_revision, value.login_generation) == (account.login_revision, account.login_generation):
+            return value
+        fresh = UsageSnapshot(login_revision=account.login_revision, login_generation=account.login_generation)
+        if (
+            value.required_action == "reauthenticate"
+            and value.login_revision + 1 == account.login_revision
+            and isinstance(value.usage, CodexUsage)
+            and value.usage.account_id == account.upstream_account_id
+        ):
+            # A successful same-account sign-in may show the last observation while
+            # fetching new usage. Logout, switches and old cooldowns never carry over.
+            projection = await self.accounts.store(account).inspect()
+            if projection.account_id == account.upstream_account_id:
+                return fresh.model_copy(
+                    update={
+                        "usage": value.usage,
+                        "observed_at": value.observed_at,
+                        "required_action": "refresh",
+                    }
+                )
+        return fresh
+
+    async def inspect(self, account: SubscriptionAccount) -> tuple[AccountProjection, UsageSnapshot]:
+        projection = await self.accounts.store(account).inspect()
+        snapshot = await self.read(account)
+        if snapshot.required_action == "reauthenticate" and projection.account_id is not None:
+            projection = replace(projection, usable=False, required_action=RequiredAction.REAUTHENTICATE)
+        return projection, snapshot
 
     async def _read_provider(self, account: SubscriptionAccount) -> CodexUsage | GrokUsage | PluginUsageSnapshot | None:
         store = self.accounts.store(account)
@@ -99,8 +129,12 @@ class SubscriptionUsage:
             return previous
         usage = None
         error = None
+        grant_rejected = False
         try:
             usage = await self._reader(account)
+        except UsageSignInRequired as exc:
+            grant_rejected = True
+            error = str(exc)
         except (ValueError, AccountStoreError):
             error = "Usage refresh failed. The last successful snapshot is retained."
         # Only the short publication is serialized. Duplicate reads from two TUIs are harmless.
@@ -113,19 +147,24 @@ class SubscriptionUsage:
                 return await self.read(current_account)
             raw = await read_json_snapshot(self._path(account), provider=account.provider)
             current = await self.read(account)
-            if max(current.checked_at, current.observed_at) > started:
+            newer_observation = max(current.checked_at, current.observed_at) > started
+            if newer_observation and not grant_rejected:
                 return current
-            updated = current.model_copy(
-                update={
+            updates = {}
+            if not newer_observation:
+                updates = {
                     "checked_at": started,
                     "observed_at": started if usage is not None else current.observed_at,
                     "usage": usage if usage is not None else current.usage,
                     "error": error,
+                    "required_action": "refresh" if error else None,
                     "rejected": {key: stamp for key, stamp in current.rejected.items() if stamp > started}
                     if usage is not None
                     else current.rejected,
                 }
-            )
+            if grant_rejected or current.required_action == "reauthenticate":
+                updates["required_action"] = "reauthenticate"
+            updated = current.model_copy(update=updates)
             await write_json_if_unchanged(
                 self._path(account), updated.model_dump(mode="json"), raw.digest, provider=account.provider
             )
@@ -191,7 +230,7 @@ class SubscriptionUsage:
                 self._path(account), updated.model_dump(mode="json"), raw.digest, provider=account.provider
             )
 
-    async def reject(self, account: SubscriptionAccount, model_name: str) -> None:
+    async def reject(self, account: SubscriptionAccount, model_name: str, *, grant_rejected: bool = False) -> None:
         async with store_lock(self._path(account)):
             latest = await self.accounts.get(account.id)
             if (latest.login_revision, latest.login_generation) != (account.login_revision, account.login_generation):
@@ -203,7 +242,12 @@ class SubscriptionUsage:
             rejected[model_name] = now
             await write_json_if_unchanged(
                 self._path(account),
-                current.model_copy(update={"rejected": rejected}).model_dump(mode="json"),
+                current.model_copy(
+                    update={
+                        "rejected": rejected,
+                        "required_action": "reauthenticate" if grant_rejected else current.required_action,
+                    }
+                ).model_dump(mode="json"),
                 raw.digest,
                 provider=account.provider,
             )

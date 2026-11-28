@@ -149,7 +149,7 @@ def test_file_acquisition_keeps_original_name_and_validates_images(tmp_path: Pat
 async def test_composer_inputs_survive_restart_and_scratch_prune(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     image = BytesIO()
@@ -164,7 +164,7 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
 
     monkeypatch.setattr(
         runtime,
-        "CodexRequestModel",
+        "SubscriptionCodexModel",
         lambda *args, **kwargs: FunctionModel(stream_function=stream_model, profile={"supports_thinking": True}),
     )
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data", scratch_retention_seconds=1.0))
@@ -316,7 +316,7 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
     import base64
     import json
 
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
     import httpx2
     import yaml
     from pydantic_ai.models.openai import OpenAIResponsesModel
@@ -362,7 +362,7 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(transport)) as client:
         monkeypatch.setattr(
             runtime,
-            "CodexRequestModel",
+            "SubscriptionCodexModel",
             lambda *args, **kwargs: OpenAIResponsesModel(
                 "gpt-4.1", provider=OpenAIProvider(api_key="test", http_client=client)
             ),
@@ -393,7 +393,7 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
 async def test_terminal_steering_retains_uploads_and_delivers_native_images(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, image_only: bool
 ) -> None:
-    import a13n_harness.models.codex as runtime
+    import a13n_harness_ui.model_accounts.codex_transport as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     image = BytesIO()
@@ -407,7 +407,7 @@ async def test_terminal_steering_retains_uploads_and_delivers_native_images(
         await release.wait()
         yield "Received"
 
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
+    monkeypatch.setattr(runtime, "SubscriptionCodexModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())

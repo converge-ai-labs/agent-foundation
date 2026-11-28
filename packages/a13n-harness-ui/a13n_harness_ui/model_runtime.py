@@ -264,15 +264,14 @@ class HarnessUiModelResolver:
             provider.client.max_retries = 0
             return OpenAIResponsesModel(_model_name(recipe), provider=provider)
         if isinstance(authentication, CodexSubscriptionAuthentication):
-            from a13n_harness.models.codex import CodexRequestModel
-
             from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
+            from a13n_harness_ui.model_accounts.codex_transport import SubscriptionCodexModel
 
             source = self._required_subscription_source(
                 "codex_subscription",
                 CodexSubscriptionSource,
             )
-            return CodexRequestModel(
+            return SubscriptionCodexModel(
                 _model_name(recipe),
                 credential_source=BoundCodexCredentialSource(source.source),
                 thread_id=thread_id,
@@ -309,11 +308,11 @@ class HarnessUiModelResolver:
         prediction_account: str | None,
         registration: Registration | None = None,
     ) -> Model:
-        from a13n_harness.models.codex import CodexRequestModel
         from a13n_harness.providers.model.oauth import build_grok_model
 
         from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
         from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource, CodexAccountStore
+        from a13n_harness_ui.model_accounts.codex_transport import SubscriptionCodexModel
         from a13n_harness_ui.model_accounts.grok import GrokAccountStore
 
         provider = "codex" if isinstance(recipe.authentication, CodexSubscriptionAuthentication) else "grok"
@@ -337,7 +336,7 @@ class HarnessUiModelResolver:
                 )
                 return _PluginModel(registration, recipe, credentials, self.configuration)
             if isinstance(store, CodexAccountStore):
-                return CodexRequestModel(
+                return SubscriptionCodexModel(
                     _model_name(recipe),
                     credential_source=BoundCodexCredentialSource(store, account_id=account.upstream_account_id),
                     thread_id=thread_id,

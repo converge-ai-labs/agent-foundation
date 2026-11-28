@@ -4320,11 +4320,12 @@ class HarnessUiApp:
             views = []
             for account in await self.subscription_accounts.list():
                 account = await self.subscription_accounts.get(account.id)
+                authentication, usage = await self.subscription_usage.inspect(account)
                 views.append(
                     SubscriptionAccountView(
                         account=account,
-                        authentication=await self.subscription_accounts.store(account).inspect(),
-                        usage=await self.subscription_usage.read(account),
+                        authentication=authentication,
+                        usage=usage,
                     )
                 )
             current = await self._configurations.current()
@@ -4340,7 +4341,8 @@ class HarnessUiApp:
                 if account_id == f"acct-{provider}-default":
                     return await self._inspect_plugin_account(provider)
             account = await self.subscription_accounts.get(account_id)
-            return await self.subscription_accounts.store(account).inspect()
+            authentication, _ = await self.subscription_usage.inspect(account)
+            return authentication
 
     async def create_subscription_account(self, request: SubscriptionAccountCreate) -> SubscriptionAccount:
         async with self._operation():
@@ -5187,7 +5189,9 @@ async def open_harness_ui_app(
                         background.start_soon(app._bot.run, automation_owned)
                     if app._voice is not None:
                         app._voice.start(background)
-                    app._logins = LoginSessions(background, app._account, app.subscription_accounts)
+                    app._logins = LoginSessions(
+                        background, app._account, app.subscription_accounts, app.subscription_usage
+                    )
                     background.start_soon(app.subscription_usage.poll)
                     background.start_soon(app._prune_storage_periodically)
                     background.start_soon(app._maintain_read_models)

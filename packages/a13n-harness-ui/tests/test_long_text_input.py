@@ -90,7 +90,9 @@ async def _configuration(tmp_path, monkeypatch, *, threshold=8000, files_enabled
 @asynccontextmanager
 async def _app(tmp_path, monkeypatch, model, **options):
     path = await _configuration(tmp_path, monkeypatch, **options)
-    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", lambda *args, **kwargs: model)
+    monkeypatch.setattr(
+        "a13n_harness_ui.model_accounts.codex_transport.SubscriptionCodexModel", lambda *args, **kwargs: model
+    )
     settings = HarnessUiSettings(
         pricing_auto_update=False,
         storage=StorageSettings(data_root=tmp_path / "data", scratch_retention_seconds=1.0),

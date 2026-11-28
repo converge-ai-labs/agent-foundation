@@ -37,6 +37,7 @@ import {
   TicketIcon,
   TrashIcon,
   WalletIcon,
+  WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -279,6 +280,15 @@ export function AccountUsage({
 
 function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
   const { t } = useTranslation();
+  if (snapshot.error && snapshot.checked_at) {
+    return (
+      <span className={styles.quotaDetail}>
+        {t("Refresh failed at {{time}}", {
+          time: quotaTime(snapshot.checked_at * 1000),
+        })}
+      </span>
+    );
+  }
   return (
     <span className={styles.quotaDetail}>
       {snapshot.error ? t("Refresh failed - ") : ""}
@@ -287,6 +297,34 @@ function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
             time: quotaTime(snapshot.observed_at * 1000),
           })
         : t("Not refreshed yet")}
+    </span>
+  );
+}
+
+function ConnectionStatus({
+  authentication,
+  enabled = true,
+}: {
+  authentication: AccountView["authentication"];
+  enabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const reauthenticate =
+    enabled && authentication.required_action === "reauthenticate";
+  let label = t("Sign-in required");
+  if (!enabled) label = t("Paused");
+  else if (reauthenticate) label = t("Reauthentication required");
+  else if (authentication.usable) label = t("Connected");
+  else if (authentication.required_action === "refresh")
+    label = t("Refreshes on first use");
+  return (
+    <span
+      className={styles.status}
+      data-connected={enabled && authentication.usable}
+      data-warning={reauthenticate}
+    >
+      {reauthenticate && <WarningCircleIcon aria-hidden />}
+      {label}
     </span>
   );
 }
@@ -311,55 +349,86 @@ function SubscriptionAccountRow({
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const { account, authentication } = view;
-  const usageAvailable =
-    !!onRefresh && (authentication.usable || !!view.usage.usage);
-  const allowance = compactAllowance(view.usage.usage);
+  const reauthenticate = authentication.required_action === "reauthenticate";
+  const canRefresh =
+    authentication.usable || authentication.required_action === "refresh";
   const usage = view.usage.usage;
+  const usageAvailable = !!usage || (!!onRefresh && canRefresh);
+  const allowance = compactAllowance(usage);
+  const refreshFailed = !!view.usage.error && !reauthenticate;
+  const stale =
+    reauthenticate || refreshFailed || view.usage.required_action === "refresh";
   return (
     <article className={styles.accountCard}>
-      <header className={styles.accountHeader}>
+      <header
+        className={styles.accountHeader}
+        data-recovery={account.enabled && (reauthenticate || refreshFailed)}
+      >
         <div className={styles.identity}>
           <strong>{account.name}</strong>
           <span className={styles.accountMeta}>
-            <span
-              className={styles.status}
-              data-connected={account.enabled && authentication.usable}
-            >
-              {!account.enabled
-                ? t("Paused")
-                : authentication.usable
-                  ? t("Connected")
-                  : t("Sign-in required")}
-            </span>
+            <ConnectionStatus
+              authentication={authentication}
+              enabled={account.enabled}
+            />
             {usage && "plan_type" in usage && usage.plan_type !== "unknown" && (
               <span className={styles.plan}>{usage.plan_type}</span>
+            )}
+            {account.enabled && refreshFailed && (
+              <span className={styles.usageWarning}>
+                {t("Usage refresh failed")}
+              </span>
             )}
           </span>
         </div>
         <div className={styles.cardActions}>
           {usageAvailable && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={t("Usage for {{name}}", { name: account.name })}
-              aria-expanded={expanded}
-              onClick={() => setExpanded(!expanded)}
-            >
-              <span className={styles.allowanceSummary}>
-                {allowance || t("Usage")}
-              </span>
-              <CaretRightIcon
-                className={expanded ? styles.expanded : undefined}
-              />
-            </Button>
+            <div className={styles.allowance}>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={t("Usage for {{name}}", { name: account.name })}
+                aria-expanded={expanded}
+                onClick={() => setExpanded(!expanded)}
+              >
+                <span className={styles.allowanceSummary}>
+                  {allowance || t("Usage")}
+                </span>
+                <CaretRightIcon
+                  className={expanded ? styles.expanded : undefined}
+                />
+              </Button>
+              {stale && usage && (
+                <span className={styles.lastKnown}>
+                  {view.usage.observed_at
+                    ? t("Last known · {{time}}", {
+                        time: quotaTime(view.usage.observed_at * 1000, true),
+                      })
+                    : t("Last known usage")}
+                </span>
+              )}
+            </div>
           )}
           {!account.enabled && onEnable ? (
             <Button variant="outline" size="sm" onClick={onEnable}>
               {t("Enable")}
             </Button>
-          ) : !authentication.usable && onSignIn ? (
-            <Button variant="outline" size="sm" onClick={onSignIn}>
-              {t("Sign in")}
+          ) : account.enabled && (reauthenticate || !canRefresh) && onSignIn ? (
+            <Button
+              variant={reauthenticate ? "default" : "outline"}
+              size="sm"
+              onClick={onSignIn}
+            >
+              {reauthenticate ? t("Sign in again") : t("Sign in")}
+            </Button>
+          ) : account.enabled && refreshFailed && onRefresh ? (
+            <Button
+              variant="outline"
+              size="sm"
+              loading={refreshing}
+              onClick={onRefresh}
+            >
+              {t("Retry refresh")}
             </Button>
           ) : null}
           {children}
@@ -369,15 +438,21 @@ function SubscriptionAccountRow({
         <div className={styles.usageDetails}>
           <div className={styles.usageToolbar}>
             <span>{t("Usage & allowance")}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              loading={refreshing}
-              onClick={onRefresh}
-            >
-              <ArrowsClockwiseIcon />
-              {t("Refresh")}
-            </Button>
+            {onRefresh &&
+              account.enabled &&
+              canRefresh &&
+              !refreshFailed &&
+              !reauthenticate && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  loading={refreshing}
+                  onClick={onRefresh}
+                >
+                  <ArrowsClockwiseIcon />
+                  {t("Refresh")}
+                </Button>
+              )}
           </div>
           <AccountUsage view={view} onVouchers={onVouchers} />
         </div>
@@ -759,24 +834,21 @@ export function SubscriptionAccounts({
                           {status.account_id ?? t("Server account")}
                         </strong>
                         <span className={styles.accountMeta}>
-                          <span
-                            className={styles.status}
-                            data-connected={status.usable}
-                          >
-                            {status.usable
-                              ? t("Connected")
-                              : status.required_action === "refresh"
-                                ? t("Refreshes on first use")
-                                : t("Sign-in required")}
-                          </span>
+                          <ConnectionStatus authentication={status} />
                         </span>
                       </div>
                     </div>
                     <Button
-                      variant="ghost"
+                      variant={
+                        status.required_action === "reauthenticate"
+                          ? "default"
+                          : "ghost"
+                      }
                       onClick={() => setConnectionLogin(connection)}
                     >
-                      {t("Manage account")}
+                      {status.required_action === "reauthenticate"
+                        ? t("Sign in again")
+                        : t("Manage account")}
                     </Button>
                   </header>
                   <details className={styles.legacyUsage}>

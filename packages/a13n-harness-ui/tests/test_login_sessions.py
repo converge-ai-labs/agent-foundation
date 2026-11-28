@@ -9,6 +9,7 @@ from a13n_harness.providers.model.oauth import CodexLoginResult, DeviceAuthoriza
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_accounts.login import LoginRequest
+from a13n_harness_ui.model_accounts.usage import CodexUsage
 from anyio import Event, fail_after, sleep
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 
@@ -49,6 +50,15 @@ async def test_login_session_persists_natively_and_keeps_local_identity(
 
     monkeypatch.setattr("a13n_harness_ui.model_accounts.login.authorize_codex", authorize)
     async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
+        refresh_started = Event()
+        finish_refresh = Event()
+
+        async def read_usage(account):
+            refresh_started.set()
+            await finish_refresh.wait()
+            return CodexUsage(account_id=account.upstream_account_id, plan_type="pro")
+
+        app.subscription_usage._reader = read_usage
 
         async def login(allow: bool = False, account_id: str | None = None):
             status = await app.start_login(
@@ -62,6 +72,9 @@ async def test_login_session_persists_natively_and_keeps_local_identity(
 
         status = await login()
         assert status.state == "succeeded", status
+        with fail_after(2):
+            await refresh_started.wait()
+        finish_refresh.set()
         assert status.verification_url is None and status.user_code is None
         assert "secret-refresh" not in status.model_dump_json()
         native = tmp_path / "state" / "oauth" / "accounts" / "acct-codex-default.json"

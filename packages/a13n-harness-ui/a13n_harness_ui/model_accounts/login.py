@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from a13n_harness.providers.model.oauth.chatgpt import ChatGPTAuthorization
 
     from .chatgpt import ChatGPTAccountStore
+    from .usage_cache import SubscriptionUsage
 
 
 class LoginRequest(StrictModel):
@@ -154,10 +155,12 @@ class LoginSessions:
         tasks: TaskGroup,
         account: Callable[[Provider], ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore],
         subscriptions: SubscriptionAccounts | None = None,
+        usage: SubscriptionUsage | None = None,
     ) -> None:
         self._tasks = tasks
         self._account = account
         self._subscriptions = subscriptions
+        self._usage = usage
         self._sessions: dict[str, _Session] = {}
 
     def start(
@@ -390,3 +393,9 @@ class LoginSessions:
                 session.status = session.status.model_copy(update={"state": "cancelled"})
             session.status = session.status.model_copy(update={"verification_url": None, "user_code": None})
             session.done.set()
+        if succeeded and request.account_id and self._usage is not None:
+            # The login is already visible, even when refreshing usage is slow or the dialog closed.
+            try:
+                await self._usage.refresh(request.account_id)
+            except AccountStoreError:
+                pass  # The account can be deleted while the provider request is in flight.

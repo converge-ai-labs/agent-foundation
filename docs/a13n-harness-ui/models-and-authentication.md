@@ -103,6 +103,8 @@ Use `model_configuration.base_url` for custom HTTP/API-key endpoints or gateways
 | ChatGPT        | `a13n-harness-ui login chatgpt`         | OAuth callback-URL paste flow                                 |
 | GitHub Copilot | `a13n-harness-ui login copilot`         | Device authorization flow using the public Copilot App ID     |
 
+In **Settings → Accounts → Subscription accounts**, choose **Sign in again** when Codex has rejected your authorization. If only the usage refresh failed, choose **Retry refresh**. The card shows when it last obtained the saved allowance.
+
 ### GitHub Copilot subscription
 
 Run `a13n-harness-ui login copilot`, open the printed GitHub verification URL, and enter the device code. No custom OAuth App registration is required. Use `route: github-copilot:<model-id>` with `authentication: {kind: copilot_subscription}`.

@@ -78,7 +78,7 @@ async def test_codex_resolution_passes_current_thread_and_bound_source_without_l
     expected = object()
     build = Mock(return_value=expected)
     bind = Mock(wraps=BoundCodexCredentialSource)
-    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", build)
+    monkeypatch.setattr("a13n_harness_ui.model_accounts.codex_transport.SubscriptionCodexModel", build)
     monkeypatch.setattr("a13n_harness_ui.model_accounts.codex.BoundCodexCredentialSource", bind)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},

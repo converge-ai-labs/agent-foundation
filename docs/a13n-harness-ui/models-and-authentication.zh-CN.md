@@ -103,6 +103,8 @@ authentication:
 | ChatGPT        | `a13n-harness-ui login chatgpt`         | OAuth 回调 URL 粘贴流程                    |
 | GitHub Copilot | `a13n-harness-ui login copilot`         | 使用公开 Copilot App ID 的设备授权流程     |
 
+在**设置 → 账号 → 订阅账户**中，如果卡片提示「需要重新登录」，点击「重新登录」恢复授权。如果提示「用量刷新失败」，点击「重试刷新」。卡片会在上次获取的额度旁显示获取时间。
+
 ### GitHub Copilot 订阅
 
 运行 `a13n-harness-ui login copilot`，打开终端打印的 GitHub 验证链接并输入设备码，无需自行注册 OAuth App。模型配置使用 `route: github-copilot:<model-id>` 与 `authentication: {kind: copilot_subscription}`。

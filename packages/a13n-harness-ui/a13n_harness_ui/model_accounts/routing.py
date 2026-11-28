@@ -25,6 +25,7 @@ from a13n_harness_ui.configuration.models import SubscriptionGroupResource
 from a13n_harness_ui.model_providers.credentials import PluginAccountStore
 
 from ._common import read_json_snapshot
+from .codex_transport import CodexRefreshGrantRejected
 from .managed import SubscriptionAccount, SubscriptionAccounts
 from .models import AccountStoreError, Availability, MainAccountSelection
 from .provenance import main_request
@@ -275,7 +276,9 @@ class SubscriptionGroupModel(WrapperModel):
                     if failure is None:
                         raise
                     reason, last_error = failure, error
-                    await self.usage.reject(account, self.model_name)
+                    await self.usage.reject(
+                        account, self.model_name, grant_rejected=isinstance(error, CodexRefreshGrantRejected)
+                    )
                     continue
                 self._active_id = account.id
                 if report:
@@ -335,7 +338,9 @@ class SubscriptionGroupModel(WrapperModel):
                     if failure is None:
                         raise
                     reason, last_error = failure, error
-                    await self.usage.reject(account, self.model_name)
+                    await self.usage.reject(
+                        account, self.model_name, grant_rejected=isinstance(error, CodexRefreshGrantRejected)
+                    )
                     continue
                 # Stream iteration, cleanup and caller exceptions must never enter the retry loop.
                 self._active_id = account.id

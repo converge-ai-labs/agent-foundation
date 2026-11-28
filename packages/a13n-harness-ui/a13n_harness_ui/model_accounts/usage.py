@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 import httpx2
 from pydantic import BaseModel, ConfigDict, Field
+
+from .codex_transport import CodexRefreshGrantRejected, check_codex_refresh_response
 
 if TYPE_CHECKING:
     from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
@@ -15,6 +18,10 @@ if TYPE_CHECKING:
 from .codex import BoundCodexCredentialSource
 
 _BASE_URL = "https://chatgpt.com/backend-api/wham"
+
+
+class UsageSignInRequired(ValueError):
+    """The account operation requires a new authorization."""
 
 
 class _ProviderView(BaseModel):
@@ -123,6 +130,7 @@ class CodexUsageClient:
             credential_source=BoundCodexCredentialSource(source, account_id=expected_account_id),
             http_client=client,
         )
+        self.client.event_hooks["response"].append(check_codex_refresh_response)
 
     async def _request(
         self, method: str, path: str, *, body: dict[str, str] | None = None
@@ -137,15 +145,15 @@ class CodexUsageClient:
                     chunks.extend(chunk)
                     if len(chunks) > 512 * 1024:
                         raise ValueError("Codex usage response exceeded the supported size.")
-                import json
-
                 value = json.loads(chunks)
                 if not isinstance(value, dict):
                     raise ValueError("Codex returned an unsupported usage response.")
                 return value, response.request.headers["ChatGPT-Account-Id"]
-        except (CredentialsRefreshError, CredentialsPersistenceError):
+        except (CredentialsRefreshError, CredentialsPersistenceError) as exc:
             # Upstream token errors may include provider response text. Account
             # diagnostics retain the outcome category, never that raw payload.
+            if isinstance(exc, CodexRefreshGrantRejected):
+                raise UsageSignInRequired(exc.message) from None
             raise ValueError(
                 "Codex credentials could not be refreshed or saved. Check the shared account store before retrying."
             ) from None
@@ -171,6 +179,8 @@ class CodexUsageClient:
             if credit_account != account_id:
                 raise ValueError("Codex account changed during the usage query; refresh before confirming a reset.")
             credits = ResetCredits.model_validate(raw_credits)
+        except UsageSignInRequired:
+            raise
         except ValueError as exc:
             diagnostic = str(exc)
         return CodexUsage.model_validate(

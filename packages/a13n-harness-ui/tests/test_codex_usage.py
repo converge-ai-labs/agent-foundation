@@ -268,18 +268,30 @@ async def test_missing_windows_are_not_zero_remaining() -> None:
     assert "% remaining" not in text
 
 
-async def test_official_token_error_body_is_not_exposed_by_account_operations() -> None:
+@pytest.mark.parametrize(
+    ("status", "body", "rejected"),
+    [
+        (400, {"error": "invalid_grant", "error_description": "private-token"}, True),
+        (401, {"error": {"code": "refresh_token_invalidated", "message": "private-token"}}, True),
+        (401, {"error": "invalid_client", "error_description": "private-token"}, False),
+        (503, {"error": "temporarily_unavailable", "error_description": "private-token"}, False),
+    ],
+)
+async def test_official_token_error_body_is_not_exposed_by_account_operations(status, body, rejected) -> None:
+    from a13n_harness_ui.model_accounts.usage import UsageSignInRequired
+
     requests = []
 
     def handle(request):
         requests.append(request.url.path)
         if request.url.path == "/oauth/token":
-            return httpx2.Response(400, json={"error": "invalid_grant", "error_description": "private-token"})
+            return httpx2.Response(status, json=body)
         return httpx2.Response(401)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        with pytest.raises(ValueError, match="could not be refreshed or saved") as caught:
+        with pytest.raises(ValueError) as caught:
             await CodexUsageClient(_source(), client=client).read()
+    assert isinstance(caught.value, UsageSignInRequired) is rejected
     assert "private-token" not in str(caught.value)
     assert caught.value.__cause__ is None
     assert requests == ["/backend-api/wham/usage", "/oauth/token"]
