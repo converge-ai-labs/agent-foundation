@@ -1666,7 +1666,13 @@ function ConversationContent({
                         draft.submission.kind === "unknown"
                       }
                       onExternalOptionsOpen={() => {
-                        if (acpOptionsEnabled && !acpActive)
+                        if (
+                          acpOptionsEnabled &&
+                          !acpActive &&
+                          (!modelOption ||
+                            acpOptions.isStale ||
+                            acpOptions.isError)
+                        )
                           void acpOptions.refetch({ cancelRefetch: false });
                       }}
                       externalLoading={acpBlock?.kind === "loading"}

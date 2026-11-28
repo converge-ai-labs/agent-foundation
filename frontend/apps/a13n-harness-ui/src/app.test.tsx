@@ -226,6 +226,8 @@ it.each(["saved", "new"] as const)(
       value: "",
       choices: [{ value: "model-a", name: "Fixture Model A" }],
     };
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
     let reads = 0;
     let staleRead: AbortSignal | undefined;
     let finishWrite!: () => void;
@@ -304,7 +306,14 @@ it.each(["saved", "new"] as const)(
     expect(within(row).getByText("Not selected")).toBeTruthy();
     expect(panel.textContent).toContain("No model selected");
     expect(reads).toBe(2);
-    await user.click(row);
+    await user.keyboard("{Escape}");
+    await user.click(panel);
+    const cachedRow = await screen.findByRole("button", { name: "Model" });
+    expect(within(cachedRow).getByText("Not selected")).toBeTruthy();
+    expect(reads).toBe(2);
+    // Age the successful read before the existing stale-read/write race.
+    now += 60_000;
+    await user.click(cachedRow);
     await user.click(screen.getByRole("button", { name: "Fixture Model A" }));
     if (saved) {
       await waitFor(() => expect(writes).toHaveLength(1));
