@@ -29,7 +29,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 
 from .test_app import _settings, _write_configuration
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def _identity(request: ModelMessage) -> str:

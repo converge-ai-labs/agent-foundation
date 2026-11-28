@@ -161,6 +161,10 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
 }
+.observationContents {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
 .observations code {
   overflow: hidden;
   font-family: var(--a13n-mono);

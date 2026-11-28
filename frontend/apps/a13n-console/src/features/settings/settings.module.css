@@ -92,6 +92,12 @@
   padding: 0 8px;
   margin: 0;
 }
+.keyExpiration {
+  min-width: 0;
+}
+.keyExpiration > :global([data-slot="select-trigger"]) {
+  width: 100%;
+}
 .surface {
   min-width: 0;
 }

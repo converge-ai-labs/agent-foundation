@@ -1,4 +1,5 @@
 import { WorkPanel } from "./work-activity";
+import { ThreadLinksPanel } from "../native/thread-links";
 import { BackgroundStateIcon } from "./background-state-icon";
 import { TerminalWindow, Wrench, CirclesThree } from "@phosphor-icons/react";
 import { ChildInputLabels } from "./input-content";
@@ -42,6 +43,10 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
         section={target.kind}
         selection={target.selection}
       />
+    );
+  if (target.kind === "worktrees" || target.kind === "links")
+    return (
+      <ThreadLinksPanel threadId={target.threadId} section={target.kind} />
     );
   return <ExecutionPanel target={target} />;
 }

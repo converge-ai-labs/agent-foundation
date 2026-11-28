@@ -175,6 +175,7 @@ async def test_create_refuses_an_existing_path_and_returns_it() -> None:
 @pytest.mark.parametrize(
     ("content", "code"),
     [("---\ndescription: [unclosed\n---\n", "invalid_file"), ("x" * 65537, "too_large")],
+    ids=["invalid-frontmatter", "over-byte-limit"],
 )
 async def test_create_refuses_invalid_files(content: str, code: str) -> None:
     store = FakeFileStore()

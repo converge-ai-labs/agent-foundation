@@ -50,11 +50,13 @@ type Refusal = { status: number; code: string; details: object };
 /** A record memory on a mem0 provider, behind the Service's record routes. */
 function setup({
   allowed = ["read", "run", "write"],
+  empty = false,
   tab = "",
   provenance,
   runAvailable = true,
 }: {
   allowed?: string[];
+  empty?: boolean;
   tab?: string;
   provenance?: Schema["MemoryRecordProvenance"];
   runAvailable?: boolean;
@@ -86,16 +88,18 @@ function setup({
     created_at: AT,
     updated_at: AT,
   };
-  const records: Schema["MemoryRecordView"][] = [
-    {
-      id: "rec_1",
-      provenance,
-      text: "Prefers tea in the morning.",
-      updated_at: AT,
-    },
-    { id: "rec_2", text: "Ships on Fridays.", updated_at: AT },
-    { id: "rec_3", text: "Coffee after lunch.", updated_at: null },
-  ];
+  const records: Schema["MemoryRecordView"][] = empty
+    ? []
+    : [
+        {
+          id: "rec_1",
+          provenance,
+          text: "Prefers tea in the morning.",
+          updated_at: AT,
+        },
+        { id: "rec_2", text: "Ships on Fridays.", updated_at: AT },
+        { id: "rec_3", text: "Coffee after lunch.", updated_at: null },
+      ];
   const requests: { method: string; path: string; body: unknown }[] = [];
   const failed = (status: number, code: string, details: object = {}) =>
     Response.json({ error: { code, message: code, details } }, { status });
@@ -133,7 +137,7 @@ function setup({
       const start = url.searchParams.get("cursor") === "page_2" ? 2 : 0;
       return Response.json({
         items: records.slice(start, start + 2),
-        next_cursor: start ? null : "page_2",
+        next_cursor: records.length > start + 2 ? "page_2" : null,
       });
     }
     if (route === `POST ${base}/records/search`) {
@@ -209,6 +213,28 @@ async function openMenu(user: ReturnType<typeof userEvent.setup>, row: string) {
   );
 }
 
+it("offers one create action in the empty state and keeps it in the toolbar during search", async () => {
+  const { user } = setup({ empty: true });
+  const empty = (
+    await screen.findByText("No records yet")
+  ).closest<HTMLElement>('[data-slot="empty"]')!;
+  expect(screen.getAllByRole("button", { name: "Add record" })).toEqual([
+    within(empty).getByRole("button", { name: "Add record" }),
+  ]);
+
+  await user.type(
+    screen.getByRole("searchbox", { name: "Search records" }),
+    "coffee{Enter}",
+  );
+  await screen.findByText("No matching records");
+  expect(screen.getAllByRole("button", { name: "Add record" })).toHaveLength(1);
+  expect(
+    screen
+      .getByRole("button", { name: "Add record" })
+      .closest('[data-slot="empty"]'),
+  ).toBeNull();
+});
+
 it("pages a record memory's records and searches them by meaning", async () => {
   const { user, sent } = setup();
   expect(await screen.findByText("Prefers tea in the morning.")).toBeTruthy();
@@ -229,7 +255,9 @@ it("pages a record memory's records and searches them by meaning", async () => {
       query: "coffee",
     }),
   );
-  expect(await screen.findByText("0.91")).toBeTruthy();
+  expect(
+    (await screen.findByText("0.91")).closest("td")?.getAttribute("data-align"),
+  ).toBe("right");
   expect(screen.getByText("1 closest records")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   await user.clear(search);

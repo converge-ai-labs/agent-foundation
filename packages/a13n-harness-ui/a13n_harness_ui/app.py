@@ -124,6 +124,7 @@ from a13n_harness_ui.configuration.models import (
     McpRemoteTransport,
     PairedDeviceAuthentication,
     ProjectResource,
+    WebUiShortcutsConfiguration,
 )
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
@@ -405,7 +406,7 @@ from a13n_harness_ui.surfaces import (
     TranscriptPage,
 )
 from a13n_harness_ui.terminal_projection import TerminalProjectionService
-from a13n_harness_ui.thread_capability import ThreadCollaborationCapability, ThreadToolController
+from a13n_harness_ui.thread_capability import ThreadCollaborationCapability, ThreadLinksCapability, ThreadToolController
 from a13n_harness_ui.thread_files import (
     MAX_ATTACHMENTS,
     MAX_INPUT_BYTES,
@@ -415,6 +416,8 @@ from a13n_harness_ui.thread_files import (
     ThreadAttachment,
     ThreadFiles,
 )
+from a13n_harness_ui.thread_link_models import ThreadLinkKind, ThreadLinksView
+from a13n_harness_ui.thread_links import WORKTREE_PRESET, ThreadLinks
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import (
     MessageRewind,
@@ -467,7 +470,9 @@ class AppStatus(BaseModel):
     memory_organization: MemoryOrganizationStatus | None = None
     input_prediction_enabled: bool = False
     send_shortcut: ComposerSendShortcut = "enter"
+    shortcuts: WebUiShortcutsConfiguration = Field(default_factory=WebUiShortcutsConfiguration)
     coordinator_by_default: bool = False
+    inbox_auto_mark_read: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -590,6 +595,11 @@ class HarnessUiApp:
         self._thread_files = thread_files
         self._host_files = HostFiles(enabled=share_computer)
         self._host_git = HostGit(enabled=share_computer)
+        self._thread_links = ThreadLinks(
+            store.threads,
+            self._host_git,
+            changed=lambda thread_id: summary_hub.publish_nowait(kind="thread_links", thread_id=thread_id),
+        )
         self._host_terminal = HostTerminal(enabled=share_computer)
         self._shared_drafts: dict[str, SharedDraft] = {}
         self._shared_drafts_lock = Lock()
@@ -672,6 +682,10 @@ class HarnessUiApp:
         if self._inbox is None:
             raise HarnessUiError("Inbox is available only in WebUI.", code="inbox_unavailable")
         return self._inbox
+
+    async def _inbox_auto_mark_read(self) -> bool:
+        configuration = await self._configurations.current()
+        return configuration is None or configuration.document.inbox.auto_mark_read
 
     def voice(self) -> VoiceController:
         if self._voice is None:
@@ -992,8 +1006,14 @@ class HarnessUiApp:
                 memory_organization=self._memory_organizer.status(configuration),
                 input_prediction_enabled=configuration is not None and configuration.document.input_prediction.enabled,
                 send_shortcut=configuration.document.webui.send_shortcut if configuration is not None else "enter",
+                shortcuts=(
+                    configuration.document.webui.shortcuts
+                    if configuration is not None
+                    else WebUiShortcutsConfiguration()
+                ),
                 coordinator_by_default=configuration is not None
                 and configuration.document.webui.coordinator_by_default,
+                inbox_auto_mark_read=configuration is None or configuration.document.inbox.auto_mark_read,
                 state=self._state,
                 object_count=await self._store.object_count(),
                 accepted_generation_digest=current_digest,
@@ -1671,6 +1691,14 @@ class HarnessUiApp:
                 await self._summary_hub.publish(kind="thread", thread_id=coordinator_thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
+    async def thread_links(self, thread_id: str) -> ThreadLinksView:
+        async with self._operation():
+            return await self._thread_links.view(thread_id)
+
+    async def unlink_thread_resource(self, thread_id: str, kind: ThreadLinkKind, target: str) -> None:
+        async with self._operation():
+            await self._thread_links.unlink(thread_id, kind, target)
+
     async def fork_thread(self, thread_id: str) -> ThreadSummary:
         """Copy an independent ordinary Thread without admitting a Run."""
         async with self._operation():
@@ -1753,7 +1781,8 @@ class HarnessUiApp:
                     raise ThreadError(
                         "Resolve pending decisions before converting this Thread.", code="thread_deferred_pending"
                     )
-                await self._threads.promote_coordinator(thread_id)
+                if await self._threads.promote_coordinator(thread_id):
+                    await self._acp_sessions.retire(thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
 
@@ -3037,7 +3066,7 @@ class HarnessUiApp:
         skill_references: tuple[SkillReference, ...] = (),
         input_surface: Literal["tui", "webui"] | None = None,
         environment: EnvironmentSelectionPatch | None = None,
-        mode: GoalMode = "normal",
+        mode: GoalMode | Literal["worktree"] = "normal",
         app_context: tuple[AppContextReference, ...] = (),
         mcp_app_view: AppView | None = None,
         draft: DraftCapture | None = None,
@@ -3049,12 +3078,27 @@ class HarnessUiApp:
         """Submit a user turn with optional synchronous admission guards and receipt handoff."""
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
-        if mode not in {"normal", "goal"}:
+        if mode not in {"normal", "goal", "worktree"}:
             raise ValueError("Unknown submission mode")
         if thread_id == BOT_THREAD_ID:
             raise ThreadError("Send Bot messages through Bot chat.", code="bot_chat_required")
         async with self._operation():
-            await self._threads.require_interactive(thread_id)
+            thread = await self._threads.require_interactive(thread_id)
+            if mode == "worktree":
+                if input_surface != "webui":
+                    raise ValueError("Worktree mode is a WebUI submission mode.")
+                selection = environment or EnvironmentSelectionPatch()
+                default_environment = (
+                    selection.default_environment
+                    if "default_environment" in selection.model_fields_set
+                    else thread.configuration.default_environment
+                )
+                await self._thread_links.require_worktree_mode(
+                    thread,
+                    selection.environment_profile_id or thread.configuration.environment_profile_id,
+                    selection.local_roots if selection.local_roots is not None else thread.configuration.local_roots,
+                    default_environment,
+                )
             draft_clear = await self._prepare_draft_clear(thread_id, draft, reset_mode=True)
             selected_context = await self._apps().capture_context(thread_id, app_context) if app_context else ()
             goal = None
@@ -3087,6 +3131,12 @@ class HarnessUiApp:
                 environment=environment,
                 mutation=mutation,
             )
+            if mode == "worktree":
+                preset = TextContent(
+                    WORKTREE_PRESET,
+                    metadata={"display": False, "source_id": "a13n-harness-ui.worktree-mode"},
+                )
+                prompt = (preset, *((prompt,) if isinstance(prompt, str) else prompt))
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
                     TextContent(
@@ -5066,6 +5116,7 @@ async def open_harness_ui_app(
                     store=store,
                     projections=projections,
                     summaries=summary_hub,
+                    auto_mark_read=app._inbox_auto_mark_read,
                     notify=web_push.enqueue if web_push is not None else None,
                 )
                 thread_tools = ThreadToolController(
@@ -5087,6 +5138,18 @@ async def open_harness_ui_app(
                         [
                             ThreadCollaborationCapability(
                                 controller=thread_tools, source_thread_id=composition.thread_id, composition=composition
+                            ),
+                            *(
+                                [
+                                    ThreadLinksCapability(
+                                        links=app._thread_links,
+                                        thread_id=composition.thread_id,
+                                        allow_host_git=composition.environment_profile.profile_id
+                                        == "environment-native",
+                                    )
+                                ]
+                                if composition.root.source_kind not in {"live", "memory"}
+                                else []
                             ),
                             *(
                                 [

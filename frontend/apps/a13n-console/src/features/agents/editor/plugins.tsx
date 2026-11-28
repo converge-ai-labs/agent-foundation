@@ -144,7 +144,7 @@ export function PluginsSection({
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  size="icon-xs"
+                                  size="icon-sm"
                                   disabled={pending}
                                   aria-label={t("Plugin actions")}
                                 />

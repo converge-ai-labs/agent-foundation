@@ -256,7 +256,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ fromJSON(github.event_name == 'push' && '["3.13"]' || '["3.13","3.14","3.15"]') }}
+        python-version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["3.13","3.14","3.15"]' || '["3.13"]') }}
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     needs: changes
@@ -281,14 +281,14 @@ jobs:
           cache-dependency-glob: uv.lock
           cache-suffix: py${{ matrix.python-version }}-envd
 
-      - name: Synchronize Python workspace
-        run: uv sync --locked --all-packages
+      - name: Synchronize client and workspace development tools
+        run: uv sync --locked --package a13n-envd-client --package a13n-workspace
 
       - name: Type-check a13n-envd client
-        run: uv run --locked pyright packages/a13n-envd-client/a13n_envd_client
+        run: uv run --locked --no-sync pyright packages/a13n-envd-client/a13n_envd_client
 
       - name: Test a13n-envd client
-        run: uv run --locked python -m pytest packages/a13n-envd-client/tests --junitxml=test-results/client.xml --durations=30 -r a
+        run: uv run --locked --no-sync python -m pytest packages/a13n-envd-client/tests --junitxml=test-results/client.xml --durations=30 -r a
 
       - name: Retain client test reports
         if: always()

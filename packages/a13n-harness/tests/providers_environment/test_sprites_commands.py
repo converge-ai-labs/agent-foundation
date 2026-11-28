@@ -26,13 +26,13 @@ def anyio_backend():
 @pytest.mark.skipif(sys.platform == "win32", reason="Executes the Linux guest script with local POSIX tools")
 @pytest.mark.parametrize("stdin", [None, "payload with 'quotes'\n$(touch should-not-exist)\n"])
 @pytest.mark.parametrize("exit_code", [0, 7])
-async def test_command_carries_quoted_argv_and_stdin_without_python(monkeypatch, tmp_path, stdin, exit_code):
+async def test_command_carries_quoted_argv_and_stdin_without_python(monkeypatch, tmp_path, stdin, exit_code, symlink):
     value = "secret ' ; $(touch should-not-exist)\nline"
     payload = None
     result = None
     tools = tmp_path / "tools"
     tools.mkdir()
-    (tools / "base64").symlink_to("/usr/bin/base64")
+    symlink(tools / "base64", "/usr/bin/base64")
 
     class Socket:
         async def __aenter__(self):

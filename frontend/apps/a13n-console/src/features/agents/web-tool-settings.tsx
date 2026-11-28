@@ -1,18 +1,10 @@
-import {
-  Button,
-  ChoiceField,
-  FormField,
-  Input,
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-} from "a13n-ui";
-import { InfoIcon } from "@phosphor-icons/react";
+import { Button, ChoiceField, FormField, Input } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice, InlineLoading } from "../../shared/feedback";
+import { FieldHelp } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
 import { providersPath } from "../providers/navigation";
 import {
@@ -71,6 +63,14 @@ export function WebToolSettings({
       label: t("Selected provider unavailable"),
     });
   const displayedProviderId = providerId || options[0]?.value;
+  const manage = can("write") ? (
+    <a
+      href={providersPath("web", workspace)}
+      className={styles.webProviderLink}
+    >
+      {t("Manage")}
+    </a>
+  ) : undefined;
   return (
     <>
       <div className={styles.webProviderField}>
@@ -78,23 +78,20 @@ export function WebToolSettings({
           <InlineLoading width="12rem" />
         ) : options.length ? (
           <ChoiceField
+            data-field-layout="stacked"
             readOnly={readOnly}
             label={t("Web Provider")}
+            labelAction={manage}
             value={displayedProviderId}
             placeholder={t("Select a provider")}
             onValueChange={(id) => onChange({ ...config, provider_id: id })}
             options={options}
           />
         ) : (
-          <p className="text-sm font-medium">{t("Web Provider")}</p>
-        )}
-        {can("write") && (
-          <a
-            href={providersPath("web", workspace)}
-            className={styles.webProviderLink}
-          >
-            {t("Manage")}
-          </a>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <p className="text-sm font-medium">{t("Web Provider")}</p>
+            {manage}
+          </div>
         )}
         {typeof reuseProviderId === "string" &&
           reuseProviderId !== providerId &&
@@ -243,20 +240,9 @@ function DomainField({
       readOnly={readOnly}
       label={label}
       labelAction={
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                className={styles.domainHelp}
-                aria-label={t("{{field}} help", { field: label })}
-              />
-            }
-          >
-            <InfoIcon size={14} aria-hidden="true" />
-          </TooltipTrigger>
-          <TooltipPopup className={styles.domainTooltip}>{help}</TooltipPopup>
-        </Tooltip>
+        <FieldHelp label={t("{{field}} help", { field: label })}>
+          {help}
+        </FieldHelp>
       }
     >
       <Input

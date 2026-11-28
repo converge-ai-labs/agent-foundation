@@ -46,7 +46,7 @@ export function composerOptions(doc: Y.Doc) {
     model: options.get("model") as ComposerModelOptions | undefined,
     environment: options.get("environment") as
       Schema<"EnvironmentSelectionPatch"> | undefined,
-    mode: (options.get("mode") ?? "normal") as "normal" | "goal",
+    mode: (options.get("mode") ?? "normal") as "normal" | "goal" | "worktree",
   };
 }
 export function values(doc: Y.Doc) {
@@ -218,7 +218,7 @@ export class ThreadDraft {
   get mode() {
     return composerOptions(this.optionsDoc).mode;
   }
-  set mode(value: "normal" | "goal") {
+  set mode(value: "normal" | "goal" | "worktree") {
     this.setOption("mode", value);
   }
   private setOption(key: string, value: unknown) {

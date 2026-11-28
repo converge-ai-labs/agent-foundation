@@ -148,20 +148,17 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.findingsTable [data-column="finding"] {
-  width: 42%;
-}
 .findingsTable [data-column="agent"] {
-  width: 21%;
+  width: 22%;
 }
 .findingsTable [data-column="severity"] {
-  width: 13%;
+  width: 6rem;
 }
 .findingsTable [data-column="assessment"] {
-  width: 14%;
+  width: 7.5rem;
 }
 .findingsTable [data-column="updated"] {
-  width: 10%;
+  width: 7rem;
 }
 .findingsTable .title,
 .agentName {
@@ -470,21 +467,15 @@
   color: var(--a13n-text);
   font-weight: 500;
 }
-.mobileOnly {
-  display: none;
-}
 .historyTable {
   table-layout: fixed;
   min-width: 0;
 }
-.historyTable [data-column="scope"] {
-  width: 60%;
-}
 .historyTable [data-column="status"] {
-  width: 20%;
+  width: 8rem;
 }
 .historyTable [data-column="created"] {
-  width: 20%;
+  width: 9rem;
 }
 .rowTitle[aria-current] {
   text-decoration: underline;
@@ -626,29 +617,6 @@
 }
 
 @media (width < 560px) {
-  .findingsTable [data-column="agent"],
-  .findingsTable [data-column="updated"] {
-    display: none;
-  }
-  .findingsTable [data-column="finding"] {
-    width: 56%;
-  }
-  .findingsTable [data-column="severity"],
-  .findingsTable [data-column="assessment"] {
-    width: 22%;
-  }
-  .mobileOnly {
-    display: inline;
-  }
-  .historyTable [data-column="scope"] {
-    width: 52%;
-  }
-  .historyTable [data-column="status"] {
-    width: 48%;
-  }
-  .historyTable [data-column="created"] {
-    display: none;
-  }
   .figures {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

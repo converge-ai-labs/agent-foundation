@@ -51,6 +51,8 @@ from a13n_harness_ui.surfaces import (
     RunModelOverrides,
     ThreadSummary,
 )
+from a13n_harness_ui.thread_link_models import ThreadLinkKind
+from a13n_harness_ui.thread_links import THREAD_LINK_GUIDANCE, ThreadLinks
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
 from a13n_harness_ui.voice import VoiceController
@@ -1357,6 +1359,76 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 "Harness UI Thread tools cannot cross root Run scope.",
                 code="capability_scope_invalid",
             )
+
+
+@dataclass(kw_only=True)
+class ThreadLinksCapability(AbstractModelContextCapability):
+    links: ThreadLinks
+    thread_id: str
+    allow_host_git: bool
+    id: str | None = "a13n.harness-ui.thread-links"
+    _toolset: FunctionToolset[AgentContext] | None = field(default=None, init=False, repr=False, compare=False)
+
+    def get_instructions(self) -> str:
+        return THREAD_LINK_GUIDANCE
+
+    def _require_scope(self, ctx: RunContext[AgentContext]) -> None:
+        if ctx.deps.thread_id != self.thread_id:
+            raise DefinitionError("Thread Links are scoped to the current root Run.", code="capability_scope_invalid")
+
+    async def wrap_model_context(
+        self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest, handler: ModelContextNext
+    ) -> ModelContextProjection:
+        projection = await handler(request)
+        self._require_scope(ctx)
+        block = await self.links.context(self.thread_id)
+        if request.history.matches_latest(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
+
+    def get_toolset(self) -> FunctionToolset[AgentContext]:
+        if self._toolset is None:
+            self._toolset = FunctionToolset(
+                tools=[
+                    _tool(
+                        self.link_thread_resource, name="link_thread_resource", effects={"write"}, idempotency="none"
+                    ),
+                    _tool(
+                        self.unlink_thread_resource,
+                        name="unlink_thread_resource",
+                        effects={"write"},
+                        idempotency="none",
+                    ),
+                ],
+                id="a13n-harness-ui-thread-links",
+            )
+        return self._toolset
+
+    async def link_thread_resource(
+        self, ctx: RunContext[AgentContext], kind: ThreadLinkKind, target: str, label: str | None = None
+    ) -> dict[str, Any]:
+        """Register an active worktree (absolute Host path) or URL (HTTP(S)) for this chat, without granting access.
+
+        A repeat call updates the optional label for the same target. Use the canonical target returned by this tool.
+        """
+        self._require_scope(ctx)
+        try:
+            link = await self.links.link(self.thread_id, kind, target, label, allow_host_git=self.allow_host_git)
+            return link.model_dump(mode="json")
+        except HarnessUiError as exc:
+            return thread_tool_failure(exc, "thread_link_failed")
+
+    async def unlink_thread_resource(
+        self, ctx: RunContext[AgentContext], kind: ThreadLinkKind, target: str
+    ) -> dict[str, Any]:
+        """Remove a worktree or URL reference from this chat without deleting the target."""
+        self._require_scope(ctx)
+        try:
+            return {
+                "removed": await self.links.unlink(self.thread_id, kind, target, allow_host_git=self.allow_host_git)
+            }
+        except HarnessUiError as exc:
+            return thread_tool_failure(exc, "thread_link_failed")
 
 
 def _thread_input(source: ThreadSummary, text: str, *, context: str | None = None) -> tuple[TextContent, TextContent]:

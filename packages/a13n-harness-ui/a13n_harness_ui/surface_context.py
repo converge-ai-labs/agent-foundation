@@ -18,7 +18,9 @@ _SURFACE_HINTS = {
         "When a Host file should be directly openable by the user, link it as "
         "`[label](/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path})`, "
         "using the current root Thread ID supplied in your instructions. The WebUI opens that same-instance "
-        "link in its Files drawer. Do not use a bare Host path or an `/api/host/files/...` URL as the link target."
+        "link in its Files drawer. For a repository Changes view, use "
+        "`[label](/threads/{root_thread_id}?native=changes&native_path={URL-encoded absolute repository path})`. "
+        "Do not use a bare Host path or an `/api/host/files/...` URL as the link target."
     ),
     "tui": (
         "Current response surface: Harness UI TUI.\n"

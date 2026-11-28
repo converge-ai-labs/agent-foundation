@@ -1,0 +1,112 @@
+.list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.worktree {
+  display: grid;
+  gap: 2px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 8px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.linkRow {
+  border-radius: 8px;
+  padding: 2px 4px 2px 8px;
+  transition: background-color 120ms ease-out;
+}
+.linkRow:hover,
+.linkRow:focus-within {
+  background: var(--a13n-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .linkRow {
+    transition: none;
+  }
+}
+.row > button,
+.icon {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.icon {
+  width: 16px;
+  height: 16px;
+}
+.toneSuccess {
+  color: var(--success-foreground);
+}
+.toneInfo {
+  color: var(--info-foreground);
+}
+.identity {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+a.identity:hover .nameText {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.nameText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.externalIcon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--a13n-secondary);
+}
+.detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.detailText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.artifactNumber {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-inline-start: 16px;
+}
+.actionButton {
+  gap: 5px;
+  color: var(--a13n-secondary);
+}
+.actionButton:hover {
+  color: var(--a13n-text);
+}
+.empty {
+  color: var(--a13n-secondary);
+}

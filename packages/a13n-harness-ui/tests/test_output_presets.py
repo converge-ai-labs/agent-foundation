@@ -12,6 +12,8 @@ from a13n_harness_ui.model_authoring import ModelRecipe
 from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS, settings_presets
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 @pytest.mark.parametrize(
     "provider,model_id,expected",

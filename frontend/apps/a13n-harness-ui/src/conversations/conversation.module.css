@@ -325,9 +325,6 @@
   color: var(--a13n-secondary);
   background: transparent;
 }
-.threadRestore {
-  flex-shrink: 0;
-}
 .threadStar {
   display: inline-flex;
   align-items: center;
@@ -343,10 +340,7 @@
   .groupActions {
     opacity: 0;
   }
-  /* Rows with an inline Restore button reserve a separate menu slot and keep
-     their status visible. Other rows let the menu take the place of the
-     trailing mark. */
-  .threadRow:not(:has(.threadRestore)) {
+  .threadRow {
     & .threadActions {
       position: absolute;
       top: 50%;

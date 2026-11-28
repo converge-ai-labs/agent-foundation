@@ -666,17 +666,38 @@ class ThreadService:
         assert copied is not None
         return copied
 
-    async def promote_coordinator(self, thread_id: str) -> Thread:
+    async def promote_coordinator(self, thread_id: str) -> bool:
         if thread_id == BOT_THREAD_ID:
             raise ThreadError("Bot is an independent instance-global root.", code="bot_thread_reserved")
         thread = await self.require_interactive(thread_id)
         if await self._store.threads.is_coordinator(thread_id):
-            return thread
+            return False
         source = await self._required_configuration()
         if thread.configuration.project_id not in source.projects:
             raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
-        await self._store.threads.promote_coordinator(thread_id)
-        return thread
+        clear_acp_state = False
+        acp_state_json: str | None = None
+        if isinstance(thread.configuration.agent_source, AcpAgentSource):
+            saved_acp = await self._store.threads.acp_state(thread_id)
+            if saved_acp is not None:
+                clear_acp_state = True
+                prior_acp = AcpSessionState.model_validate_json(saved_acp)
+                resource = source.acp_agents.get(thread.configuration.agent_source.id)
+                if resource is not None:
+                    acp_state_json = AcpSessionState(
+                        digest=acp_options_scope(resource, self.acp_workspace(thread.configuration)),
+                        thread_id=thread_id,
+                        prompted=False,
+                        peer_title=prior_acp.peer_title,
+                        commands=prior_acp.commands,
+                        options=prior_acp.options,
+                        explicit_options=prior_acp.explicit_options,
+                    ).model_dump_json()
+        return await self._store.threads.promote_coordinator(
+            thread_id,
+            clear_acp_state=clear_acp_state,
+            acp_state_json=acp_state_json,
+        )
 
     async def set_auto_followup(self, thread_id: str, auto_followup: bool) -> Thread:
         await self.require_interactive(thread_id)

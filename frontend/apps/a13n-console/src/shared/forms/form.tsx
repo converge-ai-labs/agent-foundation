@@ -103,8 +103,8 @@ export function FormActions({
   /** A read-only dialog dismisses instead of submitting. */
   dismiss?: boolean;
   /** Outline keeps a secondary submit row from competing with the page's
-   *  one filled primary action. */
-  variant?: "default" | "outline";
+   *  one filled primary action; destructive is for confirmed removal. */
+  variant?: "default" | "outline" | "destructive";
   /** Actions that belong to the form but not to its outcome, at the left. */
   leading?: ReactNode;
   /** Destructive or secondary actions immediately before Cancel. */
@@ -120,25 +120,29 @@ export function FormActions({
       {leading && <div className={styles.formActionsLeading}>{leading}</div>}
       <div className={styles.formActionsPrimary}>
         {beforeCancel}
-        {onCancel && (
-          <Button
-            variant="outline"
-            disabled={pending}
-            onClick={onCancel}
-            type="button"
-          >
-            {cancelLabel ?? t(dismiss ? "Close" : "Cancel")}
-          </Button>
-        )}
-        {!dismiss && (
-          <Button
-            type="submit"
-            variant={variant}
-            loading={pending}
-            disabled={disabled}
-          >
-            {label ?? t("Save changes")}
-          </Button>
+        {(onCancel || !dismiss) && (
+          <div className={styles.formActionsOutcome}>
+            {onCancel && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={onCancel}
+                type="button"
+              >
+                {cancelLabel ?? t(dismiss ? "Close" : "Cancel")}
+              </Button>
+            )}
+            {!dismiss && (
+              <Button
+                type="submit"
+                variant={variant}
+                loading={pending}
+                disabled={disabled}
+              >
+                {label ?? t("Save changes")}
+              </Button>
+            )}
+          </div>
         )}
       </div>
     </footer>

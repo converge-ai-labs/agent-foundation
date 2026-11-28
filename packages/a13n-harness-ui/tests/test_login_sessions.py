@@ -15,7 +15,7 @@ from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 from .test_app import _settings
 from .test_model_accounts import _jwt
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.fixture

@@ -1,5 +1,12 @@
 import { useTranslation } from "../i18n";
-import { modifierLabel } from "../platform";
+import { modifierLabel, usesCommandKey } from "../platform";
+import { isMap, Scalar } from "yaml";
+import {
+  shortcutChoices,
+  shortcutDefaults,
+  shortcutLabel,
+  type ShortcutAction,
+} from "../shell/workbench-shortcuts";
 import { HelpTip } from "../shell/help-tip";
 import { acpPresetBrand, ModelIcon } from "../shell/model-identity";
 import {
@@ -700,6 +707,88 @@ export function ResourceFields({
                     ]}
                   />
                 </SettingsSection>
+                <SettingsSection
+                  variant="grouped"
+                  title={t("Keyboard shortcuts")}
+                  description={t(
+                    "Applies to all browsers using this instance.",
+                  )}
+                >
+                  {(
+                    [
+                      [
+                        "new_chat",
+                        t("New chat"),
+                        t(
+                          "Use {{inTabs}} in browser tabs. {{appOnly}} requires an installed app window or desktop shell.",
+                          {
+                            inTabs: shortcutLabel("mod-shift-o"),
+                            appOnly: shortcutLabel("mod-n"),
+                          },
+                        ),
+                      ],
+                      ["search_chats", t("Search chats")],
+                      ["toggle_sidebar", t("Toggle navigation")],
+                      ["toggle_supporting_panel", t("Toggle supporting panel")],
+                      ["open_files", t("Open files")],
+                      ["open_changes", t("Open changes")],
+                      ["terminal", t("Terminal")],
+                      [
+                        "open_settings",
+                        t("Open settings"),
+                        usesCommandKey()
+                          ? t(
+                              "macOS browsers reserve {{shortcut}} in regular tabs. Use an installed app window or desktop shell.",
+                              {
+                                shortcut: shortcutLabel("mod-comma"),
+                              },
+                            )
+                          : undefined,
+                      ],
+                    ] satisfies [ShortcutAction, string, string?][]
+                  ).map(([action, label, description]) => {
+                    const parent = ["webui", "shortcuts"];
+                    const path = [...parent, action];
+                    return (
+                      <ChoiceField
+                        key={action}
+                        label={label}
+                        description={description}
+                        value={text(path) || shortcutDefaults[action]}
+                        options={shortcutChoices[action].map((value) => ({
+                          value,
+                          label:
+                            value === "off" ? t("Off") : shortcutLabel(value),
+                        }))}
+                        onValueChange={(value) => {
+                          if (value !== shortcutDefaults[action]) {
+                            if (value === "off") {
+                              // PyYAML treats a bare `off` as a boolean.
+                              const off = new Scalar(value);
+                              off.type = Scalar.QUOTE_DOUBLE;
+                              set(path, off);
+                            } else set(path, value);
+                            return;
+                          }
+                          const shortcuts = document.getIn(parent, true);
+                          if (
+                            document.hasIn(path) &&
+                            isMap(shortcuts) &&
+                            shortcuts.items.length === 1
+                          ) {
+                            const webui = document.get("webui", true);
+                            set(
+                              isMap(webui) && webui.items.length === 1
+                                ? ["webui"]
+                                : parent,
+                              undefined,
+                            );
+                          } else set(path, undefined);
+                        }}
+                      />
+                    );
+                  })}
+                </SettingsSection>
                 <SettingsSection variant="grouped" title={t("New chats")}>
                   {scalar(
                     t("Default agent"),
@@ -788,6 +877,22 @@ export function ResourceFields({
                       checked={get(["inbox", "enabled"]) !== false}
                       onCheckedChange={(enabled) =>
                         set(["inbox", "enabled"], enabled)
+                      }
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    label={t("Automatically mark Inbox items as read in chats")}
+                    controlId="inbox-auto-mark-read"
+                    stackOnNarrow={false}
+                    description={t(
+                      "Mark Inbox items as read when you view the latest messages in a focused chat, send a message, or respond to a decision. You can always open or mark an item yourself.",
+                    )}
+                  >
+                    <Switch
+                      id="inbox-auto-mark-read"
+                      checked={get(["inbox", "auto_mark_read"]) !== false}
+                      onCheckedChange={(enabled) =>
+                        set(["inbox", "auto_mark_read"], enabled)
                       }
                     />
                   </SettingsRow>

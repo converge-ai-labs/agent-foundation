@@ -13,6 +13,8 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 def _wizard(provider="codex", model="gpt-5.6-sol"):
     wizard = SetupWizard()

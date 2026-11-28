@@ -343,6 +343,6 @@ tr:focus-within .rowMenu,
 }
 
 /* Align the status dot with the column label, compensating for pill padding. */
-.cell [data-slot="status-pill"] {
+.cell > div > [data-slot="status-pill"]:first-child {
   margin-inline-start: -8px;
 }

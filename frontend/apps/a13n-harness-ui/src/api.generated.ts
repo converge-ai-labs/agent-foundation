@@ -290,15 +290,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/threads/{thread_id}/unread": {
+    "/api/inbox/threads/{thread_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Thread Inbox Unread */
-        get: operations["thread_inbox_unread_api_inbox_threads__thread_id__unread_get"];
+        /** Thread Inbox Posts */
+        get: operations["thread_inbox_posts_api_inbox_threads__thread_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1499,6 +1499,24 @@ export interface paths {
         /** Capture Host File */
         post: operations["capture_host_file_api_threads__thread_id__host_file_captures_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Thread Links */
+        get: operations["thread_links_api_threads__thread_id__links_get"];
+        put?: never;
+        post?: never;
+        /** Unlink Thread Resource */
+        delete: operations["unlink_thread_resource_api_threads__thread_id__links_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4239,11 +4257,17 @@ export interface components {
              * @enum {string}
              */
             send_shortcut?: "enter" | "mod-enter";
+            shortcuts?: components["schemas"]["WebUiShortcutsConfiguration"];
             /**
              * Coordinator By Default
              * @default false
              */
             coordinator_by_default?: boolean;
+            /**
+             * Inbox Auto Mark Read
+             * @default true
+             */
+            inbox_auto_mark_read?: boolean;
         };
         /** AppView */
         AppView: {
@@ -6535,6 +6559,20 @@ export interface components {
             state: "repository" | "not_repository" | "bare";
             repository?: components["schemas"]["GitRepository"] | null;
         };
+        /** GitHubLinkView */
+        GitHubLinkView: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "pr" | "issue" | "discussion";
+            /** Number */
+            number: number;
+            /** Status */
+            status?: ("open" | "draft" | "merged" | "closed" | "answered") | null;
+            /** Title */
+            title?: string | null;
+        };
         /** GitRepository */
         GitRepository: {
             /** Root */
@@ -6828,20 +6866,6 @@ export interface components {
             needs_you: number;
             /** Updates */
             updates: number;
-        };
-        /** InboxUnreadPost */
-        InboxUnreadPost: {
-            /** Item Id */
-            item_id: string;
-            /** Tool Call Id */
-            tool_call_id: string;
-            /** Has Transcript */
-            has_transcript: boolean;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** InputPredictionResponse */
         InputPredictionResponse: {
@@ -9601,6 +9625,33 @@ export interface components {
             /** @default null */
             main_account?: components["schemas"]["MainAccountSelection"] | null;
         };
+        /** ThreadInboxPost */
+        ThreadInboxPost: {
+            /** Item Id */
+            item_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Has Transcript */
+            has_transcript: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Read At */
+            read_at: string | null;
+            /** Done At */
+            done_at: string | null;
+        };
+        /** ThreadLinksView */
+        ThreadLinksView: {
+            /** Worktrees */
+            worktrees: components["schemas"]["WorktreeLinkView"][];
+            /** Urls */
+            urls: components["schemas"]["UrlLinkView"][];
+            /** Worktree Mode Available */
+            worktree_mode_available: boolean;
+        };
         /**
          * ThreadModelDisplay
          * @description Read-only display summary of a Thread's effective Agent and Model.
@@ -10199,6 +10250,30 @@ export interface components {
             /** Video */
             video?: components["schemas"]["VideoUrlType"][];
         };
+        /** UrlLinkView */
+        UrlLinkView: {
+            /** Label */
+            label: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Kind
+             * @default url
+             * @constant
+             */
+            kind?: "url";
+            /** Url */
+            url: string;
+            github?: components["schemas"]["GitHubLinkView"] | null;
+        };
         /** UsageAnalyticsView */
         UsageAnalyticsView: {
             /**
@@ -10608,6 +10683,59 @@ export interface components {
             /** Supports Restricted Scrape */
             supports_restricted_scrape: boolean;
         };
+        /** WebUiShortcutsConfiguration */
+        WebUiShortcutsConfiguration: {
+            /**
+             * New Chat
+             * @default off
+             * @enum {string}
+             */
+            new_chat?: "off" | "mod-shift-o" | "mod-n";
+            /**
+             * Search Chats
+             * @default mod-f
+             * @enum {string}
+             */
+            search_chats?: "mod-f" | "mod-k" | "both" | "off";
+            /**
+             * Toggle Sidebar
+             * @default off
+             * @enum {string}
+             */
+            toggle_sidebar?: "off" | "mod-b" | "mod-shift-s";
+            /**
+             * Toggle Supporting Panel
+             * @default off
+             * @enum {string}
+             */
+            toggle_supporting_panel?: "off" | "mod-j";
+            /**
+             * Open Files
+             * @default off
+             * @enum {string}
+             */
+            open_files?: "off" | "mod-shift-e";
+            /**
+             * Open Changes
+             * @default off
+             * @enum {string}
+             */
+            open_changes?: "off" | "mod-shift-g";
+            /**
+             * Terminal
+             * @default ctrl-backtick
+             * @enum {string}
+             */
+            terminal?: "ctrl-backtick" | "off";
+            /**
+             * Open Settings
+             * @default off
+             * @enum {string}
+             */
+            open_settings?: "off" | "mod-comma";
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
         /** WorkbenchPage */
         WorkbenchPage: {
             /**
@@ -10621,6 +10749,28 @@ export interface components {
              * @enum {string}
              */
             section?: "home" | "settings" | "catalog";
+        };
+        /** WorktreeLinkView */
+        WorktreeLinkView: {
+            /** Path */
+            path: string;
+            /** Label */
+            label?: string | null;
+            /**
+             * Implicit
+             * @default false
+             */
+            implicit?: boolean;
+            /**
+             * State
+             * @default unavailable
+             * @enum {string}
+             */
+            state?: "unavailable" | "ready" | "detached" | "removed";
+            /** Branch */
+            branch?: string | null;
+            /** Head Oid */
+            head_oid?: string | null;
         };
         /** InteractiveAuthentication */
         InteractiveAuthentication: {
@@ -10965,7 +11115,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "thread_work" | "draft" | "inbox";
+            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "thread_work" | "thread_links" | "draft" | "inbox";
             /**
              * Root Thread Id
              * @default null
@@ -11646,6 +11796,16 @@ export interface components {
             /** End Line */
             end_line?: number | null;
         };
+        /** UnlinkThreadResource */
+        UnlinkThreadResource: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "worktree" | "url";
+            /** Target */
+            target: string;
+        };
         /** GitCaptureRequest */
         GitCaptureRequest: {
             /** Repository Path */
@@ -12190,7 +12350,7 @@ export interface components {
              * @default normal
              * @enum {string}
              */
-            mode?: "normal" | "goal";
+            mode?: "normal" | "goal" | "worktree";
             environment?: components["schemas"]["EnvironmentSelectionPatch"] | null;
             /** Model Id */
             model_id?: string | null;
@@ -12790,7 +12950,7 @@ export interface operations {
             };
         };
     };
-    thread_inbox_unread_api_inbox_threads__thread_id__unread_get: {
+    thread_inbox_posts_api_inbox_threads__thread_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -12807,7 +12967,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InboxUnreadPost"][];
+                    "application/json": components["schemas"]["ThreadInboxPost"][];
                 };
             };
             /** @description Validation Error */
@@ -15054,6 +15214,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FileCapture"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    thread_links_api_threads__thread_id__links_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadLinksView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlink_thread_resource_api_threads__thread_id__links_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnlinkThreadResource"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

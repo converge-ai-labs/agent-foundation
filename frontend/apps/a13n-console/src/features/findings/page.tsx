@@ -235,10 +235,6 @@ export function FindingsPage() {
                             </Link>
                             <span className={styles.hint}>
                               {t(categoryLabels[finding.category])}
-                              <span className={styles.mobileOnly}>
-                                {" · "}
-                                {agentName(finding.agent_id)}
-                              </span>
                             </span>
                           </>
                         ),

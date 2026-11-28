@@ -21,9 +21,13 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useNavigate, useLocation } from "react-router";
 import { TransportContext } from "../transport/context";
-import type { Transport } from "../transport/client";
+import type { Schema, Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
 import { FileBuffers, joinPath } from "./buffer";
+import {
+  WorkbenchShortcutsContext,
+  type WorkbenchShortcuts,
+} from "../shell/workbench-shortcuts";
 
 const live = vi.hoisted(() => ({
   display: {
@@ -158,6 +162,10 @@ vi.mock("./terminal", () => ({
   },
 }));
 beforeEach(() => {
+  Object.defineProperty(Element.prototype, "getAnimations", {
+    configurable: true,
+    value: () => [],
+  });
   // Resource interaction tests start with an explicitly opened supporting panel.
   for (const chat of ["current", "other", "new"]) {
     localStorage.setItem(`a13n-harness-ui.native-panel.${chat}`, "open");
@@ -178,6 +186,12 @@ function setup(
   currentRoots: string[] = ["/native"],
   content?: ReactNode,
   buffers = new Map(),
+  shortcuts?: Partial<WorkbenchShortcuts>,
+  links: Schema<"ThreadLinksView"> = {
+    worktrees: [],
+    urls: [],
+    worktree_mode_available: false,
+  },
 ) {
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -199,88 +213,107 @@ function setup(
         params?: { path?: { thread_id?: string }; query?: { path?: string } };
       },
     ) =>
-      url.endsWith("/children")
-        ? { data: { executions: [], total: 0 } }
-        : url.endsWith("/tool-executions")
-          ? { data: [] }
-          : url.endsWith("/transcript")
-            ? { data: { entries: [], turns: [], total: 0 } }
-            : url === "/api/host/files/metadata" && metadata
-              ? metadata
-              : {
-                  data:
-                    url === "/api/status"
-                      ? {
-                          features: {
-                            host_files: sharing,
-                            host_git: sharing,
-                            host_terminal: sharing,
-                            browser: sharing,
-                          },
-                        }
-                      : url === "/api/projects"
-                        ? [
-                            {
-                              project_id: "project-unrelated",
-                              name: "Unrelated",
-                              roots: ["/unrelated"],
+      url.endsWith("/work")
+        ? {
+            data: {
+              tasks: { total: 0, available: true, page: { tasks: [] } },
+              notes: { total: 0, available: true, page: { notes: [] } },
+            },
+          }
+        : url.endsWith("/children")
+          ? { data: { executions: [], total: 0 } }
+          : url.endsWith("/tool-executions")
+            ? { data: [] }
+            : url.endsWith("/transcript")
+              ? { data: { entries: [], turns: [], total: 0 } }
+              : url === "/api/host/files/metadata" && metadata
+                ? metadata
+                : {
+                    data:
+                      url === "/api/status"
+                        ? {
+                            features: {
+                              host_files: sharing,
+                              host_git: sharing,
+                              host_terminal: sharing,
+                              browser: sharing,
                             },
-                            {
-                              project_id: "project-one",
-                              name: "Current project",
-                              roots: initial.startsWith("/threads/")
-                                ? ["/changed-project-root"]
-                                : currentRoots,
-                            },
-                            {
-                              project_id: "project-two",
-                              name: "Other project",
-                              roots: ["/other"],
-                            },
-                          ]
-                        : url === "/api/bot"
-                          ? {
-                              available: true,
-                              state: { activated: false, paused: false },
-                              messages: [],
-                              inputs: [],
-                            }
-                          : url === "/api/threads/{thread_id}"
-                            ? {
-                                thread: {
-                                  title: "Current chat",
-                                  configuration: {
-                                    agent_source: {
-                                      kind: "agent",
-                                      agent_id: "agent-main",
-                                    },
-                                    local_roots:
-                                      options?.params?.path?.thread_id ===
-                                      "other"
-                                        ? otherProject === "project-two"
-                                          ? ["/other"]
-                                          : currentRoots
-                                        : currentProject
-                                          ? currentRoots
-                                          : [],
-                                    project_id:
-                                      options?.params?.path?.thread_id ===
-                                      "other"
-                                        ? otherProject
-                                        : currentProject,
-                                  },
-                                },
-                              }
-                            : {
-                                kind: options?.params?.query?.path?.endsWith(
-                                  ".txt",
-                                )
-                                  ? "file"
-                                  : "directory",
+                          }
+                        : url === "/api/projects"
+                          ? [
+                              {
+                                project_id: "project-unrelated",
+                                name: "Unrelated",
+                                roots: ["/unrelated"],
                               },
-                },
+                              {
+                                project_id: "project-one",
+                                name: "Current project",
+                                roots: initial.startsWith("/threads/")
+                                  ? ["/changed-project-root"]
+                                  : currentRoots,
+                              },
+                              {
+                                project_id: "project-two",
+                                name: "Other project",
+                                roots: ["/other"],
+                              },
+                            ]
+                          : url === "/api/bot"
+                            ? {
+                                available: true,
+                                state: { activated: false, paused: false },
+                                messages: [],
+                                inputs: [],
+                              }
+                            : url === "/api/threads/{thread_id}"
+                              ? {
+                                  thread: {
+                                    title: "Current chat",
+                                    configuration: {
+                                      agent_source: {
+                                        kind: "agent",
+                                        agent_id: "agent-main",
+                                      },
+                                      local_roots:
+                                        options?.params?.path?.thread_id ===
+                                        "other"
+                                          ? otherProject === "project-two"
+                                            ? ["/other"]
+                                            : currentRoots
+                                          : currentProject
+                                            ? currentRoots
+                                            : [],
+                                      project_id:
+                                        options?.params?.path?.thread_id ===
+                                        "other"
+                                          ? otherProject
+                                          : currentProject,
+                                    },
+                                  },
+                                }
+                              : {
+                                  kind: options?.params?.query?.path?.endsWith(
+                                    ".txt",
+                                  )
+                                    ? "file"
+                                    : "directory",
+                                },
+                  },
   );
-  const transport = { client: { GET: get } } as unknown as Transport;
+  const removeLink = vi.fn(async () => {
+    links = { ...links, urls: [] };
+    return { response: new Response(null, { status: 204 }) };
+  });
+  const transport = {
+    client: {
+      GET: (url: string, options?: Parameters<typeof get>[1]) =>
+        url === "/api/threads/{thread_id}/links"
+          ? Promise.resolve({ data: links })
+          : get(url, options),
+      DELETE: removeLink,
+    },
+  } as unknown as Transport;
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -331,14 +364,104 @@ function setup(
       <QueryClientProvider client={queries}>
         <TransportContext value={transport}>
           <FileBuffers value={buffers}>
-            <Page />
+            <WorkbenchShortcutsContext value={shortcuts}>
+              <Page />
+            </WorkbenchShortcutsContext>
           </FileBuffers>
         </TransportContext>
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  return { focus, get, queries };
+  return { focus, get, queries, removeLink };
 }
+
+it("shows worktree and link icons on Activity, lists Tasks-Notes-Worktrees-Links in order, opens View all tabs, and updates on unlink", async () => {
+  const url = "https://github.com/example/repo/pull/42";
+  const worktreePath = "/tmp/wt-feature";
+  const { removeLink } = setup(
+    "/threads/current",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      worktrees: [
+        {
+          label: null,
+          path: worktreePath,
+          implicit: false,
+          state: "ready",
+          branch: "feat/activity-links",
+          head_oid: "1234567890",
+        },
+      ],
+      worktree_mode_available: true,
+      urls: [
+        {
+          kind: "url",
+          label: null,
+          url,
+          created_at: "2026-11-27",
+          updated_at: "2026-11-27",
+          github: {
+            kind: "pr",
+            number: 42,
+            status: "merged",
+            title: "Improve retries",
+          },
+        },
+      ],
+    },
+  );
+  const trigger = await screen.findByRole("button", { name: "Activity" });
+  await waitFor(() => {
+    expect(
+      trigger.querySelector('[data-link-kind="worktrees"]')?.textContent,
+    ).toBe("1");
+    expect(trigger.querySelector('[data-link-kind="links"]')?.textContent).toBe(
+      "1",
+    );
+  });
+  fireEvent.click(trigger);
+  const card = await screen.findByRole("region", { name: "Activity" });
+  const headings = Array.from(card.querySelectorAll("h3")).map(
+    (heading) => heading.textContent,
+  );
+  expect(headings).toEqual(["Tasks", "Notes", "Worktrees", "Links"]);
+  expect(card.textContent).toContain("feat/activity-links");
+  const link = await screen.findByRole("link", { name: /Improve retries/ });
+  expect(link.getAttribute("href")).toBe(url);
+  expect(link.textContent).toContain("example/repo");
+  expect(link.textContent).toContain("#42");
+  expect(link.textContent).toContain("Merged");
+  fireEvent.click(screen.getByRole("button", { name: "View all · Worktrees" }));
+  expect(
+    await screen.findByRole("tab", { name: "Worktrees", selected: true }),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(within(card).getByRole("region", { name: "Links" })).getByRole(
+      "button",
+      { name: "Unlink" },
+    ),
+  );
+  await waitFor(() =>
+    expect(removeLink).toHaveBeenCalledWith("/api/threads/{thread_id}/links", {
+      params: { path: { thread_id: "current" } },
+      body: { kind: "url", target: url },
+    }),
+  );
+  await waitFor(() =>
+    expect(trigger.querySelector('[data-link-kind="links"]')).toBeNull(),
+  );
+  expect(
+    trigger.querySelector('[data-link-kind="worktrees"]')?.textContent,
+  ).toBe("1");
+});
+
 it("keeps the full chat title available while bounding the document title", async () => {
   const { queries } = setup("/threads/current");
   await screen.findByRole("heading", { name: "Current chat" });
@@ -1709,6 +1832,88 @@ it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and cr
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   await screen.findByText(/Chat remains mounted \/settings/);
   expect(fireEvent.keyDown(window, chord)).toBe(true);
+});
+
+it("keeps Terminal chords disabled and only handles eligible native view actions outside input surfaces", async () => {
+  setup(
+    "/threads/current",
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    <>
+      <div data-browser-screen>
+        <button>Remote input</button>
+      </div>
+      <div data-terminal-input>
+        <button>Shell input</button>
+      </div>
+    </>,
+    undefined,
+    {
+      terminal: "off",
+      open_files: "mod-shift-e",
+      open_changes: "mod-shift-g",
+      toggle_supporting_panel: "mod-j",
+    },
+  );
+  const toggle = await screen.findByRole("button", {
+    name: "Close supporting panel",
+  });
+  expect(toggle.getAttribute("aria-keyshortcuts")).toBe("Control+J");
+  const panel = { key: "j", ctrlKey: true };
+  const files = { key: "e", ctrlKey: true, shiftKey: true };
+  const changes = { key: "g", ctrlKey: true, shiftKey: true };
+  for (const target of ["Remote input", "Shell input"]) {
+    const input = screen.getByRole("button", { name: target });
+    for (const chord of [panel, files, changes]) {
+      expect(fireEvent.keyDown(input, chord)).toBe(true);
+    }
+  }
+  for (const shiftKey of [false, true]) {
+    expect(
+      fireEvent.keyDown(window, {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+        shiftKey,
+      }),
+    ).toBe(true);
+  }
+  expect(fireEvent.keyDown(window, panel)).toBe(false);
+  await screen.findByRole("button", { name: "Open supporting panel" });
+  expect(fireEvent.keyDown(window, files)).toBe(false);
+  await screen.findByRole("tabpanel", { name: "Files" });
+  expect(fireEvent.keyDown(window, changes)).toBe(false);
+  await screen.findByRole("tabpanel", { name: "Changes" });
+});
+
+it("returns to the current new-chat composer when a separate Files tab is active", async () => {
+  localStorage.setItem("a13n-harness-ui.native-layout", "tabs");
+  setup(
+    "/new",
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    <textarea aria-label="Draft message" data-composer-editor />,
+    undefined,
+    { new_chat: "mod-shift-o", open_files: "mod-shift-e" },
+  );
+  await screen.findByRole("button", { name: "Open supporting panel" });
+  expect(
+    fireEvent.keyDown(window, { key: "e", ctrlKey: true, shiftKey: true }),
+  ).toBe(false);
+  const files = await screen.findByRole("tabpanel", { name: "Files" });
+  expect(screen.queryByRole("textbox", { name: "Draft message" })).toBeNull();
+  expect(
+    fireEvent.keyDown(files, { key: "o", ctrlKey: true, shiftKey: true }),
+  ).toBe(false);
+  const draft = await screen.findByRole("textbox", { name: "Draft message" });
+  await waitFor(() => expect(document.activeElement).toBe(draft));
+  expect(screen.getByTestId("chat").textContent).toContain("/new");
 });
 
 it.each([false, true])(

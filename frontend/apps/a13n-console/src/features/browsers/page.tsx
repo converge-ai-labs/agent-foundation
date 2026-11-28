@@ -474,10 +474,11 @@ export function BrowserLifecycle({
   if (!allowed) return null;
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {can("run") && ["reserved", "stopped"].includes(browser.status) && (
           <Button
             variant="outline"
+            size="sm"
             loading={action.isPending}
             onClick={() => action.mutate("prepare")}
           >
@@ -491,6 +492,7 @@ export function BrowserLifecycle({
           browser.control === "automation" && (
             <Button
               variant="outline"
+              size="sm"
               loading={action.isPending}
               onClick={() => action.mutate("stop")}
             >

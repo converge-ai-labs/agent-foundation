@@ -14,7 +14,7 @@ import {
   SheetPanel,
   SheetFooter,
 } from "a13n-ui";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import {
@@ -51,13 +51,11 @@ export function ReviewerSection({
   draft,
   choices,
   readOnly,
-  mark,
   onOpen,
 }: {
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
-  mark?: ReactNode;
   onOpen: () => void;
 }) {
   const { t } = useTranslation();
@@ -68,7 +66,6 @@ export function ReviewerSection({
   }
   return (
     <>
-      {mark}
       <ErrorNotice
         error={definitions.error}
         retry={() => void definitions.refetch()}
@@ -140,6 +137,7 @@ function ReviewPolicyFields({
   const policy = (
     <>
       <ChoiceField
+        data-field-layout={compact ? undefined : "stacked"}
         popupClassName={formStyles.compactChoicePopup}
         label={t("Risk threshold")}
         description={compact ? t("Flag this risk level and above.") : undefined}
@@ -151,6 +149,7 @@ function ReviewPolicyFields({
         }
       />
       <ChoiceField
+        data-field-layout={compact ? undefined : "stacked"}
         popupClassName={formStyles.compactChoicePopup}
         label={t(compact ? "When flagged" : "At or above threshold")}
         readOnly={readOnly}
@@ -380,6 +379,7 @@ export function ReviewerSettings({
                 )}
                 <div className={styles.grid}>
                   <ChoiceField
+                    data-field-layout="stacked"
                     popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("Rule risk threshold")}
@@ -398,6 +398,7 @@ export function ReviewerSettings({
                     }
                   />
                   <ChoiceField
+                    data-field-layout="stacked"
                     popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("Rule action")}
@@ -437,6 +438,7 @@ export function ReviewerSettings({
                 />
                 <div className={styles.grid}>
                   <ChoiceField
+                    data-field-layout="stacked"
                     popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("On review failure")}

@@ -565,11 +565,17 @@ it("edits custom guide and restores an advanced system override independently", 
 it("edits always-loaded paths and keeps the draft through a conflict", async () => {
   const { user, sent, changeElsewhere } = setup("?tab=configuration");
   await screen.findByRole("heading", { name: "Always loaded files" });
-  await user.type(
-    screen.getByRole("combobox", { name: "Path to always load" }),
-    "missing.md",
-  );
-  await user.click(screen.getByRole("button", { name: "Add path" }));
+  const path = screen.getByRole("combobox", { name: "Path to always load" });
+  const addPath = screen.getByRole("button", { name: "Add path" });
+  await user.type(path, "README.md{Enter}");
+  expect(screen.getByText("This path is already listed.")).toBeTruthy();
+  expect((addPath as HTMLButtonElement).disabled).toBe(true);
+  expect(sent("PATCH", "")).toHaveLength(0);
+
+  await user.clear(path);
+  await user.type(path, "missing.md");
+  expect(screen.queryByText("This path is already listed.")).toBeNull();
+  await user.click(addPath);
   expect(await screen.findByText("No file at this path yet")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Remove README.md" }));
   changeElsewhere();

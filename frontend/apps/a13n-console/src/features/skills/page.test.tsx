@@ -47,7 +47,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function setup(workspace: string, search = "") {
+function setup(workspace: string, search = "", hasSkillFile = true) {
   workspaceId = workspace;
   const skill = {
     id: "sk_example",
@@ -58,9 +58,13 @@ function setup(workspace: string, search = "") {
     archived_at: null as string | null,
   };
   const currentFiles = {
-    "SKILL.md": strToU8(
-      "---\nname: example\ndescription: Example\n---\n# Current instructions\n\nRead the current package.",
-    ),
+    ...(hasSkillFile
+      ? {
+          "SKILL.md": strToU8(
+            "---\nname: example\ndescription: Example\n---\n# Current instructions\n\nRead the current package.",
+          ),
+        }
+      : {}),
     "references/checklist.md": strToU8("# Current checklist"),
   };
   const olderFiles = {
@@ -184,6 +188,12 @@ function setup(workspace: string, search = "") {
   );
   return { user: userEvent.setup(), requests, zip };
 }
+
+it("opens the first package file when the revision has no SKILL.md", async () => {
+  setup("ws_design", "", false);
+  await screen.findByRole("heading", { name: "Current checklist" });
+  expect(screen.queryByText("File not found in this version.")).toBeNull();
+});
 
 it.each(["ws_first", "ws_second"])(
   "reads skill details, revisions, references and downloads in %s with session authentication",

@@ -103,6 +103,7 @@ export function AppManagement() {
       <SettingsSection variant="outlined">
         {catalog.data.items.map((app) => (
           <SettingsRow
+            stackOnNarrow={false}
             key={app.app_id}
             controlId={`app-plugin-${app.app_id}`}
             label={app.name}

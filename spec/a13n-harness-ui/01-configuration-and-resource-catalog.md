@@ -51,6 +51,8 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 
 [Bot and Connector Ingress](12-bot-and-connector-ingress.md#configuration-and-scheduling) owns `webui.bot` Agent and Model selections, optional instructions, and scheduling settings. Its `bot/` workspace is runtime content beside the selected root YAML, not a resource source. Private Connector settings and credentials use the instance database under that contract, not this file-resource catalog.
 
+[Workbench keyboard shortcuts](webui/04-workbench-interaction.md#workbench-keyboard-shortcuts) owns the instance `webui.shortcuts` mapping and its defaults. The [composer send shortcut](webui/04-workbench-interaction.md#conversation-and-shared-composer) uses the separate `webui.send_shortcut` key.
+
 [Live Mode](10-live-mode.md#configuration-and-executor) owns the optional root `live` mapping and existing Codex Model selection. Loading configuration never enables Live or starts microphone capture.
 
 The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:
@@ -282,6 +284,8 @@ The optional root field `chat_title_model` references a configured Model for aut
 ## Inbox
 
 `inbox.enabled` defaults to `true`. Each Run captures the value when it resolves its composition. A Run that captured `false` exposes no `post_to_inbox` tool, no Inbox instructions, and no Inbox reminders to any agent, including Coordinators and Bot. The setting does not delete or hide existing Inbox items, and the Inbox API and WebUI view remain available. [Inbox Posting](05-runtime-subagents-and-surfaces.md#inbox-posting) defines the agent-facing behavior when the setting is on.
+
+`inbox.auto_mark_read` defaults to `true`. The current accepted value controls automatic reading in owner chats and is exposed as `app.inbox_auto_mark_read` on the owner status API. Changes apply without restarting. This setting is independent of agent posting (`inbox.enabled`) and leaves explicit item actions available. See [Inbox in chats](webui/04-workbench-interaction.md#inbox-in-chats).
 
 ## Dictation
 

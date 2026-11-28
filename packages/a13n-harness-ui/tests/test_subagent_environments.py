@@ -21,7 +21,7 @@ from sqlalchemy import select
 from .test_builtin_subagents import _source
 from .test_device_runtime import TOKEN, daemon, device_path, requires_envd, resource
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.mark.parametrize("legacy", [False, True])

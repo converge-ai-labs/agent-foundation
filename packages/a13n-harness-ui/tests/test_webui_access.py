@@ -21,7 +21,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from .test_interactive_protocol import listener_with_app
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 PUBLIC = "https://anui.wh1isper.top:8090"
 AUTH = {"Authorization": "Bearer test-only-key"}
 

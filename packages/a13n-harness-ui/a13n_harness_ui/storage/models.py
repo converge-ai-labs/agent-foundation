@@ -201,6 +201,20 @@ class BotInboxRecord(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class ThreadLinkRecord(Base):
+    __tablename__ = "thread_link"
+    __table_args__ = (CheckConstraint("kind IN ('worktree', 'url')", name="kind"),)
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    target: Mapped[str] = mapped_column(Text, primary_key=True)
+    label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class BotNoteRecord(Base):
     __tablename__ = "bot_note"
     __table_args__ = (CheckConstraint("length(CAST(content AS BLOB)) BETWEEN 1 AND 16384", name="content_size"),)

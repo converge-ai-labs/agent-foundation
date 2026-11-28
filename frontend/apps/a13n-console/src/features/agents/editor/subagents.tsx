@@ -195,7 +195,7 @@ export function SubagentsSection({
                           <Button
                             type="button"
                             variant="ghost"
-                            size="icon-xs"
+                            size="icon-sm"
                             aria-label={t("Remove subagent {{name}}", { name })}
                             onClick={() =>
                               draft.setSubagents((current) =>

@@ -97,7 +97,6 @@ export function CoordinatorEntry({
       <ThreadRow
         row={row}
         activeWorkerCount={activeWorkerCount}
-        showRestore="compact"
         disclosure={
           hasWorkers
             ? { expanded: open, onToggle: () => setExpanded(!open) }

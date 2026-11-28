@@ -125,7 +125,11 @@ export function WebhookDeliveries({
                   label: t("Status"),
                   render: (item) => <DeliveryStatus delivery={item} />,
                 },
-                { label: t("Attempts"), render: (item) => item.attempts },
+                {
+                  label: t("Attempts"),
+                  align: "right",
+                  render: (item) => item.attempts,
+                },
                 {
                   label: t("Created"),
                   render: (item) => (
@@ -221,7 +225,16 @@ export function WebhookDeliveries({
             {canRedeliver(selected) && (
               <Confirm
                 title={t("Retry delivery")}
-                trigger={t("Retry delivery")}
+                triggerElement={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="justify-self-start"
+                  >
+                    {t("Retry delivery")}
+                  </Button>
+                }
                 subject={selected.id}
                 description={t(
                   "Queue this delivery again with its original ID, URL, payload and signing secret. The receiving application must handle duplicates.",

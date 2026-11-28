@@ -557,13 +557,15 @@ export function SessionLayout() {
                     fallback.data?.items.length ? (
                     <ThreadChoices sessionId={sessionId} />
                   ) : !roots.error && !fallback.error ? (
-                    <Empty
-                      icon={<ChatsIcon aria-hidden="true" />}
-                      title={t("No threads yet")}
-                      description={t(
-                        "Threads created by the host application appear here.",
-                      )}
-                    />
+                    <div className={styles.emptyThread}>
+                      <Empty
+                        icon={<ChatsIcon aria-hidden="true" />}
+                        title={t("No threads yet")}
+                        description={t(
+                          "Threads created by the host application appear here.",
+                        )}
+                      />
+                    </div>
                   ) : null}
                 </Suspense>
               </div>

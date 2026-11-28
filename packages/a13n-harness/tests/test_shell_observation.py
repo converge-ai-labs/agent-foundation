@@ -46,7 +46,9 @@ def _observation(stdout, stderr=b""):
     )
 
 
-@pytest.mark.parametrize("data", [b"ascii" * 20000, "你好世界".encode() * 10000, b"a\xffb\x00" * 20000])
+@pytest.mark.parametrize(
+    "data", [b"ascii" * 20000, "你好世界".encode() * 10000, b"a\xffb\x00" * 20000], ids=["ascii", "utf8", "binary"]
+)
 def test_observation_roundtrip_and_independent_nonconsuming_pages(data):
     original = _observation(_stream(data), b"stderr" * 20000)
     observed = ShellObservation.model_validate_json(original.model_dump_json())

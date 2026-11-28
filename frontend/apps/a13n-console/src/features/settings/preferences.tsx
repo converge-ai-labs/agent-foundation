@@ -1,6 +1,4 @@
-import { ChoiceField } from "a13n-ui";
-
-import { SettingsRow, SettingsSection } from "a13n-ui";
+import { ChoiceField, SettingsRow, SettingsSection } from "a13n-ui";
 
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
@@ -19,22 +17,21 @@ export function Preferences() {
     <div className={styles.sections}>
       <SettingsSection variant="outlined" title={t("Appearance")}>
         <SettingsRow label={t("Color theme")}>
-          <div className={styles.control}>
-            <ChoiceField
-              label={t("Color theme")}
-              hideLabel
-              value={theme}
-              onValueChange={(value) => {
-                if (value === "light" || value === "dark" || value === "system")
-                  setTheme(value);
-              }}
-              options={[
-                { value: "light", label: t("Light") },
-                { value: "dark", label: t("Dark") },
-                { value: "system", label: t("Follow system") },
-              ]}
-            />
-          </div>
+          <ChoiceField
+            className="w-auto min-w-0"
+            label={t("Color theme")}
+            hideLabel
+            value={theme}
+            onValueChange={(value) => {
+              if (value === "light" || value === "dark" || value === "system")
+                setTheme(value);
+            }}
+            options={[
+              { value: "light", label: t("Light") },
+              { value: "dark", label: t("Dark") },
+              { value: "system", label: t("Follow system") },
+            ]}
+          />
         </SettingsRow>
       </SettingsSection>
       <p className={styles.note}>
@@ -63,21 +60,20 @@ export function LanguageSettings() {
     <div className={styles.sections}>
       <SettingsSection variant="outlined">
         <SettingsRow label={t("Display language")}>
-          <div className={styles.control}>
-            <ChoiceField
-              placeholder={t("Language")}
-              value={language}
-              onValueChange={changeLanguage}
-              label={t("Display language")}
-              hideLabel
-              options={[
-                { value: "system", label: t("System") },
-                { value: "en", label: "English" },
-                { value: "zh-CN", label: "简体中文" },
-                { value: "hi", label: "हिन्दी" },
-              ]}
-            />
-          </div>
+          <ChoiceField
+            className="w-auto min-w-0"
+            placeholder={t("Language")}
+            value={language}
+            onValueChange={changeLanguage}
+            label={t("Display language")}
+            hideLabel
+            options={[
+              { value: "system", label: t("System") },
+              { value: "en", label: "English" },
+              { value: "zh-CN", label: "简体中文" },
+              { value: "hi", label: "हिन्दी" },
+            ]}
+          />
         </SettingsRow>
       </SettingsSection>
       <p className={styles.note}>

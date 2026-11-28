@@ -12,6 +12,7 @@ import {
   Routes,
   useLocation,
   useMatch,
+  useNavigate,
 } from "react-router";
 import {
   Button,
@@ -25,6 +26,7 @@ import {
   MenuPopup,
   MenuItem,
   MenuSeparator,
+  useMediaQuery,
 } from "a13n-ui";
 import {
   ChartBar,
@@ -73,6 +75,14 @@ import styles from "./workbench.module.css";
 import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
 import { ChatSearchProvider } from "../conversations/chat-search";
+import {
+  matchesShortcut,
+  isNativeInputTarget,
+  shortcutAttributes,
+  useWorkbenchKeydown,
+  useWorkbenchShortcut,
+  WorkbenchShortcutsContext,
+} from "./workbench-shortcuts";
 import { ConversationPage } from "../conversations/conversation";
 import { useThread } from "../conversations/queries";
 import { MemoryNavigation, MemoryPage } from "../memory";
@@ -111,23 +121,27 @@ export function Workbench(props: {
   forget: () => void;
   unauthorized: () => void;
 }) {
+  const statusQuery = useStatus();
+  const status = statusQuery.data ?? props.status;
   return (
-    <ResultsProvider>
-      <LiveThreadsProvider>
-        <UnsentProvider>
-          <BotComposerProvider>
-            <ChatSearchProvider>
-              <WorkbenchContent {...props} />
-            </ChatSearchProvider>
-          </BotComposerProvider>
-        </UnsentProvider>
-      </LiveThreadsProvider>
-    </ResultsProvider>
+    <WorkbenchShortcutsContext value={status.app.shortcuts}>
+      <ResultsProvider>
+        <LiveThreadsProvider>
+          <UnsentProvider>
+            <BotComposerProvider>
+              <ChatSearchProvider>
+                <WorkbenchContent {...props} status={status} />
+              </ChatSearchProvider>
+            </BotComposerProvider>
+          </UnsentProvider>
+        </LiveThreadsProvider>
+      </ResultsProvider>
+    </WorkbenchShortcutsContext>
   );
 }
 
 function WorkbenchContent({
-  status: initialStatus,
+  status,
   forget,
   unauthorized,
 }: {
@@ -140,7 +154,6 @@ function WorkbenchContent({
   const debug = useDebug();
   const setup = useSetup();
   const statusQuery = useStatus();
-  const status = statusQuery.data ?? initialStatus;
   const notices = useUpdateNoticeState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => readPreference("sidebar", "expanded") === "collapsed",
@@ -164,6 +177,9 @@ function WorkbenchContent({
   const swipeMenuClosed = useSwipeDismiss(() => setMenu(false));
   const mobileMenuButton = useRef<HTMLButtonElement>(null);
   const menuLocation = useRef("");
+  const mobileNavigation = useMediaQuery("(max-width: 760px)");
+  const sidebarShortcut = useWorkbenchShortcut("toggle_sidebar");
+  const settingsShortcut = useWorkbenchShortcut("open_settings");
   const live = useLiveWorkbench(
     profile,
     !!status.features?.page_presence,
@@ -172,6 +188,7 @@ function WorkbenchContent({
   );
   const disconnected = live.summary === "Reconnecting";
   const location = useLocation();
+  const navigate = useNavigate();
   const settingsMode = /^\/(settings|setup)(\/|$)/.test(location.pathname);
   const lastChat = useRef("/");
   const selectedThreadId = useMatch("/threads/:threadId")?.params.threadId;
@@ -208,6 +225,40 @@ function WorkbenchContent({
   useEffect(() => {
     writePreference("sidebar", sidebarCollapsed ? "collapsed" : "expanded");
   }, [sidebarCollapsed]);
+  const changeSidebar = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
+    requestAnimationFrame(() =>
+      (collapsed ? expandButton : collapseButton).current?.focus(),
+    );
+  };
+  const openNavigation = () => {
+    menuLocation.current = location.key;
+    setMenu(true);
+  };
+  useWorkbenchKeydown((event) => {
+    if (isNativeInputTarget(event.target)) return;
+    const dialog = document.querySelector(
+      '[role="dialog"]:not(#workbench-navigation)',
+    );
+    if (dialog) return;
+    if (matchesShortcut(event, sidebarShortcut)) {
+      event.preventDefault();
+      if (!mobileNavigation) changeSidebar(!sidebarCollapsed);
+      else if (menu) setMenu(false);
+      else openNavigation();
+      return;
+    }
+    // The navigation sheet accepts its own toggle, but no other shortcuts.
+    if (menu) return;
+    if (matchesShortcut(event, settingsShortcut)) {
+      event.preventDefault();
+      void navigate(
+        /^\/settings(\/|$)/.test(location.pathname)
+          ? lastChat.current
+          : "/settings",
+      );
+    }
+  });
   const updateProfile = (next: Profile) => setProfile(next);
   const navigation = (
     <>
@@ -309,11 +360,8 @@ function WorkbenchContent({
               variant="ghost"
               size="icon-sm"
               aria-label={t("Collapse navigation")}
-              title={t("Collapse navigation")}
-              onClick={() => {
-                setSidebarCollapsed(true);
-                requestAnimationFrame(() => expandButton.current?.focus());
-              }}
+              {...shortcutAttributes(t("Collapse navigation"), sidebarShortcut)}
+              onClick={() => changeSidebar(true)}
             >
               <SidebarSimple />
             </Button>
@@ -340,6 +388,7 @@ function WorkbenchContent({
           className={styles.mobileNavigation}
           closeProps={{
             "aria-label": t("Close navigation"),
+            ...shortcutAttributes(t("Close navigation"), sidebarShortcut),
             className: styles.mobileNavigationClose,
           }}
         >
@@ -437,13 +486,11 @@ function WorkbenchContent({
                     size="icon"
                     className={styles.expandNavigation}
                     aria-label={t("Expand navigation")}
-                    title={t("Expand navigation")}
-                    onClick={() => {
-                      setSidebarCollapsed(false);
-                      requestAnimationFrame(() =>
-                        collapseButton.current?.focus(),
-                      );
-                    }}
+                    {...shortcutAttributes(
+                      t("Expand navigation"),
+                      sidebarShortcut,
+                    )}
+                    onClick={() => changeSidebar(false)}
                   >
                     <SidebarSimple />
                   </Button>
@@ -454,13 +501,11 @@ function WorkbenchContent({
                   size="icon"
                   className={styles.mobileMenu}
                   aria-label={t("Open navigation")}
+                  {...shortcutAttributes(t("Open navigation"), sidebarShortcut)}
                   aria-haspopup="dialog"
                   aria-expanded={menu}
                   aria-controls={menu ? "workbench-navigation" : undefined}
-                  onClick={() => {
-                    menuLocation.current = location.key;
-                    setMenu(true);
-                  }}
+                  onClick={openNavigation}
                 >
                   <List />
                 </Button>

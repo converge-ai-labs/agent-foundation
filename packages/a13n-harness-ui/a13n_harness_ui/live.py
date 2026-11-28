@@ -691,6 +691,7 @@ SummaryKind = Literal[
     "root_operation",
     "child_execution",
     "thread_work",
+    "thread_links",
     "draft",
     "inbox",
 ]

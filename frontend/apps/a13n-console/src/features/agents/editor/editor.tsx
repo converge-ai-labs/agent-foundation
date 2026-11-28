@@ -382,23 +382,23 @@ export function AgentEditor({
               <Section
                 title={t("Auto review")}
                 description={t("Checks tools set to Auto review.")}
+                actions={mark("reviewer")}
               >
                 <ReviewerSection
                   draft={draft}
                   choices={choices}
                   readOnly={configurationReadonly}
-                  mark={mark("reviewer")}
                   onOpen={() => setReviewPanel({})}
                 />
               </Section>
               <Section
                 title={t("Tool availability")}
                 description={t("Choose how the model gets and uses tools.")}
+                actions={mark("toolSearch")}
               >
                 <ToolSearchSection
                   draft={draft}
                   readOnly={configurationReadonly}
-                  mark={mark("toolSearch")}
                   error={toolSearchValidation}
                 />
               </Section>
@@ -457,11 +457,11 @@ export function AgentEditor({
               <Section
                 title={t("JSON")}
                 description={t("Edit options not shown above.")}
+                actions={mark("advanced")}
               >
                 <AdvancedSection
                   draft={draft}
                   readOnly={configurationReadonly}
-                  mark={mark("advanced")}
                   validation={validation}
                 />
               </Section>

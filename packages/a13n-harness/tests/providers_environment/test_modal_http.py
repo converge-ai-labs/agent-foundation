@@ -1,5 +1,7 @@
 """Modal execution uses EIP and never allocates or repairs its target."""
 
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -20,6 +22,33 @@ from a13n_harness.providers.environment.modal.shared import (
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_harness.providers.environment.remote_envd import managed
 from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Modal replaces the asyncio policy only on Windows")
+def test_modal_sdk_import_preserves_windows_subprocess_support():
+    script = """
+import asyncio
+import sys
+from a13n_harness.providers.environment.modal.shared import sdk_errors
+
+assert 'modal' not in sys.modules
+policy = asyncio.get_event_loop_policy()
+with sdk_errors():
+    pass
+assert 'modal' in sys.modules
+assert asyncio.get_event_loop_policy() is policy
+
+async def check_subprocess():
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, '-c', 'print(42)', stdout=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await process.communicate()
+    assert process.returncode == 0 and stdout.strip() == b'42'
+
+asyncio.run(check_subprocess())
+"""
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def reference(policy=None):

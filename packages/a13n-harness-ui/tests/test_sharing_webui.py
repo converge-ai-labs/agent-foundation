@@ -14,7 +14,7 @@ from .test_app import _settings, _write_configuration
 from .test_coordinators import coordinator_configuration
 from .test_sharing import owned_child
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @asynccontextmanager
@@ -87,6 +87,43 @@ async def test_webui_send_shortcut_uses_accepted_root_configuration(tmp_path):
         assert rejected.json()["error"]["code"] == "settings_invalid"
         assert yaml.safe_load(root.read_text())["webui"]["send_shortcut"] == "mod-enter"
         assert await shortcuts() == ("mod-enter", "mod-enter")
+
+
+async def test_workbench_shortcuts_follow_accepted_owner_configuration_and_stay_private(tmp_path):
+    root = tmp_path / "a13n-harness-ui.yaml"
+    source_path = f"/api/configuration/sources/{root.name}"
+    owner = {"Authorization": "Bearer " + "owner-test-key"}
+    async with shared_server(tmp_path) as (_, app, client):
+        thread = await app.create_thread(title="Workbench shortcuts")
+        prefix, guest = await create_link(client, "thread", thread.thread_id, permission="prompt")
+        original = root.read_text()
+
+        async def shortcuts():
+            status = await client.get("/api/status", headers=owner)
+            assert status.status_code == 200
+            return status.json()["app"]["shortcuts"]
+
+        assert await shortcuts() == {}
+        configured = {"search_chats": "both", "terminal": "off", "new_chat": "mod-shift-o"}
+        body = {
+            "content": original
+            + 'webui:\n  shortcuts:\n    search_chats: both\n    terminal: "off"\n    new_chat: mod-shift-o\n'
+        }
+        saved = await client.put(source_path, headers=owner, json=body)
+        assert saved.status_code == 200, saved.text
+        assert await shortcuts() == configured
+        assert yaml.safe_load(root.read_text())["webui"]["shortcuts"] == configured
+
+        shared = await client.get(prefix + "/access", headers=guest)
+        assert shared.status_code == 200
+        assert "shortcuts" not in shared.json()
+        assert shared.json()["send_shortcut"] == "enter"
+
+        invalid = {"content": original + "webui: {shortcuts: {search_chats: mod-shift-o}}\n"}
+        rejected = await client.put(source_path, headers=owner, json=invalid)
+        assert rejected.status_code == 400
+        assert rejected.json()["error"]["code"] == "settings_invalid"
+        assert await shortcuts() == configured
 
 
 async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):

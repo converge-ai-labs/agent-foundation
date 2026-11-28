@@ -16,7 +16,7 @@ from pydantic_ai.models.function import FunctionModel
 from .test_app import _settings
 from .test_thread_collaboration import configuration, controller
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.mark.parametrize("overrides", [None, RunModelOverrides(thinking="high")])

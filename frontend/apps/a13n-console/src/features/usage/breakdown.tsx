@@ -7,6 +7,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import {
+  CollectionFooter,
   Empty,
   Pagination,
   ResourceTable,
@@ -276,7 +277,11 @@ export function Breakdown({
             : undefined
         }
       />
-      <Pagination page={page} next={query.data.next_cursor} />
+      {(page.previous || query.data.next_cursor) && (
+        <CollectionFooter>
+          <Pagination page={page} next={query.data.next_cursor} />
+        </CollectionFooter>
+      )}
     </>
   );
 }

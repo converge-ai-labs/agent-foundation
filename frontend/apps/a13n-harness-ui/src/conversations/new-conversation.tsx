@@ -1,3 +1,8 @@
+import { useWorktreeMode } from "../native/thread-links";
+import {
+  localAlias,
+  selectedWorkingDirectory,
+} from "../configuration/environment-selection";
 import {
   AcpOptionFields,
   acpModelOption,
@@ -323,6 +328,25 @@ function NewConversation({
     (item) => item.project_id === defaults.project_id,
   );
   const effective = preview.data?.configuration;
+  const effectiveRoots =
+    composerDraft.environment?.local_roots ?? effective?.local_roots ?? [];
+  const effectiveDefault = selectedWorkingDirectory({
+    local_roots: effectiveRoots,
+    default_environment:
+      composerDraft.environment?.default_environment !== undefined
+        ? composerDraft.environment.default_environment
+        : effective?.default_environment,
+  });
+  const effectiveRoot = effectiveRoots.find(
+    (_, index) => localAlias(index) === effectiveDefault,
+  );
+  const worktreeAvailable = useWorktreeMode(
+    effective?.project_id &&
+      (composerDraft.environment?.environment_profile_id ??
+        effective.environment_profile_id) === "environment-native"
+      ? effectiveRoot
+      : undefined,
+  );
   const canCoordinate = !!effective?.project_id && !preview.error;
   const effectiveAgent = selectors.data?.agents.find(
     (item) => item.agent_id === effective?.agent_source.id,
@@ -689,6 +713,7 @@ function NewConversation({
                 : undefined
             }
             autoFocus={pageReady}
+            worktreeAvailable={worktreeAvailable}
             threadId={threadId}
             activity={{ state: "inactive" }}
             owner={

@@ -12,7 +12,7 @@ from a13n_harness_ui.model_accounts.copilot import DEFAULT_COPILOT_CLIENT_ID, Co
 from a13n_harness_ui.model_accounts.models import AccountStoreConflictError, Availability
 from pydantic_ai.providers.github_copilot import GitHubCopilotCredentials
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def grant(marker="first", *, account="test-user", now=None):

@@ -11,6 +11,8 @@ from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS, API_PROVIDERS, 
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from anyio import create_task_group
 
+pytestmark = pytest.mark.usefixtures("migrated_databases")
+
 
 def test_model_choices_project_release_owned_connections() -> None:
     choices = ModelChoices()

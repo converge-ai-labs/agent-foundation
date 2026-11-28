@@ -134,8 +134,8 @@ from a13n_harness_ui.inbox_models import (
     InboxMarkDoneRequest,
     InboxMarkReadRequest,
     InboxPage,
-    InboxUnreadPost,
     ThreadInboxMarkReadRequest,
+    ThreadInboxPost,
 )
 from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
@@ -256,6 +256,7 @@ from a13n_harness_ui.thread_files import (
     InputAttachmentReference,
     ThreadAttachment,
 )
+from a13n_harness_ui.thread_link_models import ThreadLinksView, UnlinkThreadResource
 from a13n_harness_ui.update_notices import UpdateChecker, UpdateNotices
 from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
 from a13n_harness_ui.web_providers import WebProviderCatalogView
@@ -339,7 +340,7 @@ class BotSubmitRequest(BotSubmit):
 class SubmitRequest(PromptRequest, ModelControlSelection):
     draft: DraftCapture | None = None
     app_context: tuple[AppContextReference, ...] = Field(default=(), max_length=8)
-    mode: Literal["normal", "goal"] = "normal"
+    mode: Literal["normal", "goal", "worktree"] = "normal"
     environment: EnvironmentSelectionPatch | None = None
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
 
@@ -737,9 +738,9 @@ def create_webui(
     ) -> InboxPage:
         return await app().inbox().page(state=state, before=before, limit=limit)
 
-    @server.get("/api/inbox/threads/{thread_id}/unread", response_model=tuple[InboxUnreadPost, ...])
-    async def thread_inbox_unread(thread_id: str) -> tuple[InboxUnreadPost, ...]:
-        return await app().inbox().thread_unread(thread_id)
+    @server.get("/api/inbox/threads/{thread_id}", response_model=tuple[ThreadInboxPost, ...])
+    async def thread_inbox_posts(thread_id: str) -> tuple[ThreadInboxPost, ...]:
+        return await app().inbox().thread_posts(thread_id)
 
     @server.post(
         "/api/inbox/threads/{thread_id}/mark-read", status_code=204, openapi_extra=_body(ThreadInboxMarkReadRequest)
@@ -1738,6 +1739,16 @@ def create_webui(
     async def capture_host_file(thread_id: str, request: Request) -> FileCapture:
         app().require_host_files()
         return await app().capture_host_file(thread_id=thread_id, request=await _document(request, FileCaptureRequest))
+
+    @server.get("/api/threads/{thread_id}/links", response_model=ThreadLinksView)
+    async def thread_links(thread_id: str) -> ThreadLinksView:
+        return await app().thread_links(thread_id)
+
+    @server.delete("/api/threads/{thread_id}/links", status_code=204, openapi_extra=_body(UnlinkThreadResource))
+    async def unlink_thread_resource(thread_id: str, request: Request) -> Response:
+        body = await _document(request, UnlinkThreadResource)
+        await app().unlink_thread_resource(thread_id, body.kind, body.target)
+        return Response(status_code=204)
 
     @server.get("/api/host/git/repository", response_model=GitDiscovery)
     async def host_repository(path: NativePath) -> GitDiscovery:

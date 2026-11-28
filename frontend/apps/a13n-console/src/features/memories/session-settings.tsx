@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Button,
   ChoiceField,
+  FormField,
   Input,
   Label,
   Switch,
@@ -154,8 +155,10 @@ export function SessionMemoryFields({
                       )}
                     </div>
                     <div className={styles.controls}>
-                      <Label className={styles.alias}>
-                        {t("Mount name")}
+                      <FormField
+                        className={styles.alias}
+                        label={t("Mount name")}
+                      >
                         <Input
                           value={binding.name}
                           disabled={disabled}
@@ -175,8 +178,9 @@ export function SessionMemoryFields({
                             )
                           }
                         />
-                      </Label>
+                      </FormField>
                       <ChoiceField
+                        data-field-layout="stacked"
                         label={t("Access")}
                         value={binding.access ?? "write"}
                         disabled={disabled}
@@ -208,7 +212,7 @@ export function SessionMemoryFields({
                               <Button
                                 type="button"
                                 variant="ghost"
-                                size="icon-sm"
+                                size="icon"
                                 aria-label={t("Remove space")}
                                 onClick={() =>
                                   onChange(

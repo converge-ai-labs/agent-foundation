@@ -20,7 +20,7 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 class _CopyingToolset(FunctionToolset[AgentContext]):

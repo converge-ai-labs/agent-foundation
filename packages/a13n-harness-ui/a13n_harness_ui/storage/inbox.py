@@ -124,14 +124,22 @@ class InboxRepository:
             needs_you, updates = counts.one()
         return InboxUnreadCounts(needs_you=needs_you, updates=updates)
 
-    async def thread_unread(self, thread_id: str) -> tuple[tuple[str, str, datetime], ...]:
+    async def thread_posts(
+        self, thread_id: str
+    ) -> tuple[tuple[str, str, datetime, datetime | None, datetime | None], ...]:
         async with short_session(self._sessions) as session:
             rows = await session.execute(
-                select(InboxItemRecord.item_id, InboxItemRecord.tool_call_id, InboxItemRecord.created_at)
-                .where(InboxItemRecord.thread_id == thread_id, _UNREAD)
+                select(
+                    InboxItemRecord.item_id,
+                    InboxItemRecord.tool_call_id,
+                    InboxItemRecord.created_at,
+                    InboxItemRecord.read_at,
+                    InboxItemRecord.done_at,
+                )
+                .where(InboxItemRecord.thread_id == thread_id)
                 .order_by(InboxItemRecord.item_id)
             )
-            return tuple((item_id, call_id, created_at) for item_id, call_id, created_at in rows)
+            return tuple((item_id, call_id, created, read, done) for item_id, call_id, created, read, done in rows)
 
     async def mark_thread_read(self, thread_id: str, *, item_ids: tuple[str, ...]) -> bool:
         # One bound value avoids a SQL variable per item regardless of Inbox size.

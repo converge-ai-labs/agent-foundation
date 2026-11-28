@@ -175,7 +175,9 @@ it("keeps root metadata links valid on deep links and keeps hashed assets immuta
       "default-src 'self'",
     );
     const html = await response.text();
-    expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
+    const manifestLink = html.match(/<link\b[^>]*\brel="manifest"[^>]*>/)?.[0];
+    expect(manifestLink).toContain('href="/manifest.webmanifest"');
+    expect(manifestLink).toContain('crossorigin="use-credentials"');
     expect(html).toContain(
       'rel="apple-touch-icon" href="/icons/apple-touch-icon.png"',
     );

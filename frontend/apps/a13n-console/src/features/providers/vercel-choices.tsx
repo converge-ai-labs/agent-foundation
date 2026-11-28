@@ -78,6 +78,7 @@ export function VercelChoices({
   return (
     <>
       <Button
+        className="justify-self-start"
         type="button"
         variant="secondary"
         disabled={!token.trim() || pending}
@@ -100,6 +101,7 @@ export function VercelChoices({
       />
       {teamCursor !== null && (
         <Button
+          className="justify-self-start"
           type="button"
           variant="ghost"
           disabled={pending}
@@ -120,6 +122,7 @@ export function VercelChoices({
       />
       {projectCursor !== null && typeof value.team_id === "string" && (
         <Button
+          className="justify-self-start"
           type="button"
           variant="ghost"
           disabled={pending}
