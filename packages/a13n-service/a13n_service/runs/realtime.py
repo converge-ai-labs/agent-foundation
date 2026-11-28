@@ -199,12 +199,14 @@ class Channel:
         self.activity.set()
 
     def end_for_limit(self, reason: LimitReason) -> None:
-        if self.closed.is_set():
-            return
-        self.emit({"type": "ending", "reason": reason})
-        self.end_reason = reason
-        # Keep the outbound lane open so the Worker can deliver the committed seal.
-        self.closed.set()
+        closing = self.closed.is_set()
+        # A charged turn can be refused while the channel is already closing. Keep that verdict for the seal.
+        if not closing or reason == "usage_limit_exceeded":
+            self.end_reason = reason
+        if not closing:
+            self.emit({"type": "ending", "reason": reason})
+            # Keep the outbound lane open so the Worker can deliver the committed seal.
+            self.closed.set()
 
     def finish(self, run_id: str, status: str, failure_code: str | None = None) -> None:
         self.flush_transcripts()

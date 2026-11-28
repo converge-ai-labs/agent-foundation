@@ -10,7 +10,7 @@ from a13n_harness.capabilities.browser import BrowserError
 from a13n_harness.capabilities.browser.cdp import Chromium
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.infra.db import transaction
-from a13n_service.infra.outbound import validate_cdp_endpoint
+from a13n_service.infra.outbound import validate_cdp_endpoint, validate_ws_endpoint
 from a13n_service.runs.attempts import AuthorityRevoked
 from a13n_service.runs.browsers import admission, execution, lifecycle, maintenance
 from a13n_service.runs.browsers.tables import BrowserRow
@@ -110,13 +110,37 @@ async def test_cdp_policy_separates_secret_query_without_weakening_http_rules():
     policy = EndpointPolicy.from_http_origins(require_https=True, http_origins=["http://127.0.0.1:9222"])
     await validate_cdp_endpoint(policy, "ws://127.0.0.1:9222/devtools/browser/id?token=secret")
     await validate_cdp_endpoint(policy, URL)
-    for endpoint in ("ws://127.0.0.1:9223/devtools/browser/id", "ws://browser.example/id"):
-        with pytest.raises(EndpointPolicyError):
+    for endpoint in (
+        "ws://127.0.0.1:9223/devtools/browser/id",
+        "ws://browser.example/id",
+        "wss://browser.example/devtools/page/existing?token=secret",
+    ):
+        with pytest.raises(EndpointPolicyError, match="CDP destination is not permitted"):
             await validate_cdp_endpoint(policy, endpoint)
     with pytest.raises(EndpointPolicyError):
         await policy.validate("https://browser.example/id?token=secret")
     with pytest.raises(EndpointPolicyError):
         await validate_cdp_endpoint(policy.for_run(RunConfiguration(allowed_hosts=frozenset())), URL)
+
+
+async def test_websocket_policy_applies_http_endpoint_rules_without_cdp_constraints():
+    policy = EndpointPolicy()
+    await validate_ws_endpoint(policy, "wss://provider.example/devtools/page/realtime?model=voice")
+    for endpoint in (
+        "https://provider.example/realtime",
+        "ws://provider.example/realtime",
+        "wss:///realtime",
+        "wss://user@provider.example/realtime",
+        "wss://provider.example/realtime#",
+        "wss://provider.example/real\ntime",
+        "wss://provider.example/realtime?token=secret",
+    ):
+        with pytest.raises(EndpointPolicyError):
+            await validate_ws_endpoint(policy, endpoint)
+    with pytest.raises(EndpointPolicyError):
+        await validate_ws_endpoint(
+            policy.for_run(RunConfiguration(allowed_hosts=frozenset())), "wss://provider.example/realtime"
+        )
 
 
 async def test_external_control_rejected_without_transition(service, runs_kit, scripted_model, external_connect):

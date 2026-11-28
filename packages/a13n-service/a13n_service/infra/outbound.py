@@ -21,25 +21,31 @@ from a13n_service.infra.errors import ServiceError
 _LIMITS = httpx2.Limits(max_connections=4, max_keepalive_connections=2)
 
 
-async def validate_cdp_endpoint(policy: EndpointPolicy, endpoint: str) -> None:
-    """Authorize the destination separately from the encrypted CDP URL's secret query."""
+async def validate_ws_endpoint(policy: EndpointPolicy, endpoint: str, *, allow_query: bool = False) -> None:
+    """Apply outbound policy to a WebSocket URL; `allow_query` skips its sensitive-query check."""
     try:
-        parsed = urlsplit(endpoint)
-        if (
-            parsed.scheme not in {"ws", "wss"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.fragment
-            or parsed.path.startswith("/devtools/page/")
-            or any(character.isspace() or ord(character) < 32 for character in endpoint)
+        if "#" in endpoint or any(
+            character.isspace() or ord(character) < 32 or character == "\x7f" for character in endpoint
         ):
             raise ValueError
-        # Only this secret-bearing connection input omits the query from policy validation.
-        # General HTTP endpoints retain their sensitive-query prohibition.
-        destination = parsed._replace(scheme="https" if parsed.scheme == "wss" else "http", query="").geturl()
-        await replace(policy, require_https=True).validate(destination)
-    except (ValueError, EndpointPolicyError):
+        parsed = urlsplit(endpoint)
+        if parsed.scheme not in {"ws", "wss"} or not parsed.hostname or parsed.username is not None:
+            raise ValueError
+    except ValueError:
+        raise EndpointPolicyError("WebSocket destination is not a valid URL") from None
+    destination = parsed._replace(
+        scheme="https" if parsed.scheme == "wss" else "http", query="" if allow_query else parsed.query
+    ).geturl()
+    await replace(policy, require_https=True).validate(destination)
+
+
+async def validate_cdp_endpoint(policy: EndpointPolicy, endpoint: str) -> None:
+    """Authorize a browser-level CDP destination separately from its encrypted secret query."""
+    try:
+        if urlsplit(endpoint).path.startswith("/devtools/page/"):
+            raise ValueError
+        await validate_ws_endpoint(policy, endpoint, allow_query=True)
+    except ValueError:
         raise EndpointPolicyError("CDP destination is not permitted") from None
 
 
